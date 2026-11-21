@@ -60,6 +60,15 @@ Shundan keyin `main` ga tushgan har bir o‘zgarish avtomatik deploy bo‘ladi.
 
 ---
 
+## Muammo bo‘lsa
+
+| Xabar | Sabab | Nima qilish kerak |
+|---|---|---|
+| `This Worker does not exist on your account. [code: 10007]` | Birinchi deployda Cloudflare yangi Worker'ni bir necha soniya kechikib ro‘yxatga oladi | Workflow o‘zi 5 martagacha qayta urinadi. Baribir qizil bo‘lsa, **Re-run jobs** ni bosing |
+| `Worker manzili topilmadi` | Hisobda `workers.dev` subdomeni tanlanmagan | Cloudflare → **Workers & Pages** sahifasini bir marta oching va subdomen tanlang |
+| `Authentication error [code: 10000]` | Token noto‘g‘ri yoki ruxsati yetmaydi | Tokenni **Edit Cloudflare Workers** shablonidan qayta yarating |
+| `Botni sozlab bo‘lmadi (403)` | `BOT_TOKEN` secret noto‘g‘ri | @BotFather tokenini qayta nusxalab, secretni yangilang |
+
 ## Bepul tarif chegaralari
 
 Cloudflare Workers Free ([Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)):

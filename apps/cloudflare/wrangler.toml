@@ -28,5 +28,11 @@ new_sqlite_classes = ["GameRoom", "Registry"]
 [observability]
 enabled = true
 
-# Sirlar (GitHub Actions orqali): BOT_TOKEN
-# Oddiy qiymatlar (GitHub Actions vars): ADMIN_IDS, DEV_FAKE_PLAYERS (ixtiyoriy, true — /devfill)
+# Standart qiymatlar. GitHub Actions → Variables da shu nomli o'zgaruvchi berilsa, o'sha ustun turadi.
+#   ADMIN_IDS        — bot egalari (/admin_minplayers, /admin_stats). Telegram ID maxfiy emas.
+#   DEV_FAKE_PLAYERS — true: guruhda /devfill N (bot-o'yinchilar, mashq o'yini, statistikaga yozilmaydi)
+[vars]
+ADMIN_IDS = "5105291033,7184608742"
+DEV_FAKE_PLAYERS = "true"
+
+# Sir (GitHub Actions orqali shifrlangan holda yoziladi): BOT_TOKEN

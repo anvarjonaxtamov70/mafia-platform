@@ -55,7 +55,28 @@ jobs:
             v="${!k}"
             if [ -n "$v" ]; then args+=(--var "$k:$v"); fi
           done
-          npx wrangler deploy "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+
+          # Yangi Worker birinchi marta yaratilganda Cloudflare API uni bir necha soniya
+          # "topilmadi" (code 10007) deb qaytarishi mumkin — shunda qayta urinamiz.
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            set +e
+            npx wrangler deploy "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" = "0" ]; then ok=1; break; fi
+            if grep -qE "10007|does not exist on your account" "$RUNNER_TEMP/deploy.log"; then
+              echo "::notice::Cloudflare yangi Worker'ni hali ro'yxatga olmagan ($attempt/5) — 20 soniyadan keyin qayta urinish..."
+              sleep 20
+              continue
+            fi
+            break
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::wrangler deploy muvaffaqiyatsiz. Yuqoridagi xabarni o'qing (docs/04-CLOUDFLARE.md → Muammo bo'lsa)."
+            exit 1
+          fi
+
           url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' "$RUNNER_TEMP/deploy.log" | head -1 || true)
           if [ -z "$url" ]; then
             echo "::error::Worker manzili topilmadi. Cloudflare → Workers & Pages sahifasini bir marta ochib, workers.dev subdomenini tanlang (docs/04-CLOUDFLARE.md)."
@@ -65,8 +86,17 @@ jobs:
 
           # Bot tokeni Worker'ga shifrlangan holda yoziladi (kodda va jurnalda ko'rinmaydi)
           node -e 'require("fs").writeFileSync(process.env.RUNNER_TEMP + "/secrets.json", JSON.stringify({ BOT_TOKEN: process.env.BOT_TOKEN.trim() }))'
-          npx wrangler secret bulk "$RUNNER_TEMP/secrets.json"
+          saved=0
+          for attempt in 1 2 3; do
+            if npx wrangler secret bulk "$RUNNER_TEMP/secrets.json"; then saved=1; break; fi
+            echo "Sirni yozib bo'lmadi ($attempt/3), 15 soniyadan keyin qayta..."
+            sleep 15
+          done
           rm -f "$RUNNER_TEMP/secrets.json"
+          if [ "$saved" != "1" ]; then
+            echo "::error::BOT_TOKEN ni Worker'ga yozib bo'lmadi."
+            exit 1
+          fi
 
       - name: 2/2 Telegram (webhook, buyruqlar, tavsif)
         id: bot
