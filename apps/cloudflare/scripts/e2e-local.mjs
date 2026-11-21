@@ -90,6 +90,12 @@ const buttons = (chat) =>
     .flatMap((c) => (c.params.reply_markup?.inline_keyboard ?? []).flat())
     .map((b) => b.callback_data)
     .filter(Boolean);
+/** Faqat eng so'nggi bosqich tugmalari (eski tugmalar rate limitni band qilmasin) */
+const seqOf = (d) => Number(d.split(':')[2]);
+const latest = (list) => {
+  const max = Math.max(-1, ...list.map(seqOf));
+  return list.filter((d) => seqOf(d) === max);
+};
 
 try {
   await waitReady();
@@ -113,15 +119,19 @@ try {
   check(texts(GROUP).some((t) => t.includes('TUN BOSHLANDI')), 'tun boshlandi');
 
   // O'yin: hamma tunda o'tkazadi, bosqichlar test hook bilan tezlashtiriladi
-  for (let round = 0; round < 40; round++) {
+  for (let round = 0; round < 80; round++) {
     if (texts(GROUP).some((t) => t.includes('O‘YIN TUGADI'))) break;
     for (const p of players) {
-      for (const data of buttons(p).filter((d) => d.endsWith(':SKIP') || /^mv:\d+:\d+:0$/.test(d))) await cb(p, data);
+      for (const data of latest(buttons(p).filter((d) => d.endsWith(':SKIP') || /^mv:\d+:\d+:0$/.test(d)))) await cb(p, data);
     }
-    const vote = [...buttons(GROUP)].reverse().find((d) => /^v:\d+:\d+:\d+$/.test(d) && !d.endsWith(':0'));
-    if (vote) for (const p of players) await cb(p, vote, true);
+    const votes = latest(buttons(GROUP).filter((d) => /^v:\d+:\d+:\d+$/.test(d) && !d.endsWith(':0')));
+    if (votes.length > 0) {
+      // Hamma bitta nomzodga (o'zi bo'lsa, keyingisiga) ovoz beradi
+      for (const p of players) await cb(p, votes[0], true);
+      for (const p of players) await cb(p, votes[1] ?? votes[0], true);
+    }
     await force();
-    await sleep(700);
+    await sleep(500);
   }
   check(texts(GROUP).some((t) => t.includes('O‘YIN TUGADI')), 'o‘yin oxirigacha yetdi (alarm + Durable Object)');
   await sleep(1500);
