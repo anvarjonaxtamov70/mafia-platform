@@ -122,6 +122,12 @@ export class Registry extends DurableObject<Env> {
   stats() {
     return this.core.stats();
   }
+  logError(place: string, message: string) {
+    this.core.logError(place, message);
+  }
+  recentErrors() {
+    return this.core.recentErrors();
+  }
   setGlobalMinPlayers(value: number, by: string) {
     return this.core.setGlobalMinPlayers(value, by);
   }
@@ -214,7 +220,13 @@ export class GameRoom extends DurableObject<Env> {
       await this.ensure(data.chatId);
     }
     if (!cachedUsername) await botUsername(this.env);
-    await this.core!.alarm();
+    try {
+      await this.core!.alarm();
+    } catch (e) {
+      // Cloudflare alarmni o'zi qayta ishga tushiradi; xato jurnalga yoziladi
+      await registryStub(this.env).logError('alarm', (e as Error).message ?? String(e)).catch(() => undefined);
+      throw e;
+    }
   }
 }
 
@@ -307,7 +319,9 @@ async function diag(env: Env): Promise<Response> {
   const out: Record<string, unknown> = {};
   let ok = true;
   try {
-    out['registry'] = { ok: true, ...(await registryStub(env).stats()) };
+    const reg = registryStub(env);
+    out['registry'] = { ok: true, ...(await reg.stats()) };
+    out['errors'] = await reg.recentErrors();
   } catch (e) {
     ok = false;
     out['registry'] = { ok: false, error: (e as Error).message };
@@ -367,8 +381,10 @@ export default {
       try {
         await getRouter(env).handle(update);
       } catch (e) {
-        // Telegram qayta-qayta yubormasligi uchun 200; xato Cloudflare loglarida ko'rinadi
-        console.error('update failed', update.update_id, (e as Error).message);
+        // Telegram qayta-qayta yubormasligi uchun 200; xato jurnalga yoziladi (/admin_stats, /telegram/diag)
+        const message = (e as Error).message ?? String(e);
+        console.error('update failed', update.update_id, message);
+        await registryStub(env).logError('webhook', message).catch(() => undefined);
       }
       return new Response('ok');
     }

@@ -142,6 +142,7 @@ const SCHEMA = [
     PRIMARY KEY (game_number, telegram_id)
   )`,
   `CREATE TABLE IF NOT EXISTS bans (telegram_id INTEGER PRIMARY KEY, reason TEXT NOT NULL, created_by TEXT, created_at INTEGER NOT NULL, expires_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS error_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, place TEXT NOT NULL, message TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
     before_json TEXT, after_json TEXT, created_at INTEGER NOT NULL
@@ -501,7 +502,22 @@ export class RegistryCore {
 
   adminStats(): string {
     const s = this.stats();
-    return t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
+    const e = this.recentErrors();
+    const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
+    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}`;
+  }
+
+  /** Ichki xatolar jurnali (oxirgi 200 ta saqlanadi) — /admin_stats va /telegram/diag da ko'rinadi */
+  logError(place: string, message: string): void {
+    this.sql.exec(`INSERT INTO error_logs (at, place, message) VALUES (?, ?, ?)`, this.clock(), place.slice(0, 60), message.slice(0, 500));
+    this.sql.exec(`DELETE FROM error_logs WHERE id <= (SELECT MAX(id) - 200 FROM error_logs)`);
+  }
+
+  recentErrors(): { count24h: number; last: { at: number; place: string; message: string }[] } {
+    const since = this.clock() - 24 * 3600 * 1000;
+    const count24h = this.one<{ c: number }>(`SELECT COUNT(*) AS c FROM error_logs WHERE at >= ?`, since)!.c;
+    const last = this.sql.exec<{ at: number; place: string; message: string }>(`SELECT at, place, message FROM error_logs ORDER BY id DESC LIMIT 3`);
+    return { count24h, last };
   }
 
   audit(actor: string | null, action: string, entity: string, entityId: string | null, before: unknown = null, after: unknown = null): void {

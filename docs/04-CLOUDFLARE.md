@@ -60,6 +60,12 @@ Shundan keyin `main` ga tushgan har bir o‘zgarish avtomatik deploy bo‘ladi.
 
 ---
 
+## Kuzatish
+
+- **`/admin_stats`** (botga shaxsiy chatda, faqat `ADMIN_IDS`): foydalanuvchilar, guruhlar, faol o‘yinlar, oxirgi 24 soatdagi ichki xatolar va oxirgi 3 tasi.
+- **Har bir deploydan keyin** workflow production'ni tekshiradi: Registry (SQLite), GameRoom (Durable Object) va Telegram webhook. Biror narsa ishlamasa, deploy qizil bo‘ladi.
+- Batafsil log: Cloudflare → **Workers & Pages → mafia-bot → Logs**.
+
 ## Muammo bo‘lsa
 
 | Xabar | Sabab | Nima qilish kerak |

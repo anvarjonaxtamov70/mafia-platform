@@ -79,6 +79,15 @@ describe('Registry (SQLite)', () => {
     expect(saved.minPlayers).toBe(4);
   });
 
+  it('xatolar jurnali: oxirgi 200 ta saqlanadi, /admin_stats da ko‘rinadi', () => {
+    const w = new World();
+    for (let i = 0; i < 205; i++) w.registryCore.logError('webhook', `xato ${i}`);
+    const e = w.registryCore.recentErrors();
+    expect(e.count24h).toBe(200);
+    expect(e.last[0]!.message).toBe('xato 204');
+    expect(w.registryCore.adminStats()).toContain('Ichki xatolar (24 soat): 200');
+  });
+
   it('natijalar bir marta yoziladi (idempotent)', () => {
     const w = new World();
     const n = w.registryCore.allocateGame(-1);

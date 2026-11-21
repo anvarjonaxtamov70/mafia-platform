@@ -309,5 +309,6 @@
   "action.WIZARD_BARRIER": "🛡 Barrier",
   "bot.description": "🎭 Telegram guruhlarida Mafia o‘yini.\n\n• 30 xil rol: Komissar, Doktor, Don, Manyak, Amur va boshqalar\n• 4–30 o‘yinchi\n• Tun va kunduz, yashirin ovoz berish\n• Profil, daraja va reyting\n\nBotni guruhga qo‘shing (administrator qiling) va /game yozing.",
   "bot.short_description": "🎭 Guruhda Mafia o‘ynang: 30 rol, 4–30 o‘yinchi. Botni guruhga qo‘shing va /game yozing.",
-  "dm.practice_over": "🏁 Mashq o‘yini tugadi. Bot-o‘yinchilar qatnashgani uchun natija statistika va reytingga yozilmaydi."
+  "dm.practice_over": "🏁 Mashq o‘yini tugadi. Bot-o‘yinchilar qatnashgani uchun natija statistika va reytingga yozilmaydi.",
+  "admin.errors": "⚠️ Ichki xatolar (24 soat): {count}"
 }

@@ -138,7 +138,8 @@ npm run cf:e2e            # haqiqiy Cloudflare runtime (workerd) + soxta Telegra
 | Parallellik, restart tiklanishi, eskirgan tugmalar | ✅ VERIFIED (integration) |
 | Outbox dispatcher (tartib, 429, 403, birlashtirish) | ✅ VERIFIED (soxta Telegram API bilan) |
 | BullMQ taymerlari | ✅ VERIFIED (haqiqiy Redis) |
-| Cloudflare versiyasi (Worker + GameRoom/Registry Durable Objects) | ✅ VERIFIED — unit testlar + workerd ichida to‘liq o‘yin (E2E); haqiqiy Cloudflare hisobiga deploy — sozlamalar kiritilgach |
+| Cloudflare versiyasi (Worker + GameRoom/Registry Durable Objects) | ✅ VERIFIED — unit testlar, workerd ichida to‘liq o‘yin (E2E), production'ga deploy va har deploydan keyin avtomatik tekshiruv (Registry, GameRoom, webhook) |
+| Production | 🟢 https://mafia-bot.anvaraxtamov70.workers.dev — GitHub Actions orqali avtomatik deploy |
 | Telegram ulanishi (getMe, buyruqlar menyusi, tavsif, polling) | ✅ VERIFIED — haqiqiy Telegram API bilan |
 | Telegram adapter (menyu, lobby, tugmalar, sozlamalar, jimlik) | 🟡 TESTED — soxta Bot API bilan E2E; haqiqiy guruhda odamlar bilan hali o‘ynalmagan |
 | Webhook rejimi | 🟡 IMPLEMENTED — HTTPS domen kerak, sinalmagan |
