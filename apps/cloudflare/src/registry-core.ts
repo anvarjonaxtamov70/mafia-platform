@@ -486,17 +486,22 @@ export class RegistryCore {
     return `${t('group_rating.title')}\n\n${lines.join('\n')}`;
   }
 
-  adminStats(): string {
+  stats(): { users: number; groups: number; active: number; today: number; finished: number } {
     const dayStart = new Date(this.clock());
     dayStart.setUTCHours(0, 0, 0, 0);
     const c = (q: string, ...p: (string | number)[]) => this.one<{ c: number }>(q, ...p)!.c;
-    return t('admin.stats', {
+    return {
       users: c(`SELECT COUNT(*) AS c FROM users`),
       groups: c(`SELECT COUNT(*) AS c FROM groups WHERE status = 'ACTIVE'`),
       active: c(`SELECT COUNT(*) AS c FROM games WHERE status IN ('LOBBY', 'RUNNING')`),
       today: c(`SELECT COUNT(*) AS c FROM games WHERE status = 'FINISHED' AND finished_at >= ?`, dayStart.getTime()),
-      outbox: 0,
-    });
+      finished: c(`SELECT COUNT(*) AS c FROM games WHERE status = 'FINISHED'`),
+    };
+  }
+
+  adminStats(): string {
+    const s = this.stats();
+    return t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
   }
 
   audit(actor: string | null, action: string, entity: string, entityId: string | null, before: unknown = null, after: unknown = null): void {

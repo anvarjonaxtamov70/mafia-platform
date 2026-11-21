@@ -119,6 +119,20 @@ jobs:
           username=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/setup.json", "utf8")).username)')
           echo "username=$username" >> "$GITHUB_OUTPUT"
 
+      - name: Tekshiruv (Registry, GameRoom, webhook)
+        if: steps.config.outputs.ready == 'true'
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+        run: |
+          key=$(printf '%s' "mafia-setup|$(printf '%s' "$BOT_TOKEN" | tr -d '[:space:]')" | sha256sum | cut -d' ' -f1)
+          code=$(curl -sS -o "$RUNNER_TEMP/diag.json" -w '%{http_code}' -X POST "$WORKER_URL/telegram/diag" -H "X-Setup-Key: $key" || echo 000)
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/diag.json", "utf8"));
+            const row = (name, v) => console.log(`${v && v.ok ? "✅" : "❌"} ${name.padEnd(10)} ${JSON.stringify(v)}`);
+            row("Registry", d.registry); row("GameRoom", d.room); row("Webhook", d.webhook);
+            if (!d.ok) { console.log("::error::Tekshiruvda xato bor (yuqoridagi ❌ qatorlar)"); process.exit(1); }
+          ' || { echo "HTTP $code: $(cat "$RUNNER_TEMP/diag.json" 2>/dev/null)"; exit 1; }
+
       - name: Natija
         if: steps.config.outputs.ready == 'true'
         env:

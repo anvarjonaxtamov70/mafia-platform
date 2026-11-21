@@ -119,6 +119,9 @@ export class Registry extends DurableObject<Env> {
   adminStats() {
     return this.core.adminStats();
   }
+  stats() {
+    return this.core.stats();
+  }
   setGlobalMinPlayers(value: number, by: string) {
     return this.core.setGlobalMinPlayers(value, by);
   }
@@ -299,6 +302,36 @@ async function setup(env: Env, origin: string): Promise<Response> {
   return Response.json({ ok: true, username: me.username, webhook: info.url, pending: info.pending_update_count });
 }
 
+/** Production tekshiruvi: Registry (SQLite), GameRoom (Durable Object), Telegram webhook. */
+async function diag(env: Env): Promise<Response> {
+  const out: Record<string, unknown> = {};
+  let ok = true;
+  try {
+    out['registry'] = { ok: true, ...(await registryStub(env).stats()) };
+  } catch (e) {
+    ok = false;
+    out['registry'] = { ok: false, error: (e as Error).message };
+  }
+  try {
+    const snap = await roomApi(env, 0).silenceSnapshot();
+    out['room'] = { ok: true, running: snap.running };
+  } catch (e) {
+    ok = false;
+    out['room'] = { ok: false, error: (e as Error).message };
+  }
+  try {
+    const info = await telegram(env).call<{ url: string; pending_update_count: number; last_error_message?: string; last_error_date?: number }>('getWebhookInfo');
+    const webhookOk = info.url.endsWith('/telegram/webhook');
+    ok &&= webhookOk;
+    out['webhook'] = { ok: webhookOk, url: info.url, pending: info.pending_update_count, lastError: info.last_error_message ?? null, lastErrorDate: info.last_error_date ?? null };
+  } catch (e) {
+    ok = false;
+    out['webhook'] = { ok: false, error: (e as Error).message };
+  }
+  out['ok'] = ok;
+  return Response.json(out, { status: ok ? 200 : 500 });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -314,6 +347,11 @@ export default {
       } catch (e) {
         return Response.json({ ok: false, error: String((e as Error).message) }, { status: 500 });
       }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/telegram/diag') {
+      if (request.headers.get('x-setup-key') !== (await setupKey(env.BOT_TOKEN))) return new Response('forbidden', { status: 403 });
+      return diag(env);
     }
 
     if (request.method === 'POST' && url.pathname === '/telegram/webhook') {

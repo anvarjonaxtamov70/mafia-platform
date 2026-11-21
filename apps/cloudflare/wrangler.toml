@@ -4,6 +4,8 @@ main = "src/index.ts"
 compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
+# Preview URL lar ishlatilmaydi (faqat asosiy workers.dev manzil)
+preview_urls = false
 
 # Har bir guruh — alohida GameRoom (lobby, o'yin, taymerlar); Registry — umumiy ma'lumotlar
 [[durable_objects.bindings]]

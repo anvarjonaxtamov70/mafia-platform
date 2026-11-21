@@ -144,6 +144,9 @@ try {
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');
+  const diag = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
+  const diagBody = await diag.json();
+  check(diagBody.registry?.ok && diagBody.room?.ok && diagBody.registry.finished >= 1, `/telegram/diag: registry va GameRoom ishlaydi (${JSON.stringify(diagBody.registry)})`);
 } catch (e) {
   failures++;
   console.error('E2E error:', e.message);
