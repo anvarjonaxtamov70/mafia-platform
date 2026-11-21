@@ -1,0 +1,32 @@
+# Mafia bot — Cloudflare Worker (bepul tarif): Telegram webhook + Durable Objects
+name = "mafia-bot"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Har bir guruh — alohida GameRoom (lobby, o'yin, taymerlar); Registry — umumiy ma'lumotlar
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoom"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+# Bepul tarifda faqat SQLite asosidagi Durable Objects ishlaydi
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom", "Registry"]
+
+# Monorepo paketlari to'g'ridan-to'g'ri manba koddan bundlanadi
+[alias]
+"@mafia/game-engine" = "../../packages/game-engine/src/index.ts"
+"@mafia/localization" = "../../packages/localization/src/index.ts"
+"@mafia/bot-core" = "../../packages/bot-core/src/index.ts"
+
+[observability]
+enabled = true
+
+# Sirlar (GitHub Actions orqali): BOT_TOKEN
+# Oddiy qiymatlar (GitHub Actions vars): ADMIN_IDS, DEV_FAKE_PLAYERS (ixtiyoriy, true — /devfill)

@@ -1,0 +1,13 @@
+{
+  "name": "@mafia/bot-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runtime-agnostic Telegram UI: presenter, keyboards, callback data, settings, menus",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "dependencies": {
+    "@mafia/game-engine": "0.1.0",
+    "@mafia/localization": "0.1.0"
+  }
+}

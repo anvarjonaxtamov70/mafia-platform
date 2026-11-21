@@ -12,6 +12,7 @@
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/transformer-throttler": "^1.2.1",
+    "@mafia/bot-core": "0.1.0",
     "@mafia/config": "0.1.0",
     "@mafia/database": "0.1.0",
     "@mafia/game-engine": "0.1.0",

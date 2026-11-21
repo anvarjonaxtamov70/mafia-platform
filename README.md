@@ -12,7 +12,20 @@ Bot: [@Hypernovamafia_bot](https://t.me/Hypernovamafia_bot)
 Hujjatlar:
 - [docs/01-SPEC-TAHLIL-VA-TUZATISHLAR.md](docs/01-SPEC-TAHLIL-VA-TUZATISHLAR.md) — spetsifikatsiya tahlili va v1.1 qoidalari
 - [docs/02-ISH-REJASI.md](docs/02-ISH-REJASI.md) — reja va har bir bosqich holati
-- [docs/03-DEPLOY.md](docs/03-DEPLOY.md) — botni serverga joylash (24/7)
+- [docs/04-CLOUDFLARE.md](docs/04-CLOUDFLARE.md) — **hozirgi ishga tushirish: Cloudflare (bepul, 24/7)**
+- [docs/03-DEPLOY.md](docs/03-DEPLOY.md) — keyinchalik VPS ga o‘tish (PostgreSQL + Redis)
+
+## Ikki xil ishga tushirish
+
+| | Cloudflare (hozir) | VPS (keyin) |
+|---|---|---|
+| Kod | `apps/cloudflare` | `apps/server` |
+| Narx | Bepul | Oyiga ~$4–6 |
+| Ma’lumotlar | Durable Objects (SQLite) | PostgreSQL + Redis |
+| Telegram | Webhook | Polling yoki webhook |
+| Deploy | GitHub Actions avtomatik | `docker compose up -d --build` |
+
+O‘yin qoidalari (`packages/game-engine`) va barcha xabar/tugmalar (`packages/bot-core`) ikkalasida bir xil.
 
 ---
 
@@ -105,7 +118,11 @@ npm run sim -- 1000       # balans statistikasi
 ```
 `test:integration` PostgreSQL va Redis ishlab turgan bo‘lsa ulardan foydalanadi (`docker compose up -d postgres redis`). Docker yo‘q muhit uchun `scripts/with-services.sh` lokal binarilarni ishga tushira oladi.
 
-Oxirgi natija: **11 fayl, 121 test — hammasi o‘tdi**; lint va typecheck toza.
+Cloudflare versiyasi uchun qo‘shimcha:
+```bash
+npm run cf:typecheck
+npm run cf:e2e            # haqiqiy Cloudflare runtime (workerd) + soxta Telegram: to‘liq o‘yin
+```
 
 ---
 
@@ -121,6 +138,7 @@ Oxirgi natija: **11 fayl, 121 test — hammasi o‘tdi**; lint va typecheck toza
 | Parallellik, restart tiklanishi, eskirgan tugmalar | ✅ VERIFIED (integration) |
 | Outbox dispatcher (tartib, 429, 403, birlashtirish) | ✅ VERIFIED (soxta Telegram API bilan) |
 | BullMQ taymerlari | ✅ VERIFIED (haqiqiy Redis) |
+| Cloudflare versiyasi (Worker + GameRoom/Registry Durable Objects) | ✅ VERIFIED — unit testlar + workerd ichida to‘liq o‘yin (E2E); haqiqiy Cloudflare hisobiga deploy — sozlamalar kiritilgach |
 | Telegram ulanishi (getMe, buyruqlar menyusi, tavsif, polling) | ✅ VERIFIED — haqiqiy Telegram API bilan |
 | Telegram adapter (menyu, lobby, tugmalar, sozlamalar, jimlik) | 🟡 TESTED — soxta Bot API bilan E2E; haqiqiy guruhda odamlar bilan hali o‘ynalmagan |
 | Webhook rejimi | 🟡 IMPLEMENTED — HTTPS domen kerak, sinalmagan |

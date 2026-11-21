@@ -11,6 +11,7 @@
     { "path": "../../packages/config" },
     { "path": "../../packages/localization" },
     { "path": "../../packages/game-engine" },
-    { "path": "../../packages/database" }
+    { "path": "../../packages/database" },
+    { "path": "../../packages/bot-core" }
   ]
 }

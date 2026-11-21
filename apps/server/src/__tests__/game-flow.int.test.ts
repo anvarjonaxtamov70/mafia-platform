@@ -299,8 +299,8 @@ describe('Development bot-o‘yinchilar', () => {
     // Bot-o'yinchilarga xabar yuborilmaydi
     const fakeMsgs = await db.outboxMessage.count({ where: { chatId: { gte: 9_000_000_000_000n } } });
     expect(fakeMsgs).toBe(0);
-    // Bot-o'yinchilar statistikaga yozilmaydi
-    expect(await db.gameResult.count({ where: { gameId: r.gameId } })).toBe(1);
+    // Mashq o'yini (botlar bilan) statistika va reytingga yozilmaydi
+    expect(await db.gameResult.count({ where: { gameId: r.gameId } })).toBe(0);
   });
 
   it('/devfill development rejimida o‘chiq bo‘lsa ishlamaydi', async () => {

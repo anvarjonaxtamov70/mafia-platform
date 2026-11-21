@@ -5,6 +5,7 @@
     { "path": "packages/localization" },
     { "path": "packages/game-engine" },
     { "path": "packages/database" },
+    { "path": "packages/bot-core" },
     { "path": "apps/server" }
   ]
 }

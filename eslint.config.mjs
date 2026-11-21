@@ -1,12 +1,17 @@
 import js from '@eslint/js';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/generated/**', 'coverage/**'],
+    ignores: ['**/dist/**', '**/node_modules/**', '**/generated/**', 'coverage/**', '**/.wrangler/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ['**/*.mjs', '**/*.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
   {
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
@@ -15,7 +20,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.test.ts', '**/__tests__/**', '**/cli/**'],
+    files: ['**/*.test.ts', '**/__tests__/**', '**/cli/**', '**/scripts/**'],
     rules: { 'no-console': 'off' },
   },
 );

@@ -10,7 +10,7 @@ import type { Db, OutboxMessage } from '@mafia/database';
 import type { Logger } from '../infra/logger';
 import { scrubSecrets } from '../infra/logger';
 import type { OutboxNotifier } from '../game/ports';
-import type { Keyboard, OutboxPayload } from './outbox-types';
+import type { Keyboard, OutboxPayload } from '@mafia/bot-core';
 
 export interface SendOptions {
   parse_mode: 'HTML';

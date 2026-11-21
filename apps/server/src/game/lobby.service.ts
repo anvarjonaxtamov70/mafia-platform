@@ -1,41 +1,20 @@
 /**
  * LobbyService (§3.4, §3.5): o'yin yaratish, qo'shilish, chiqish, boshlash, bekor qilish.
  */
-import { createGame, cryptoRng, type GameConfig, type GameMode, type Rng } from '@mafia/game-engine';
+import { createGame, cryptoRng, type GameMode, type Rng } from '@mafia/game-engine';
 import { Prisma, type Db, type Group } from '@mafia/database';
 import { escapeHtml, t } from '@mafia/localization';
 import type { Logger } from '../infra/logger';
-import { encode } from '../telegram/callback-data';
-import type { Keyboard, OutboxDraft } from '../telegram/outbox-types';
+import { renderLobby, type ConfigSnapshot, type Keyboard, type LobbyError, type OutboxDraft } from '@mafia/bot-core';
 import { GameService, postProcess } from './game.service';
 import { loadGroupSettings, settingsToConfig } from './group-settings';
 import { writeOutbox } from './outbox';
 import type { Clock, DmProbe, OutboxNotifier, TimerScheduler } from './ports';
 import { displayName, UsersService, type TgUser } from './users.service';
 
-export type LobbyError =
-  | 'GROUP_ACTIVE_GAME'
-  | 'NOT_FOUND'
-  | 'NOT_LOBBY'
-  | 'FULL'
-  | 'NEED_DM'
-  | 'IN_OTHER_GAME'
-  | 'ALREADY_JOINED'
-  | 'NOT_JOINED'
-  | 'NO_PERMISSION'
-  | 'NOT_ENOUGH'
-  | 'BANNED'
-  | 'CREATE_FORBIDDEN'
-  | 'DM_FAILED';
+export type { LobbyError } from '@mafia/bot-core';
 
 export type LobbyResult<T = object> = ({ ok: true } & T) | { ok: false; error: LobbyError; details?: Record<string, string | number> };
-
-interface LobbySnapshot {
-  lobbySec: number;
-  autostart: boolean;
-}
-
-type ConfigSnapshot = GameConfig & { lobby: LobbySnapshot };
 
 export function lobbyRef(gameId: string): string {
   return `lobby:${gameId}`;
@@ -85,37 +64,7 @@ export class LobbyService {
   // ───────────────────────────── Ko'rinish ─────────────────────────────
 
   renderLobby(game: { number: number; mode: string; config: ConfigSnapshot; hostName: string; deadline: Date | null }, names: string[]): { text: string; keyboard: Keyboard } {
-    const min = game.config.minPlayers;
-    const list = names.length ? names.map((n, i) => `${i + 1}. ${escapeHtml(n)} ✅`).join('\n') : t('lobby.empty_list');
-    const secondsLeft = game.deadline ? Math.max(0, Math.round((game.deadline.getTime() - this.clock()) / 1000)) : 0;
-    const hint =
-      names.length < min
-        ? t('lobby.need_more', { min })
-        : game.config.lobby.autostart
-          ? t('lobby.ready', { seconds: secondsLeft })
-          : t('lobby.ready_manual');
-    const text = t('lobby.title', {
-      host: escapeHtml(game.hostName),
-      mode: t(`mode.${game.mode}`),
-      count: names.length,
-      max: game.config.maxPlayers,
-      list,
-      hint,
-    });
-    const keyboard: Keyboard = [
-      [
-        { text: t('lobby.join'), callback_data: encode({ t: 'lobby', op: 'j', game: game.number }) },
-        { text: t('lobby.leave'), callback_data: encode({ t: 'lobby', op: 'l', game: game.number }) },
-      ],
-      [
-        { text: t('lobby.start'), callback_data: encode({ t: 'lobby', op: 's', game: game.number }) },
-        { text: t('lobby.cancel'), callback_data: encode({ t: 'lobby', op: 'c', game: game.number }) },
-      ],
-    ];
-    if (this.opts.botUsername) {
-      keyboard.push([{ text: t('lobby.open_bot'), url: `https://t.me/${this.opts.botUsername}?start=join_${game.number}` }]);
-    }
-    return { text, keyboard };
+    return renderLobby({ ...game, deadline: game.deadline ? game.deadline.getTime() : null }, names, { now: this.clock(), botUsername: this.opts.botUsername });
   }
 
   private async lobbyDraft(gameId: string, tx: Prisma.TransactionClient = this.db): Promise<OutboxDraft | null> {

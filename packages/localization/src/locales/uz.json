@@ -73,7 +73,7 @@
   "lobby.timeout_cancelled": "⌛ Lobby vaqti tugadi: kamida {min} o‘yinchi yig‘ilmadi. O‘yin bekor qilindi.",
   "lobby.dm_failed": "⚠️ Quyidagi o‘yinchilarga shaxsiy xabar yuborib bo‘lmadi: {names}.\nUlar botga /start bosishi kerak. O‘yin boshlanmadi, ular ro‘yxatdan chiqarildi.",
   "lobby.players_title": "👥 <b>Ishtirokchilar ({count}):</b>\n{list}",
-  "lobby.dev_filled": "🤖 {count} ta bot-o‘yinchi qo‘shildi (faqat development).",
+  "lobby.dev_filled": "🤖 {count} ta bot-o‘yinchi qo‘shildi. Bu mashq o‘yini: natija statistika va reytingga yozilmaydi.",
   "mode.CLASSIC": "Classic",
   "mode.ADVANCED": "Advanced",
   "mode.CHAOS": "Chaos",
@@ -308,5 +308,6 @@
   "action.WIZARD_MIRAGE": "🌫 Mirage",
   "action.WIZARD_BARRIER": "🛡 Barrier",
   "bot.description": "🎭 Telegram guruhlarida Mafia o‘yini.\n\n• 30 xil rol: Komissar, Doktor, Don, Manyak, Amur va boshqalar\n• 4–30 o‘yinchi\n• Tun va kunduz, yashirin ovoz berish\n• Profil, daraja va reyting\n\nBotni guruhga qo‘shing (administrator qiling) va /game yozing.",
-  "bot.short_description": "🎭 Guruhda Mafia o‘ynang: 30 rol, 4–30 o‘yinchi. Botni guruhga qo‘shing va /game yozing."
+  "bot.short_description": "🎭 Guruhda Mafia o‘ynang: 30 rol, 4–30 o‘yinchi. Botni guruhga qo‘shing va /game yozing.",
+  "dm.practice_over": "🏁 Mashq o‘yini tugadi. Bot-o‘yinchilar qatnashgani uchun natija statistika va reytingga yozilmaydi."
 }

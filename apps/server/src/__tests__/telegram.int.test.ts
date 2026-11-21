@@ -8,7 +8,7 @@ import { availableNightActions, type GameState } from '@mafia/game-engine';
 import { loadEnv } from '@mafia/config';
 import { createBot } from '../telegram/bot';
 import { AdminChecker } from '../telegram/helpers';
-import { decode } from '../telegram/callback-data';
+import { decode } from '@mafia/bot-core';
 import { makeServices, resetDb, silentLogger, stateOf, testDb, type TestServices } from './test-utils';
 
 const db = testDb();

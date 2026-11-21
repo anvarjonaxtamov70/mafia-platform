@@ -9,11 +9,7 @@ export interface TgUser {
   is_bot?: boolean;
 }
 
-export function displayName(u: { firstName: string; lastName?: string | null; username?: string | null }): string {
-  const full = [u.firstName, u.lastName].filter(Boolean).join(' ').trim();
-  const name = full || (u.username ? `@${u.username}` : 'O‘yinchi');
-  return name.slice(0, 32);
-}
+export { displayName } from '@mafia/bot-core';
 
 export class UsersService {
   constructor(private readonly db: Db) {}

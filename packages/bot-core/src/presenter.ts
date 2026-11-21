@@ -13,9 +13,9 @@ import {
   type RoleCode,
 } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
-import { encode } from '../telegram/callback-data';
+import { encode } from './callback-data';
 import type { ActionKind } from '@mafia/game-engine';
-import { buttonLabel, rows, type Button, type Keyboard, type OutboxDraft } from '../telegram/outbox-types';
+import { buttonLabel, rows, type Button, type Keyboard, type OutboxDraft } from './outbox-types';
 
 export interface PresentUser {
   telegramId: bigint;

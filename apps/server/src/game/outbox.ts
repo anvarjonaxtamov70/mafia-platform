@@ -1,5 +1,5 @@
 import type { Tx } from '@mafia/database';
-import type { OutboxDraft } from '../telegram/outbox-types';
+import type { OutboxDraft } from '@mafia/bot-core';
 
 /** Outbox yozuvlarini tranzaksiya ichida qo'shadi. dedupe_key takrorlarni o'tkazib yuboradi. */
 export async function writeOutbox(tx: Tx, drafts: OutboxDraft[]): Promise<void> {

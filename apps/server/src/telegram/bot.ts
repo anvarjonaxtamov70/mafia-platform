@@ -4,22 +4,38 @@
  */
 import { Bot, type Context, GrammyError } from 'grammy';
 import type { Message, UserFromGetMe } from 'grammy/types';
-import { availableNightActions, getRole, GAME_MODES, MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, ALL_ROLES, type EngineErrorCode, type GameMode, type GameState } from '@mafia/game-engine';
+import { availableNightActions, getRole, MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type GameMode, type GameState } from '@mafia/game-engine';
+import {
+  applySettingsOp,
+  backRow,
+  decode,
+  encode,
+  engineErrorText,
+  lobbyErrorText,
+  mafiaVoteMessage,
+  mainMenu,
+  nightActionMessage,
+  plainAlert,
+  rolesText,
+  SELECTABLE_MODES,
+  settingsView,
+  splitLong,
+  targetKeyboard,
+  type CallbackData,
+  type Keyboard,
+} from '@mafia/bot-core';
 import type { AppEnv } from '@mafia/config';
 import type { Db } from '@mafia/database';
 import { escapeHtml, t } from '@mafia/localization';
 import type { Logger } from '../infra/logger';
 import { scrubSecrets } from '../infra/logger';
 import type { CommandResult, GameService } from '../game/game.service';
-import { loadGroupSettings, saveGroupSettings, setGlobalMinPlayers, type GroupSettingsData } from '../game/group-settings';
-import type { LobbyError, LobbyService } from '../game/lobby.service';
-import { mafiaVoteMessage, nightActionMessage, targetKeyboard } from '../game/presenter';
+import { loadGroupSettings, saveGroupSettings, setGlobalMinPlayers } from '../game/group-settings';
+import type { LobbyService } from '../game/lobby.service';
 import type { QueriesService } from '../game/queries.service';
 import type { TgUser, UsersService } from '../game/users.service';
-import { decode, encode, type CallbackData } from './callback-data';
 import type { AdminChecker } from './helpers';
 import { RateLimiter } from './helpers';
-import type { Keyboard } from './outbox-types';
 
 export interface BotDeps {
   env: AppEnv;
@@ -42,194 +58,6 @@ function kb(keyboard: Keyboard) {
 
 function isGroup(ctx: Context): boolean {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
-}
-
-export function engineErrorText(e: EngineErrorCode | 'NOT_FOUND' | 'CONFLICT'): string {
-  switch (e) {
-    case 'STALE_PHASE':
-    case 'NOT_FOUND':
-      return t('cb.stale');
-    case 'GAME_FINISHED':
-      return t('cb.finished');
-    case 'NOT_A_PLAYER':
-      return t('cb.not_player');
-    case 'PLAYER_NOT_ALIVE':
-      return t('cb.not_alive');
-    case 'INVALID_TARGET':
-    case 'NOT_MAFIA':
-      return t('cb.invalid_target');
-    case 'NO_CHARGES':
-      return t('cb.no_charges');
-    case 'ALREADY_USED':
-      return t('cb.already_used');
-    case 'CANNOT_VOTE_SELF':
-      return t('cb.self_vote');
-    case 'WRONG_PHASE':
-    case 'NO_SUCH_ACTION':
-      return t('cb.wrong_phase');
-    default:
-      return t('common.error');
-  }
-}
-
-export function lobbyErrorText(e: LobbyError, details?: Record<string, string | number>): string {
-  switch (e) {
-    case 'GROUP_ACTIVE_GAME':
-      return t('lobby.exists');
-    case 'NOT_FOUND':
-    case 'NOT_LOBBY':
-      return t('lobby.not_found');
-    case 'FULL':
-      return t('lobby.full');
-    case 'NEED_DM':
-      return t('lobby.need_dm');
-    case 'IN_OTHER_GAME':
-      return t('lobby.in_other_game');
-    case 'ALREADY_JOINED':
-      return t('lobby.already_joined');
-    case 'NOT_JOINED':
-      return t('lobby.not_joined');
-    case 'NO_PERMISSION':
-      return t('lobby.no_permission');
-    case 'NOT_ENOUGH':
-      return t('lobby.not_enough', { min: details?.['min'] ?? MIN_PLAYERS_FLOOR, count: details?.['count'] ?? 0 });
-    case 'BANNED':
-      return t('common.banned');
-    case 'CREATE_FORBIDDEN':
-      return t('lobby.create_forbidden');
-    case 'DM_FAILED':
-      return t('lobby.dm_failed', { names: String(details?.['names'] ?? '') });
-  }
-}
-
-// ───────────────────────────── Menyular ─────────────────────────────
-
-function mainMenu(): Keyboard {
-  const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
-  return [
-    [b('menu.play', 'play')],
-    [b('menu.profile', 'profile'), b('menu.rating', 'rating')],
-    [b('menu.shop', 'shop'), b('menu.inventory', 'inventory')],
-    [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
-    [b('menu.invite', 'invite')],
-    [b('menu.rules', 'rules'), b('menu.settings', 'settings')],
-    [b('menu.help', 'help')],
-  ];
-}
-
-const backRow = () => [{ text: t('common.back'), callback_data: encode({ t: 'menu', section: 'home' }) }];
-
-function rolesText(): string {
-  const section = (title: string, cat: string) =>
-    `${t(title)}\n${ALL_ROLES.filter((r) => r.category === cat)
-      .map((r) => `${r.emoji} <b>${t(`role.${r.code}.name`)}</b> — ${t(`role.${r.code}.desc`)}`)
-      .join('\n')}`;
-  return [t('rules.roles_title'), section('rules.city', 'CITY'), section('rules.mafia', 'MAFIA'), section('rules.neutral', 'NEUTRAL'), section('rules.special', 'SPECIAL')].join('\n\n');
-}
-
-function splitLong(text: string, limit = 3900): string[] {
-  const parts: string[] = [];
-  let cur = '';
-  for (const block of text.split('\n\n')) {
-    if ((cur + '\n\n' + block).length > limit && cur) {
-      parts.push(cur);
-      cur = block;
-    } else cur = cur ? `${cur}\n\n${block}` : block;
-  }
-  if (cur) parts.push(cur);
-  return parts;
-}
-
-// ───────────────────────────── Guruh sozlamalari paneli ─────────────────────────────
-
-const NIGHT_STEPS = [30, 45, 60, 90, 120, 180];
-const DISCUSSION_STEPS = [30, 60, 90, 120, 180, 300];
-const VOTING_STEPS = [30, 45, 60, 90, 120];
-
-function nextStep(steps: number[], cur: number): number {
-  const i = steps.findIndex((s) => s > cur);
-  return i === -1 ? steps[0]! : steps[i]!;
-}
-
-function settingsView(s: GroupSettingsData, chatId: number): { text: string; keyboard: Keyboard } {
-  const onoff = (v: boolean) => t(v ? 'gsettings.on' : 'gsettings.off');
-  const text = t('gsettings.text', {
-    mode: t(`mode.${s.mode}`),
-    min: s.minPlayers,
-    max: s.maxPlayers,
-    night: s.nightSec,
-    discussion: s.discussionSec,
-    voting: s.votingSec,
-    verdict: s.verdictSec,
-    lobby: s.lobbySec,
-    reveal: onoff(s.revealRoles),
-    autostart: onoff(s.autostart),
-    adminOnly: onoff(s.adminOnlyCreate),
-    silenceDead: onoff(s.silenceDead),
-    silenceNight: onoff(s.silenceNight),
-  });
-  const b = (key: string, op: string) => ({ text: t(key), callback_data: encode({ t: 'gs', op, chat: chatId }) });
-  return {
-    text,
-    keyboard: [
-      [b('gsettings.btn_mode', 'mode')],
-      [b('gsettings.btn_min_minus', 'min-'), b('gsettings.btn_min_plus', 'min+')],
-      [b('gsettings.btn_max_minus', 'max-'), b('gsettings.btn_max_plus', 'max+')],
-      [b('gsettings.btn_night', 'night'), b('gsettings.btn_discussion', 'disc'), b('gsettings.btn_voting', 'vote')],
-      [b('gsettings.btn_reveal', 'reveal'), b('gsettings.btn_autostart', 'auto')],
-      [b('gsettings.btn_admin_only', 'admin'), b('gsettings.btn_silence_dead', 'sdead')],
-      [b('gsettings.btn_silence_night', 'snight')],
-      [b('gsettings.btn_close', 'close')],
-    ],
-  };
-}
-
-const SELECTABLE_MODES: GameMode[] = GAME_MODES.filter((m) => m !== 'TOURNAMENT');
-
-function applySettingsOp(s: GroupSettingsData, op: string): GroupSettingsData {
-  const n = { ...s };
-  switch (op) {
-    case 'mode':
-      n.mode = SELECTABLE_MODES[(SELECTABLE_MODES.indexOf(s.mode) + 1) % SELECTABLE_MODES.length]!;
-      break;
-    case 'min-':
-      n.minPlayers = Math.max(MIN_PLAYERS_FLOOR, s.minPlayers - 1);
-      break;
-    case 'min+':
-      n.minPlayers = Math.min(s.maxPlayers, s.minPlayers + 1);
-      break;
-    case 'max-':
-      n.maxPlayers = Math.max(s.minPlayers, s.maxPlayers - 1);
-      break;
-    case 'max+':
-      n.maxPlayers = Math.min(MAX_PLAYERS_CEILING, s.maxPlayers + 1);
-      break;
-    case 'night':
-      n.nightSec = nextStep(NIGHT_STEPS, s.nightSec);
-      break;
-    case 'disc':
-      n.discussionSec = nextStep(DISCUSSION_STEPS, s.discussionSec);
-      break;
-    case 'vote':
-      n.votingSec = nextStep(VOTING_STEPS, s.votingSec);
-      break;
-    case 'reveal':
-      n.revealRoles = !s.revealRoles;
-      break;
-    case 'auto':
-      n.autostart = !s.autostart;
-      break;
-    case 'admin':
-      n.adminOnlyCreate = !s.adminOnlyCreate;
-      break;
-    case 'sdead':
-      n.silenceDead = !s.silenceDead;
-      break;
-    case 'snight':
-      n.silenceNight = !s.silenceNight;
-      break;
-  }
-  return n;
 }
 
 // ───────────────────────────── Bot ─────────────────────────────
@@ -497,7 +325,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
           await ctx.answerCallbackQuery({ text: r.ok ? t('lobby.left') : lobbyErrorText(r.error) });
         } else if (data.op === 's') {
           const r = await lobby.start(where, { telegramId: tgId, isAdmin: await isAdminCtx(ctx) });
-          await ctx.answerCallbackQuery(r.ok ? {} : { text: lobbyErrorText(r.error, r.details).replace(/<[^>]+>/g, '').slice(0, 190), show_alert: true });
+          await ctx.answerCallbackQuery(r.ok ? {} : { text: plainAlert(lobbyErrorText(r.error, r.details)), show_alert: true });
         } else {
           const r = await lobby.cancel(where, { telegramId: tgId, isAdmin: await isAdminCtx(ctx) });
           await ctx.answerCallbackQuery(r.ok ? {} : { text: lobbyErrorText(r.error) });

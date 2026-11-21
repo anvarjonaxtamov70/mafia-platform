@@ -1,0 +1,60 @@
+# Har bir PR va deploy oldidan: lint, TypeScript, unit testlar, PostgreSQL/Redis integratsiya testlari,
+# Cloudflare Worker ning haqiqiy runtime (workerd) dagi E2E testi.
+name: Tekshiruv
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint, typecheck, testlar
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: mafia_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5432/mafia_test
+      REDIS_URL: redis://127.0.0.1:6379
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript (Node server + Cloudflare worker)
+        run: npm run typecheck
+
+      - name: Unit testlar (GameEngine, 30 rol, simulyatsiya, Cloudflare mantiqi)
+        run: npm test
+
+      - name: Integratsiya testlari (PostgreSQL, Redis)
+        run: npm run test:integration
+
+      - name: Cloudflare E2E (workerd + Durable Objects + soxta Telegram)
+        run: npm run cf:e2e

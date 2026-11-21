@@ -9,6 +9,7 @@ const alias = {
   '@mafia/localization': r('./packages/localization/src/index.ts'),
   '@mafia/config': r('./packages/config/src/index.ts'),
   '@mafia/database': r('./packages/database/src/index.ts'),
+  '@mafia/bot-core': r('./packages/bot-core/src/index.ts'),
 };
 
 export default defineConfig({

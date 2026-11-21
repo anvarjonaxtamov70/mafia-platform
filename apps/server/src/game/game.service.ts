@@ -30,7 +30,7 @@ import type { Db, Prisma, Tx } from '@mafia/database';
 import { escapeHtml, t } from '@mafia/localization';
 import type { Logger } from '../infra/logger';
 import { writeOutbox } from './outbox';
-import { present, type PresentUser } from './presenter';
+import { present, type PresentUser } from '@mafia/bot-core';
 import type { Clock, OutboxNotifier, TimerScheduler } from './ports';
 import { StatsService } from './stats.service';
 

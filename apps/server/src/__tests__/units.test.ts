@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createGame, seededRng, type ActionKind } from '@mafia/game-engine';
-import { decode, encode } from '../telegram/callback-data';
-import { normalizeSettings } from '../game/group-settings';
-import { levelForXp, totalXpForLevel, xpFor } from '../game/progression';
-import { present } from '../game/presenter';
+import { decode, encode, levelForXp, normalizeSettings, present, totalXpForLevel, xpFor } from '@mafia/bot-core';
 import { scrubSecrets } from '../infra/logger';
 
 describe('callback_data', () => {

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["@cloudflare/workers-types", "node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@mafia/game-engine": ["../../packages/game-engine/src/index.ts"],
+      "@mafia/localization": ["../../packages/localization/src/index.ts"],
+      "@mafia/bot-core": ["../../packages/bot-core/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

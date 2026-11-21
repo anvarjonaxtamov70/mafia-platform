@@ -1,8 +1,7 @@
 import type { GameState } from '@mafia/game-engine';
 import type { Tx } from '@mafia/database';
 import { t } from '@mafia/localization';
-import type { OutboxDraft } from '../telegram/outbox-types';
-import { levelForXp, simpleRating, xpFor, type RatingStrategy } from './progression';
+import { levelForXp, simpleRating, xpFor, type OutboxDraft, type RatingStrategy } from '@mafia/bot-core';
 
 export interface StatsGame {
   id: string;
@@ -24,6 +23,8 @@ export class StatsService {
   async recordGame(tx: Tx, game: StatsGame, state: GameState, users: Map<string, StatsUser>): Promise<OutboxDraft[]> {
     const result = state.result;
     if (!result) return [];
+    // Bot-o'yinchilar qatnashgan mashq o'yini statistika va reytingga yozilmaydi (farm qilishning oldini olish)
+    if ([...users.values()].some((u) => u.isFake)) return [];
     const drafts: OutboxDraft[] = [];
     for (const r of result.players) {
       const u = users.get(r.playerId);

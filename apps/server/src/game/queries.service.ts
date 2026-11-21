@@ -1,7 +1,7 @@
 import type { GameState } from '@mafia/game-engine';
 import type { Db } from '@mafia/database';
 import { escapeHtml, t } from '@mafia/localization';
-import { totalXpForLevel } from './progression';
+import { totalXpForLevel } from '@mafia/bot-core';
 import { displayName } from './users.service';
 
 /** Faqat o'qish uchun so'rovlar (profil, reyting, holat). Maxfiy rollar chiqarilmaydi. */
