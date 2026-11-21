@@ -67,7 +67,9 @@ export class ConfigError extends Error {
 
 /** Xato xabarida qiymatlar emas, faqat kalit nomlari ko'rsatiladi (token logga tushmasin). */
 export function loadEnv(source: Record<string, string | undefined> = process.env): AppEnv {
-  const parsed = envSchema.safeParse(source);
+  // .env dagi bo'sh qiymatlar (masalan, WEBHOOK_URL=) o'rnatilmagan deb hisoblanadi
+  const cleaned = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined && v.trim() !== ''));
+  const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new ConfigError(`Konfiguratsiya xatosi: ${issues}`);

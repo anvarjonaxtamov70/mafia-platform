@@ -25,6 +25,12 @@ describe('loadEnv', () => {
     ).toThrow(/DEV_FAKE_PLAYERS/);
   });
 
+  it('bo‘sh qiymatlar o‘rnatilmagan deb hisoblanadi (.env.example dan nusxa)', () => {
+    const env = loadEnv({ DATABASE_URL: 'postgresql://x', BOT_TOKEN: TOKEN, WEBHOOK_URL: '', WEBHOOK_SECRET: '', BOT_USERNAME: '', SUPERADMIN_IDS: '' });
+    expect(env.WEBHOOK_URL).toBeUndefined();
+    expect(env.SUPERADMIN_IDS).toEqual([]);
+  });
+
   it('LOG_LEVEL katta harfda ham qabul qilinadi', () => {
     expect(loadEnv({ DATABASE_URL: 'postgresql://x', BOT_TOKEN: TOKEN, LOG_LEVEL: 'INFO' }).LOG_LEVEL).toBe('info');
   });

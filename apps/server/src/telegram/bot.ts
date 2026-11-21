@@ -667,8 +667,10 @@ export function createBot(token: string, deps: BotDeps): Bot {
   return bot;
 }
 
-/** BotFather buyruqlar menyusi (guruh va shaxsiy chat uchun alohida) — §3.3 */
+/** BotFather buyruqlar menyusi (guruh va shaxsiy chat uchun alohida) va bot tavsifi — §3.3 */
 export async function registerCommands(bot: Bot): Promise<void> {
+  await bot.api.setMyDescription(t('bot.description'));
+  await bot.api.setMyShortDescription(t('bot.short_description'));
   await bot.api.setMyCommands(
     [
       { command: 'start', description: 'Bosh menyu' },

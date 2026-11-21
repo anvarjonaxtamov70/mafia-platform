@@ -9,7 +9,6 @@
   "common.only_private": "Bu buyruq faqat bot bilan shaxsiy chatda ishlaydi.",
   "common.only_group": "Bu buyruq faqat guruhda ishlaydi.",
   "common.banned": "⛔ Siz bot o‘yinlaridan cheklangansiz.",
-
   "menu.welcome": "🎭 <b>MAFIA GAME</b>\n\nMafia olamiga xush kelibsiz, {name}!\n\nBu yerda siz:\n• Mafia o‘yinlarida qatnashasiz\n• Maxsus rollarni bajarasiz\n• Darajangizni oshirasiz\n• Mukofotlar olasiz\n• Do‘stlaringiz bilan bellashasiz\n\n━━━━━━━━━━━━━━━━",
   "menu.play": "🎮 O‘yin boshlash",
   "menu.profile": "👤 Mening profilim",
@@ -22,18 +21,15 @@
   "menu.rules": "📖 Qoidalar",
   "menu.settings": "⚙️ Sozlamalar",
   "menu.help": "🆘 Yordam",
-
   "play.text": "🎭 <b>Mafia o‘ynash</b>\n\nO‘yinni Telegram guruhida do‘stlaringiz bilan boshlang.\n\nQuyidagi tugma orqali botni guruhga qo‘shing, keyin guruhda /game yozing.",
   "play.add_to_group": "➕ Guruhga qo‘shish",
   "play.rules": "📖 O‘yin qoidalari",
-
   "rules.text": "📖 <b>MAFIA QOIDALARI</b>\n\nHar bir o‘yinchi yashirin rol oladi. Rolingiz faqat shaxsiy chatda ko‘rinadi.\n\n🌙 <b>Tun</b> — maxsus rollar shaxsiy chatdagi tugmalar orqali harakat qiladi. Mafia bitta qurbon tanlaydi.\n🌅 <b>Tong</b> — tunda nima bo‘lgani e’lon qilinadi.\n☀️ <b>Kunduz</b> — muhokama, keyin ovoz berish. Eng ko‘p ovoz olgan (kamida 2) o‘yinchi chiqariladi. Teng ovozda hech kim chiqmaydi.\n\n🔵 <b>Shahar</b> barcha Mafiani topsa yutadi.\n🔴 <b>Mafia</b> soni qolganlarga teng bo‘lsa yutadi.\n🟣 <b>Mustaqil</b> rollarning o‘z maqsadi bor.\n\nO‘yinchilar: {min}–{max}. Batafsil: /roles",
   "rules.roles_title": "🎭 <b>ROLLAR</b>",
   "rules.city": "🔵 <b>Shahar</b>",
   "rules.mafia": "🔴 <b>Mafia</b>",
   "rules.neutral": "🟣 <b>Mustaqil</b>",
   "rules.special": "✨ <b>Maxsus (Shahar)</b>",
-
   "help.text": "🆘 <b>YORDAM</b>\n\n<b>Guruhda:</b>\n/game — yangi o‘yin\n/join — qo‘shilish\n/leave — chiqish\n/players — ishtirokchilar\n/gstart — o‘yinni boshlash\n/status — o‘yin holati\n/cancelgame — o‘yinni bekor qilish\n/settings — sozlamalar (admin)\n/leaderboard — guruh reytingi\n\n<b>Shaxsiy chatda:</b>\n/start — bosh menyu\n/profile — profil\n/rules, /roles — qoidalar\n/privacy — maxfiylik\n/delete_me — ma’lumotlarni o‘chirish\n\nMuammo bo‘lsa: /support",
   "support.text": "🆘 Muammo haqida xabar berish tizimi keyingi bosqichda ishga tushadi. Hozircha guruh administratoriga murojaat qiling.",
   "privacy.text": "🔒 <b>MAXFIYLIK</b>\n\nBot faqat o‘yin uchun zarur ma’lumotlarni saqlaydi: Telegram ID, ism, username, o‘yin natijalari va statistika.\n\nGuruhdagi oddiy suhbatlar saqlanmaydi. O‘lgan o‘yinchilar yoki tungi xabarlarni o‘chirish yoqilgan bo‘lsa, bot ularni faqat o‘chiradi, saqlamaydi.\n\nMa’lumotlaringizni o‘chirish: /delete_me",
@@ -41,7 +37,6 @@
   "delete.done": "✅ Ma’lumotlaringiz anonimlashtirildi.",
   "delete.in_game": "Faol o‘yinda qatnashayotganingiz uchun hozir o‘chirib bo‘lmaydi.",
   "settings.text": "⚙️ <b>SOZLAMALAR</b>\n\n🌐 Til: O‘zbekcha\n\nRus va ingliz tillari keyingi bosqichda qo‘shiladi.",
-
   "profile.text": "👤 <b>O‘YINCHI PROFILI</b>\n\nIsm: {name}\nID: <code>{id}</code>\n🎖 Daraja: {level}\n⭐ XP: {xp} (keyingi daraja: {nextXp})\n🏅 Reyting: {rating} RP\n\n🎮 O‘yinlar: {played}\n🏆 G‘alabalar: {won}\n💀 Mag‘lubiyatlar: {lost}\n🤝 Durranglar: {drawn}\n📊 G‘alaba foizi: {winRate}%\n\n🔴 Mafia g‘alabalari: {mafiaWins}\n🔵 Shahar g‘alabalari: {cityWins}\n🟣 Mustaqil g‘alabalar: {neutralWins}\n\n🔥 Ketma-ket g‘alabalar: {streak} (eng yaxshi: {bestStreak})",
   "rating.title": "🏆 <b>UMUMIY REYTING</b>",
   "rating.line": "{place}. {name} — {rp} RP",
@@ -49,10 +44,8 @@
   "rating.you": "\nSizning o‘rningiz: {place}\nSizning balingiz: {rp} RP",
   "group_rating.title": "🏆 <b>GURUH REYTINGI</b> (g‘alabalar)",
   "group_rating.line": "{place}. {name} — {wins} g‘alaba / {games} o‘yin",
-
   "group.welcome": "🎭 <b>Mafia bot guruhga qo‘shildi!</b>\n\nO‘yin boshlash uchun /game yozing.\n\nTavsiya: botni guruhda administrator qiling (xabarlarni o‘chirish huquqi bilan). Shunda o‘lgan o‘yinchilar va tungi xabarlar nazorat qilinadi.",
   "group.migrated": "Guruh superguruhga ko‘chirildi, o‘yin ma’lumotlari saqlandi.",
-
   "lobby.title": "🎭 <b>YANGI MAFIA O‘YINI!</b>\n\n👑 Tashkilotchi: {host}\n🎮 Rejim: {mode}\n👥 O‘yinchilar: {count}/{max}\n\n━━━━━━━━━━━━━━━━\n{list}\n━━━━━━━━━━━━━━━━\n\n{hint}",
   "lobby.need_more": "⏳ O‘yin boshlanishi uchun kamida {min} kishi kerak.",
   "lobby.ready": "✅ O‘yinni boshlash mumkin! Avtomatik start: {seconds} soniyadan keyin.",
@@ -81,18 +74,15 @@
   "lobby.dm_failed": "⚠️ Quyidagi o‘yinchilarga shaxsiy xabar yuborib bo‘lmadi: {names}.\nUlar botga /start bosishi kerak. O‘yin boshlanmadi, ular ro‘yxatdan chiqarildi.",
   "lobby.players_title": "👥 <b>Ishtirokchilar ({count}):</b>\n{list}",
   "lobby.dev_filled": "🤖 {count} ta bot-o‘yinchi qo‘shildi (faqat development).",
-
   "mode.CLASSIC": "Classic",
   "mode.ADVANCED": "Advanced",
   "mode.CHAOS": "Chaos",
   "mode.ARCADE": "Arcade",
   "mode.PRIVATE": "Private",
   "mode.TOURNAMENT": "Tournament",
-
   "faction.CITY": "SHAHAR",
   "faction.MAFIA": "MAFIA",
   "faction.NEUTRAL": "MUSTAQIL",
-
   "game.started": "🎭 <b>O‘YIN BOSHLANDI!</b>\n\n👥 O‘yinchilar: {count}\n🎮 Rejim: {mode}\n\nRollar shaxsiy chatga yuborildi. Rolingizni hech kimga ko‘rsatmang!",
   "game.night": "🌙 <b>TUN BOSHLANDI!</b> ({night}-tun)\n\nShahar uyquga ketdi.\nMafia esa harakatga tushdi...\n\n⏳ Vaqt: {seconds} soniya\n\nMaxsus rollar shaxsiy chatdagi tugmalardan foydalaning.",
   "game.dawn": "🌅 <b>TONG OTDI!</b>\n\nShahar uyg‘ondi.\n\n{body}\n\nTirik o‘yinchilar: {alive}",
@@ -133,14 +123,12 @@
   "game.status": "🎭 <b>O‘YIN HOLATI</b>\n\n🎮 Rejim: {mode}\n📍 Bosqich: {phase}\n🌙 Tun: {night} · ☀️ Kun: {day}\n⏳ Qolgan vaqt: {left} soniya\n\n<b>Tiriklar ({aliveCount}):</b>\n{alive}",
   "game.no_active": "Bu guruhda hozir faol o‘yin yo‘q. Yangi o‘yin: /game",
   "game.you_left": "Siz o‘yindan chiqdingiz. Bu mag‘lubiyat hisoblanadi.",
-
   "phase.NIGHT": "🌙 Tun",
   "phase.DAY_DISCUSSION": "☀️ Muhokama",
   "phase.DAY_VOTING": "⚖️ Ovoz berish",
   "phase.DAY_VERDICT": "⚖️ Hukm",
   "phase.ENDED": "🏁 Tugadi",
   "phase.LOBBY": "⏳ Lobby",
-
   "dm.role": "🎭 <b>SIZNING ROLINGIZ: {emoji} {role}</b>\n\nJamoa: {faction}\n\n{desc}",
   "dm.mafia_team": "🔴 <b>MAFIA JAMOANGIZ:</b>\n{list}\n\nTunda shu chatga yozgan xabarlaringiz jamoadoshlaringizga yetkaziladi.",
   "dm.twin_partner": "👯 Sizning egizagingiz: {name}",
@@ -192,7 +180,6 @@
   "dm.outcome.DRAW": "🤝 Durrang",
   "dm.outcome.PERSONAL_WIN": "🏅 Shaxsiy g‘alaba",
   "dm.dead_info": "💀 Siz halok bo‘ldingiz. O‘yinni kuzatishingiz mumkin, lekin guruhda yozmang.",
-
   "cb.stale": "⌛ Bu tugma eskirgan. Yangi xabardagi tugmalardan foydalaning.",
   "cb.not_player": "Siz bu o‘yinda qatnashmayapsiz.",
   "cb.not_alive": "Siz endi o‘yinda emassiz.",
@@ -204,7 +191,6 @@
   "cb.voted_none": "🗳 Ovozingiz: Hech kim",
   "cb.already_used": "Bu qobiliyat allaqachon ishlatilgan.",
   "cb.finished": "O‘yin tugagan.",
-
   "gsettings.text": "🎮 <b>O‘YIN SOZLAMALARI</b>\n\nRejim: {mode}\nMin o‘yinchi: {min}\nMax o‘yinchi: {max}\n\nTun: {night} soniya\nMuhokama: {discussion} soniya\nOvoz berish: {voting} soniya\nHukm: {verdict} soniya\nLobby: {lobby} soniya\n\nRolni oshkor qilish: {reveal}\nAvtomatik start: {autostart}\nFaqat admin o‘yin yaratadi: {adminOnly}\n🔇 O‘lganlar yozolmaydi: {silenceDead}\n🌙 Tunda guruh jim: {silenceNight}",
   "gsettings.on": "Yoqilgan",
   "gsettings.off": "O‘chirilgan",
@@ -225,12 +211,10 @@
   "gsettings.btn_silence_night": "🌙 Tungi jimlik",
   "gsettings.btn_close": "✖️ Yopish",
   "gsettings.no_delete_rights": "⚠️ Xabarlarni o‘chirish uchun botga administrator huquqi (xabarlarni o‘chirish) bering.",
-
   "admin.no_access": "⛔ Ruxsat yo‘q.",
   "admin.min_set": "✅ Standart minimal o‘yinchi soni: {min}. (Qat’iy pastki chegara: 4)",
   "admin.min_usage": "Foydalanish: /admin_minplayers 4..30",
   "admin.stats": "📊 <b>BOT HOLATI</b>\n\n👤 Foydalanuvchilar: {users}\n👥 Guruhlar: {groups}\n🎮 Faol o‘yinlar: {active}\n✅ Bugun tugagan: {today}\n📨 Navbatdagi xabarlar: {outbox}",
-
   "role.CITIZEN.name": "FUQARO",
   "role.CITIZEN.desc": "Siz oddiy shahar aholisisiz. Tungi qobiliyatingiz yo‘q. Kunduz muhokamada qatnashing va Mafiaga ovoz bering.",
   "role.CITIZEN.prompt": "",
@@ -321,7 +305,8 @@
   "role.PHOENIX.name": "FENIKS",
   "role.PHOENIX.desc": "Tungi hujumda halok bo‘lishingiz kerak bo‘lsa, bir marta qayta tirilasiz.",
   "role.PHOENIX.prompt": "",
-
   "action.WIZARD_MIRAGE": "🌫 Mirage",
-  "action.WIZARD_BARRIER": "🛡 Barrier"
+  "action.WIZARD_BARRIER": "🛡 Barrier",
+  "bot.description": "🎭 Telegram guruhlarida Mafia o‘yini.\n\n• 30 xil rol: Komissar, Doktor, Don, Manyak, Amur va boshqalar\n• 4–30 o‘yinchi\n• Tun va kunduz, yashirin ovoz berish\n• Profil, daraja va reyting\n\nBotni guruhga qo‘shing (administrator qiling) va /game yozing.",
+  "bot.short_description": "🎭 Guruhda Mafia o‘ynang: 30 rol, 4–30 o‘yinchi. Botni guruhga qo‘shing va /game yozing."
 }

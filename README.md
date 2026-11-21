@@ -7,9 +7,12 @@ Telegram guruhlarida o‘ynaladigan Mafia o‘yini. O‘yin qoidalari Telegramda
 - Bir vaqtda ko‘plab guruhlarda mustaqil o‘yinlar, restartdan keyin davom etadi
 - Asosiy til: o‘zbekcha (lotin)
 
+Bot: [@Hypernovamafia_bot](https://t.me/Hypernovamafia_bot)
+
 Hujjatlar:
 - [docs/01-SPEC-TAHLIL-VA-TUZATISHLAR.md](docs/01-SPEC-TAHLIL-VA-TUZATISHLAR.md) — spetsifikatsiya tahlili va v1.1 qoidalari
 - [docs/02-ISH-REJASI.md](docs/02-ISH-REJASI.md) — reja va har bir bosqich holati
+- [docs/03-DEPLOY.md](docs/03-DEPLOY.md) — botni serverga joylash (24/7)
 
 ---
 
@@ -102,7 +105,7 @@ npm run sim -- 1000       # balans statistikasi
 ```
 `test:integration` PostgreSQL va Redis ishlab turgan bo‘lsa ulardan foydalanadi (`docker compose up -d postgres redis`). Docker yo‘q muhit uchun `scripts/with-services.sh` lokal binarilarni ishga tushira oladi.
 
-Oxirgi natija: **11 fayl, 120 test — hammasi o‘tdi**; lint va typecheck toza.
+Oxirgi natija: **11 fayl, 121 test — hammasi o‘tdi**; lint va typecheck toza.
 
 ---
 
@@ -118,7 +121,8 @@ Oxirgi natija: **11 fayl, 120 test — hammasi o‘tdi**; lint va typecheck toza
 | Parallellik, restart tiklanishi, eskirgan tugmalar | ✅ VERIFIED (integration) |
 | Outbox dispatcher (tartib, 429, 403, birlashtirish) | ✅ VERIFIED (soxta Telegram API bilan) |
 | BullMQ taymerlari | ✅ VERIFIED (haqiqiy Redis) |
-| Telegram adapter (menyu, lobby, tugmalar, sozlamalar, jimlik) | 🟡 TESTED — soxta Bot API bilan E2E; **haqiqiy Telegram’da sinalmagan** (token kerak) |
+| Telegram ulanishi (getMe, buyruqlar menyusi, tavsif, polling) | ✅ VERIFIED — haqiqiy Telegram API bilan |
+| Telegram adapter (menyu, lobby, tugmalar, sozlamalar, jimlik) | 🟡 TESTED — soxta Bot API bilan E2E; haqiqiy guruhda odamlar bilan hali o‘ynalmagan |
 | Webhook rejimi | 🟡 IMPLEMENTED — HTTPS domen kerak, sinalmagan |
 | Docker / docker-compose | 🟡 IMPLEMENTED — sandboxda Docker ishlamaydi, sinalmagan |
 | Do‘kon, Coins, inventar, kunlik mukofot, vazifalar | ⏳ PENDING (sxema tayyor) |

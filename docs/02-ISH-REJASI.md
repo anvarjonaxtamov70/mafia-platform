@@ -98,7 +98,8 @@ Sxema tayyor (`referrals`, `achievements`, `user_achievements`).
 ## Sizdan kerak bo‘ladigan narsalar
 | Nima | Qachon | Nima uchun |
 |---|---|---|
-| Bot token (BotFather) | Hozir | Haqiqiy Telegram’da sinash. Faqat `.env` ga yoziladi |
-| 1–2 test guruhi | Hozir | `/devfill` bilan yolg‘iz ham sinash mumkin, keyin 4+ odam |
-| Server tanlovi va rozilik | M11 | Production |
+| Bot token (BotFather) | ✅ Berildi | @Hypernovamafia_bot, Telegram API bilan ulanish tekshirildi |
+| Superadminlar | ✅ Berildi | 5105291033, 7184608742 |
+| Server tanlovi va rozilik | Hozir | Bot 24/7 ishlashi uchun (`docs/03-DEPLOY.md`) |
+| 1–2 test guruhi | Server ishga tushgach | `/devfill` bilan yolg‘iz ham sinash mumkin, keyin 4+ odam |
 | Stars sinovi uchun rozilik | M8 | Haqiqiy to‘lov |

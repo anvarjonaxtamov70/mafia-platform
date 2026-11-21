@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS build
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/config/package.json packages/config/
@@ -12,6 +13,7 @@ COPY . .
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
+RUN apk add --no-cache openssl wget
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
