@@ -1,0 +1,12 @@
+{
+  "name": "@mafia/game-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegramdan mustaqil, deterministik Mafia o'yin dvigateli",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
