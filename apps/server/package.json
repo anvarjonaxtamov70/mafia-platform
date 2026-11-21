@@ -1,0 +1,29 @@
+{
+  "name": "@mafia/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram bot (grammY) + worker (BullMQ) + HTTP (NestJS)",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "@mafia/config": "0.1.0",
+    "@mafia/database": "0.1.0",
+    "@mafia/game-engine": "0.1.0",
+    "@mafia/localization": "0.1.0",
+    "@nestjs/common": "^12.6.0",
+    "@nestjs/core": "^12.6.0",
+    "@nestjs/platform-express": "^12.6.0",
+    "bullmq": "^6.7.8",
+    "grammy": "1.46",
+    "ioredis": "^6.0.0",
+    "pino": "^10.4.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  }
+}
