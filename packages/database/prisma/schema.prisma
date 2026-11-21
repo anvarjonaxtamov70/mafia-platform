@@ -1,0 +1,641 @@
+// Mafia Platform — PostgreSQL sxemasi (spec §27 + v1.1 T8 tuzatishlari)
+// Pul miqdorlari faqat butun son (BigInt/Int). Telegram ID lari BigInt.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Foydalanuvchilar ─────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  telegramId   BigInt    @unique @map("telegram_user_id")
+  username     String?
+  firstName    String    @default("") @map("first_name")
+  lastName     String?   @map("last_name")
+  languageCode String?   @map("language_code")
+  locale       String    @default("uz")
+  /// Bot bilan shaxsiy chat ochilganmi (/start bosilgan)
+  dmAvailable  Boolean   @default(false) @map("dm_available")
+  /// Foydalanuvchi botni bloklagan vaqt (403)
+  dmBlockedAt  DateTime? @map("dm_blocked_at")
+  /// Development bot-o'yinchisi
+  isFake       Boolean   @default(false) @map("is_fake")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastActiveAt DateTime  @default(now()) @map("last_active_at")
+  /// /delete_me — anonimlashtirilgan vaqt
+  deletedAt    DateTime? @map("deleted_at")
+
+  profile          UserProfile?
+  roleStats        UserRoleStat[]
+  bans             Ban[]
+  gamePlayers      GamePlayer[]
+  hostedGames      Game[]            @relation("GameHost")
+  results          GameResult[]
+  wallet           WalletTransaction[]
+  inventory        InventoryItem[]
+  orders           Order[]
+  payments         Payment[]
+  subscriptions    Subscription[]
+  referralsMade    Referral[]        @relation("Referrer")
+  referredBy       Referral?         @relation("Referred")
+  achievements     UserAchievement[]
+  quests           UserQuest[]
+  tickets          SupportTicket[]
+  ratingEntries    RatingEntry[]
+  adminRole        AdminUser?
+  dailyRewards     DailyRewardClaim[]
+
+  @@index([username])
+  @@map("users")
+}
+
+model UserProfile {
+  userId           String   @id @map("user_id")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level            Int      @default(1)
+  xp               Int      @default(0)
+  /// Kesh: wallet_transactions dan qayta hisoblanadi
+  coinsCached      BigInt   @default(0) @map("coins_cached_balance")
+  rating           Int      @default(1000)
+  gamesPlayed      Int      @default(0) @map("games_played")
+  gamesFinished    Int      @default(0) @map("games_finished")
+  gamesWon         Int      @default(0) @map("games_won")
+  gamesLost        Int      @default(0) @map("games_lost")
+  gamesDrawn       Int      @default(0) @map("games_drawn")
+  gamesLeft        Int      @default(0) @map("games_left")
+  personalWins     Int      @default(0) @map("personal_wins")
+  mafiaWins        Int      @default(0) @map("mafia_wins")
+  cityWins         Int      @default(0) @map("city_wins")
+  neutralWins      Int      @default(0) @map("neutral_wins")
+  survivedGames    Int      @default(0) @map("survived_games")
+  currentWinStreak Int      @default(0) @map("current_win_streak")
+  bestWinStreak    Int      @default(0) @map("best_win_streak")
+  afkStrikes       Int      @default(0) @map("afk_strikes")
+  selectedAvatar   String?  @map("selected_avatar")
+  selectedFrame    String?  @map("selected_frame")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([rating])
+  @@map("user_profiles")
+}
+
+model UserRoleStat {
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   String
+  played Int    @default(0)
+  won    Int    @default(0)
+
+  @@id([userId, role])
+  @@map("user_role_stats")
+}
+
+model Ban {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String
+  createdBy String?   @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  @@index([userId])
+  @@map("bans")
+}
+
+model AdminUser {
+  userId    String   @id @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SUPERADMIN | ADMIN | MODERATOR | SUPPORT | ANALYST
+  role      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admin_users")
+}
+
+// ───────────────────────────── Guruhlar ─────────────────────────────
+
+model Group {
+  id               String    @id @default(cuid())
+  telegramChatId   BigInt    @unique @map("telegram_chat_id")
+  title            String    @default("")
+  /// ACTIVE | LEFT | MIGRATED
+  status           String    @default("ACTIVE")
+  migratedToChatId BigInt?   @map("migrated_to_chat_id")
+  botIsAdmin       Boolean   @default(false) @map("bot_is_admin")
+  premiumExpiresAt DateTime? @map("premium_expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  settings      GroupSettings?
+  games         Game[]
+  subscriptions Subscription[]
+
+  @@map("groups")
+}
+
+/// Guruh sozlamalarining yagona manbasi (v1.1 T8)
+model GroupSettings {
+  groupId   String   @id @map("group_id")
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  data      Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("group_settings")
+}
+
+/// Global sozlamalar (masalan, standart minimal o'yinchi soni) — superadmin boshqaradi
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("app_settings")
+}
+
+// ───────────────────────────── O'yinlar ─────────────────────────────
+
+model Game {
+  id              String    @id @default(cuid())
+  /// Qisqa raqam: callback_data va deep link uchun (64 bayt limiti)
+  number          Int       @unique @default(autoincrement())
+  groupId         String    @map("group_id")
+  group           Group     @relation(fields: [groupId], references: [id])
+  chatId          BigInt    @map("chat_id")
+  hostUserId      String    @map("host_user_id")
+  host            User      @relation("GameHost", fields: [hostUserId], references: [id])
+  mode            String
+  /// LOBBY | RUNNING | FINISHED | CANCELLED
+  status          String
+  phase           String    @default("LOBBY")
+  phaseSeq        Int       @default(0) @map("phase_number")
+  phaseDeadlineAt DateTime? @map("phase_deadline_at")
+  /// Faol o'yin vaqtida groupId, aks holda null → guruhda bitta faol o'yin (unique)
+  activeGroupKey  String?   @unique @map("active_group_key")
+  lobbyMessageId  Int?      @map("lobby_message_id")
+  configSnapshot  Json      @map("config_snapshot")
+  balanceVersion  String    @map("balance_version")
+  /// GameEngine holati (snapshot). Maxfiy rollarni o'z ichiga oladi — APIga chiqarilmaydi.
+  state           Json?
+  winnerType      String?   @map("winner_type")
+  /// Optimistik versiya (har o'zgarishda +1)
+  version         Int       @default(0)
+  cancelReason    String?   @map("cancel_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  startedAt       DateTime? @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+
+  players  GamePlayer[]
+  events   GameEvent[]
+  actions  RoleAction[]
+  votes    Vote[]
+  results  GameResult[]
+
+  @@index([status, phaseDeadlineAt])
+  @@index([groupId, createdAt])
+  @@map("games")
+}
+
+model GamePlayer {
+  id            String    @id @default(cuid())
+  gameId        String    @map("game_id")
+  game          Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id])
+  seatNumber    Int?      @map("seat_number")
+  displayName   String    @map("display_name")
+  roleId        String?   @map("role_id")
+  faction       String?
+  /// JOINED | ALIVE | DEAD | LEFT | PERSONAL_WIN_EXIT
+  status        String    @default("JOINED")
+  /// Foydalanuvchi faol o'yinda bo'lsa userId, aks holda null → bir vaqtda bitta faol o'yin
+  activeUserKey String?   @unique @map("active_user_key")
+  joinedAt      DateTime  @default(now()) @map("joined_at")
+  diedAt        DateTime? @map("died_at")
+  exitReason    String?   @map("exit_reason")
+
+  @@unique([gameId, userId])
+  @@index([userId])
+  @@map("game_players")
+}
+
+/// O'yin tarixi va audit (spec §27.8)
+model GameEvent {
+  id              BigInt   @id @default(autoincrement())
+  gameId          String   @map("game_id")
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  sequence        Int
+  phaseSeq        Int      @map("phase_number")
+  eventType       String   @map("event_type")
+  /// PUBLIC | PRIVATE | MAFIA | SYSTEM
+  visibility      String
+  recipientUserId String?  @map("recipient_user_id")
+  payload         Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([gameId, sequence])
+  @@map("game_events")
+}
+
+model RoleAction {
+  id             String    @id @default(cuid())
+  gameId         String    @map("game_id")
+  game           Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  phaseNumber    Int       @map("phase_number")
+  nightNumber    Int       @map("night_number")
+  actorUserId    String    @map("actor_id")
+  actionType     String    @map("action_type")
+  targetIds      Json      @map("target_ids")
+  /// SUBMITTED | SKIPPED
+  status         String
+  submittedAt    DateTime  @default(now()) @map("submitted_at")
+  idempotencyKey String    @unique @map("idempotency_key")
+
+  @@index([gameId, nightNumber])
+  @@map("role_actions")
+}
+
+model Vote {
+  id           String   @id @default(cuid())
+  gameId       String   @map("game_id")
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  dayNumber    Int      @map("day_number")
+  voterUserId  String   @map("voter_id")
+  /// null — "Hech kim"
+  targetUserId String?  @map("target_id")
+  choice       String
+  submittedAt  DateTime @default(now()) @map("submitted_at")
+
+  @@unique([gameId, dayNumber, voterUserId])
+  @@map("votes")
+}
+
+model GameResult {
+  id            String   @id @default(cuid())
+  gameId        String   @map("game_id")
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id])
+  roleId        String   @map("role_id")
+  faction       String
+  /// WIN | LOSS | DRAW | PERSONAL_WIN
+  resultType    String   @map("result_type")
+  survived      Boolean
+  xpAwarded     Int      @default(0) @map("xp_awarded")
+  coinsAwarded  Int      @default(0) @map("coins_awarded")
+  ratingChange  Int      @default(0) @map("rating_change")
+  ranked        Boolean  @default(false)
+  groupId       String   @map("group_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([gameId, userId])
+  @@index([userId, createdAt])
+  @@index([groupId, createdAt])
+  @@map("game_results")
+}
+
+// ───────────────────────────── Telegram xabarlari ─────────────────────────────
+
+/// Transactional outbox: o'yin xabarlari holat bilan birga yoziladi, keyin navbat orqali yuboriladi
+model OutboxMessage {
+  id            BigInt    @id @default(autoincrement())
+  chatId        BigInt    @map("chat_id")
+  /// SEND | EDIT | DELETE
+  kind          String
+  payload       Json
+  /// Bir xil voqea uchun takroriy xabar yuborilmasin
+  dedupeKey     String    @unique @map("dedupe_key")
+  /// EDIT lar uchun: faqat eng oxirgisi yuboriladi
+  coalesceKey   String?   @map("coalesce_key")
+  /// Yuborilgan xabar ID sini message_refs ga saqlash kaliti
+  storeRefAs    String?   @map("store_ref_as")
+  /// PENDING | SENDING | SENT | FAILED | SKIPPED
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  lockedAt      DateTime? @map("locked_at")
+  lastError     String?   @map("last_error")
+  gameId        String?   @map("game_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  sentAt        DateTime? @map("sent_at")
+
+  @@index([status, nextAttemptAt])
+  @@index([coalesceKey])
+  @@map("outbox_messages")
+}
+
+model MessageRef {
+  key       String   @id
+  chatId    BigInt   @map("chat_id")
+  messageId Int      @map("message_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("message_refs")
+}
+
+/// Webhook update idempotentligi
+model ProcessedUpdate {
+  updateId  BigInt   @id @map("update_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("webhook_updates")
+}
+
+// ───────────────────────────── Iqtisodiyot (M7) ─────────────────────────────
+
+model WalletTransaction {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id])
+  /// Faqat COINS. Stars alohida payments ledger da (§17.2)
+  currency       String   @default("COINS")
+  amount         BigInt
+  balanceAfter   BigInt   @map("balance_after")
+  type           String
+  referenceType  String?  @map("reference_type")
+  referenceId    String?  @map("reference_id")
+  idempotencyKey String   @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("wallet_transactions")
+}
+
+model DailyRewardClaim {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  /// Asia/Tashkent bo'yicha sana (YYYY-MM-DD)
+  day       String
+  streak    Int
+  amount    Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, day])
+  @@map("daily_reward_claims")
+}
+
+model Product {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  description      String   @default("")
+  category         String
+  price            Int
+  /// COINS | XTR
+  currency         String
+  rarity           String   @default("COMMON")
+  effectType       String?  @map("effect_type")
+  durationDays     Int?     @map("duration_days")
+  usageLimit       Int?     @map("usage_limit")
+  allowedGameModes String[] @default([]) @map("allowed_game_modes")
+  isActive         Boolean  @default(true) @map("is_active")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  inventory InventoryItem[]
+  orders    Order[]
+
+  @@map("products")
+}
+
+model InventoryItem {
+  id                String    @id @default(cuid())
+  userId            String    @map("user_id")
+  user              User      @relation(fields: [userId], references: [id])
+  productId         String    @map("product_id")
+  product           Product   @relation(fields: [productId], references: [id])
+  quantity          Int       @default(1)
+  /// AVAILABLE | RESERVED | EQUIPPED | CONSUMED | EXPIRED | REFUNDED
+  state             String    @default("AVAILABLE")
+  equippedAt        DateTime? @map("equipped_at")
+  reservedForGameId String?   @map("reserved_for_game_id")
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, state])
+  @@map("inventory_items")
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id])
+  productId      String?  @map("product_id")
+  product        Product? @relation(fields: [productId], references: [id])
+  planId         String?  @map("plan_id")
+  groupId        String?  @map("group_id")
+  price          Int
+  currency       String
+  /// CREATED | PAID | FULFILLED | FAILED | REFUNDED | EXPIRED
+  status         String   @default("CREATED")
+  invoicePayload String   @unique @map("invoice_payload")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  payments Payment[]
+
+  @@map("orders")
+}
+
+model Payment {
+  id                      String    @id @default(cuid())
+  userId                  String    @map("user_id")
+  user                    User      @relation(fields: [userId], references: [id])
+  orderId                 String    @map("order_id")
+  order                   Order     @relation(fields: [orderId], references: [id])
+  provider                String    @default("TELEGRAM_STARS")
+  currency                String
+  amount                  Int
+  invoicePayload          String    @map("invoice_payload")
+  telegramPaymentChargeId String    @unique @map("telegram_payment_charge_id")
+  status                  String
+  isRecurring             Boolean   @default(false) @map("is_recurring")
+  subscriptionExpiresAt   DateTime? @map("subscription_expires_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  paidAt                  DateTime? @map("paid_at")
+  refundedAt              DateTime? @map("refunded_at")
+
+  refunds       PaymentRefund[]
+  subscriptions Subscription[]
+
+  @@map("payments")
+}
+
+model PaymentRefund {
+  id        String   @id @default(cuid())
+  paymentId String   @map("payment_id")
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  reason    String
+  actorId   String?  @map("actor_id")
+  status    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("payment_refunds")
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  groupId   String?  @map("group_id")
+  group     Group?   @relation(fields: [groupId], references: [id])
+  planId    String   @map("plan_id")
+  status    String
+  startedAt DateTime @map("started_at")
+  expiresAt DateTime @map("expires_at")
+  paymentId String?  @map("payment_id")
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  autoRenew Boolean  @default(false) @map("auto_renew")
+
+  @@index([userId, expiresAt])
+  @@map("subscriptions")
+}
+
+// ───────────────────────────── Ijtimoiy (M9) ─────────────────────────────
+
+model Referral {
+  id              String    @id @default(cuid())
+  referrerId      String    @map("referrer_id")
+  referrer        User      @relation("Referrer", fields: [referrerId], references: [id])
+  referredUserId  String    @unique @map("referred_user_id")
+  referred        User      @relation("Referred", fields: [referredUserId], references: [id])
+  /// PENDING | QUALIFIED | REWARDED | REJECTED
+  status          String    @default("PENDING")
+  fraudFlag       Boolean   @default(false) @map("fraud_flag")
+  rewardClaimedAt DateTime? @map("reward_claimed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("referrals")
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String   @default("")
+  reward      Int      @default(0)
+
+  users UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  userId        String      @map("user_id")
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String      @map("achievement_id")
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  gameId        String?     @map("game_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@id([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Quest {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String
+  targetValue Int      @map("target_value")
+  reward      Int
+  isActive    Boolean  @default(true) @map("is_active")
+
+  users UserQuest[]
+
+  @@map("quests")
+}
+
+model UserQuest {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questId     String    @map("quest_id")
+  quest       Quest     @relation(fields: [questId], references: [id])
+  progress    Int       @default(0)
+  startsAt    DateTime  @map("starts_at")
+  expiresAt   DateTime  @map("expires_at")
+  completedAt DateTime? @map("completed_at")
+  claimedAt   DateTime? @map("claimed_at")
+
+  @@unique([userId, questId, startsAt])
+  @@map("user_quests")
+}
+
+model LeaderboardSeason {
+  id       String   @id @default(cuid())
+  /// WEEKLY | MONTHLY | SEASON
+  kind     String
+  startsAt DateTime @map("starts_at")
+  endsAt   DateTime @map("ends_at")
+
+  entries RatingEntry[]
+
+  @@unique([kind, startsAt])
+  @@map("leaderboard_seasons")
+}
+
+model RatingEntry {
+  id       String            @id @default(cuid())
+  seasonId String            @map("season_id")
+  season   LeaderboardSeason @relation(fields: [seasonId], references: [id])
+  /// GLOBAL | GROUP | ROLE_MAFIA | ROLE_CITY
+  scope    String
+  scopeRef String            @default("") @map("scope_ref")
+  userId   String            @map("user_id")
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rp       Int               @default(0)
+
+  @@unique([seasonId, scope, scopeRef, userId])
+  @@index([seasonId, scope, scopeRef, rp])
+  @@map("rating_entries")
+}
+
+// ───────────────────────────── Support va audit ─────────────────────────────
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  /// BUG | GAME | PAYMENT | USER | OTHER
+  category  String
+  message   String
+  /// OPEN | ANSWERED | CLOSED
+  status    String   @default("OPEN")
+  answer    String?
+  answeredBy String? @map("answered_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("support_tickets")
+}
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id")
+  /// USER | ADMIN | SYSTEM
+  actorType  String   @map("actor_type")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  beforeJson Json?    @map("before_json")
+  afterJson  Json?    @map("after_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

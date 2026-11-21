@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/config" },
+    { "path": "packages/localization" },
+    { "path": "packages/game-engine" },
+    { "path": "packages/database" },
+    { "path": "apps/server" }
+  ]
+}
