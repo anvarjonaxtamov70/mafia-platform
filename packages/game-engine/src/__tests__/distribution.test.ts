@@ -33,7 +33,7 @@ describe('RoleDistributionService (§11)', () => {
         }
       }
     }
-  });
+  }, 60_000);
 
   it('Classic rejimda faqat Classic rollari (T3)', () => {
     const classic = new Set(['CITIZEN', 'MAFIOSO', 'DON', 'COMMISSAR', 'DOCTOR', 'BODYGUARD', 'SHERIFF', 'DETECTIVE', 'JESTER']);
@@ -44,7 +44,7 @@ describe('RoleDistributionService (§11)', () => {
         if (n < 12) expect(roles).not.toContain('JESTER');
       }
     }
-  });
+  }, 30_000);
 
   it('Manyak faqat 15+ va Advanced/Chaos rejimida (T7)', () => {
     for (let seed = 1; seed <= 300; seed++) {

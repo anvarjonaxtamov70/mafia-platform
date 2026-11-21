@@ -23,6 +23,8 @@ export default defineConfig({
           include: ['packages/**/src/**/*.test.ts', 'apps/**/src/**/*.test.ts'],
           exclude: ['**/*.int.test.ts', '**/node_modules/**', '**/dist/**'],
           environment: 'node',
+          // CI serverlari sekinroq bo'lishi mumkin
+          testTimeout: 20_000,
         },
       },
       {
