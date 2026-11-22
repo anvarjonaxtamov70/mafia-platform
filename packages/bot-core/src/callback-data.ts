@@ -44,7 +44,9 @@ export type CallbackData =
   | { t: 'lobby'; op: 'j' | 'l' | 's' | 'c'; game: number }
   | { t: 'menu'; section: string }
   | { t: 'gs'; op: string; chat: number }
-  | { t: 'delme'; op: 'y' | 'n' };
+  | { t: 'delme'; op: 'y' | 'n' }
+  /** Iqtisodiyot: do'kon, inventar, kunlik mukofot, VIP. op — kichik harflar, arg — katalog kodi */
+  | { t: 'eco'; op: string; arg: string };
 
 const int = (s: string | undefined): number | null => (s !== undefined && /^\d+$/.test(s) ? Number(s) : null);
 
@@ -80,6 +82,10 @@ export function encode(d: CallbackData): string {
       break;
     case 'delme':
       out = `dm:${d.op}`;
+      break;
+    case 'eco':
+      if (!/^[a-z]{1,8}$/.test(d.op) || !/^[A-Z0-9_]{0,24}$/.test(d.arg)) throw new Error('invalid eco callback');
+      out = `e:${d.op}:${d.arg}`;
       break;
   }
   if (Buffer.byteLength(out, 'utf8') > 64) throw new Error('callback_data too long');
@@ -132,6 +138,12 @@ export function decode(raw: string): CallbackData | null {
     }
     case 'dm':
       return p[1] === 'y' || p[1] === 'n' ? { t: 'delme', op: p[1] } : null;
+    case 'e': {
+      const op = p[1] ?? '';
+      const arg = p[2] ?? '';
+      if (p.length > 3 || !/^[a-z]{1,8}$/.test(op) || !/^[A-Z0-9_]{0,24}$/.test(arg)) return null;
+      return { t: 'eco', op, arg };
+    }
     default:
       return null;
   }

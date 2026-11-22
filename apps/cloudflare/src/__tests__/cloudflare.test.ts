@@ -101,8 +101,8 @@ describe('Registry (SQLite)', () => {
       days: 3,
       players: [{ tgId: 9, name: 'A', role: 'CITIZEN' as const, faction: 'CITY' as const, outcome: 'WIN' as const, survived: true, left: false, active: true, fake: false }],
     };
-    expect(w.registryCore.recordGame(input)).toHaveLength(1);
-    expect(w.registryCore.recordGame(input)).toHaveLength(0);
+    expect(w.registryCore.recordGame(input).players).toHaveLength(1);
+    expect(w.registryCore.recordGame(input).players).toHaveLength(0);
     expect(w.registryCore.profileText(9)).toContain('G‘alabalar: 1');
     expect(w.registryCore.globalRating(9)).toContain('1020 RP');
   });

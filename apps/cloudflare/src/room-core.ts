@@ -7,6 +7,7 @@
  *  - Bepul tarif: bitta chaqiruvda ≤ 50 subrequest — xabarlar partiyalab yuboriladi.
  */
 import {
+  REFERRAL,
   mafiaVoteMessage,
   nightActionMessage,
   present,
@@ -44,7 +45,7 @@ import {
   type Rng,
 } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
-import type { ClaimResult, RecordedPlayer, RecordGameInput, UserInfo } from './registry-core';
+import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
 
 export type { ConfigSnapshot };
@@ -55,6 +56,8 @@ export interface RoomPlayer {
   id: number;
   name: string;
   fake: boolean;
+  /** VIP belgisi ('' | '👑' | '💎') — lobbyda ko'rsatiladi */
+  badge?: string;
 }
 
 export interface RoomGame {
@@ -72,6 +75,8 @@ export interface RoomGame {
   state: GameState | null;
   version: number;
   createdAt: number;
+  /** Arcade: o'yin boshida band qilingan buyumlar (tgId → bor/yo'q) */
+  arcade?: Record<string, { shield: boolean; fakeDocument: boolean }>;
 }
 
 export interface OutItem {
@@ -89,7 +94,9 @@ export type PendingOp =
   | { id: number; type: 'releaseGame'; number: number; status: 'CANCELLED' | 'FINISHED' }
   | { id: number; type: 'release'; tgId: number; number: number }
   | { id: number; type: 'dmBlocked'; tgIds: number[] }
-  | { id: number; type: 'running'; number: number; players: number };
+  | { id: number; type: 'running'; number: number; players: number }
+  | { id: number; type: 'settleItems'; number: number; used: Record<string, string[]> }
+  | { id: number; type: 'releaseItems'; number: number };
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
@@ -111,7 +118,10 @@ export interface RegistryPort {
   release(tgId: number, number: number): Promise<void>;
   releaseGame(number: number, status: 'CANCELLED' | 'FINISHED'): Promise<void>;
   markRunning(number: number, players: number): Promise<void>;
-  recordGame(input: RecordGameInput): Promise<RecordedPlayer[]>;
+  recordGame(input: RecordGameInput): Promise<RecordResult>;
+  reserveArcade(number: number, tgIds: number[]): Promise<Record<string, { shield: boolean; fakeDocument: boolean }>>;
+  settleArcade(number: number, used: Record<string, string[]>): Promise<void>;
+  releaseArcade(number: number): Promise<void>;
   markDmBlocked(tgIds: number[]): Promise<void>;
   getSettings(chatId: number): Promise<GroupSettingsData>;
 }
@@ -237,7 +247,7 @@ export class RoomCore {
   private lobbyView(g: RoomGame): ViewResult {
     return renderLobby(
       { number: g.number, mode: g.mode, config: g.config, hostName: g.hostName, deadline: g.deadline },
-      g.players.map((p) => p.name),
+      g.players.map((p) => (p.badge ? `${p.name} ${p.badge}` : p.name)),
       { now: this.now, botUsername: this.deps.botUsername() },
     );
   }
@@ -291,7 +301,7 @@ export class RoomCore {
     if (input.host.dmAvailable) {
       const c = await this.deps.registry.claim(input.host.id, this.chatId, number);
       if (c !== 'BUSY' && this.data.game === g) {
-        g.players.push({ id: input.host.id, name: input.host.name, fake: false });
+        g.players.push({ id: input.host.id, name: input.host.name, fake: false, badge: input.host.badge });
         hostJoined = true;
       }
     }
@@ -321,7 +331,7 @@ export class RoomCore {
       await this.deps.registry.release(user.id, g.number);
       return { ok: false, error: 'FULL' };
     }
-    g.players.push({ id: user.id, name: user.name, fake: false });
+    g.players.push({ id: user.id, name: user.name, fake: false, badge: user.badge });
     g.version++;
     this.lobbyEdit(g);
     await this.commit();
@@ -406,6 +416,21 @@ export class RoomCore {
       return { ok: false, error: 'DM_FAILED', details: { names: removed.map((p) => p.name).join(', ') } };
     }
 
+    // Arcade: yoqilgan buyumlar band qilinadi (har turdan bittadan, §18.1)
+    let items: Record<string, { shield: boolean; fakeDocument: boolean }> = {};
+    if (g.config.allowArcadeItems) {
+      this.externalCalls++;
+      items = await this.deps.registry.reserveArcade(
+        g.number,
+        g.players.filter((p) => !p.fake).map((p) => p.id),
+      );
+      if (this.data.game !== g || g.status !== 'LOBBY') {
+        this.addOp({ type: 'releaseItems', number: g.number });
+        await this.commit();
+        return { ok: false, error: 'NOT_LOBBY' };
+      }
+    }
+
     const now = this.now;
     const { lobby: _lobby, ...config } = g.config;
     void _lobby;
@@ -416,8 +441,21 @@ export class RoomCore {
       config,
       now,
       rng: this.deps.rng,
+      items,
     });
-    if (!created.ok) return { ok: false, error: 'NOT_ENOUGH', details: { min: g.config.minPlayers, count: g.players.length } };
+    if (!created.ok) {
+      if (Object.keys(items).length > 0) {
+        this.addOp({ type: 'releaseItems', number: g.number });
+        await this.commit();
+      }
+      return { ok: false, error: 'NOT_ENOUGH', details: { min: g.config.minPlayers, count: g.players.length } };
+    }
+    if (Object.keys(items).length > 0) {
+      g.arcade = items;
+      const all = Object.values(items);
+      // Buyumlar barcha o'yinchilarga o'yin boshlanishidan oldin ko'rsatiladi (§4.4); kimda ekanligi aytilmaydi
+      this.send(this.chatId, t('game.arcade_items', { shields: all.filter((x) => x.shield).length, docs: all.filter((x) => x.fakeDocument).length }));
+    }
     const fakes = new Set(g.players.filter((p) => p.fake).map((p) => String(p.id)));
     const pp = this.postProcess(created.state, created.events, fakes, -1, now);
     g.status = 'RUNNING';
@@ -505,6 +543,18 @@ export class RoomCore {
     this.enqueue(drafts);
     if (state.status === 'FINISHED' && state.result) {
       const byId = new Map(g.players.map((p) => [String(p.id), p]));
+      if (g.arcade && Object.keys(g.arcade).length > 0) {
+        // Ishlatilgan buyum sarflanadi, ishlatilmagani inventarga qaytadi
+        const used: Record<string, string[]> = {};
+        for (const [id, had] of Object.entries(g.arcade)) {
+          const fin = state.players.find((p) => p.id === id)?.items;
+          const list: string[] = [];
+          if (had.shield && fin && !fin.shield) list.push('SHIELD');
+          if (had.fakeDocument && fin && !fin.fakeDocument) list.push('FAKE_DOC');
+          if (list.length) used[id] = list;
+        }
+        this.addOp({ type: 'settleItems', number: g.number, used });
+      }
       this.addOp({
         type: 'record',
         input: {
@@ -528,6 +578,7 @@ export class RoomCore {
               left: r.left,
               active: sp.missedVotes === 0 && sp.missedActions === 0,
               fake: rp.fake,
+              ...(rp.badge ? { badge: rp.badge } : {}),
             };
           }),
         },
@@ -728,10 +779,16 @@ export class RoomCore {
           const recorded = await this.deps.registry.recordGame(op.input);
           if (op.input.practice) {
             for (const p of op.input.players) if (!p.fake) this.send(p.tgId, t('dm.practice_over'));
+          } else {
+            const proWinners = op.input.players.filter((p) => p.badge === '💎' && (p.outcome === 'WIN' || p.outcome === 'PERSONAL_WIN'));
+            if (proWinners.length > 0) this.send(this.chatId, t('game.vip_pro_winner', { names: proWinners.map((p) => escapeHtml(p.name)).join(', ') }));
           }
-          for (const r of recorded) {
+          for (const r of recorded.players) {
             const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
-            this.send(r.tgId, t('dm.game_over', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, rating }));
+            this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }));
+          }
+          for (const ref of recorded.referrals) {
+            this.send(ref.referrerId, t('invite.reward_dm', { name: escapeHtml(ref.referredName), games: REFERRAL.gamesRequired, reward: ref.reward }));
           }
           break;
         }
@@ -746,6 +803,12 @@ export class RoomCore {
           break;
         case 'running':
           await this.deps.registry.markRunning(op.number, op.players);
+          break;
+        case 'settleItems':
+          await this.deps.registry.settleArcade(op.number, op.used);
+          break;
+        case 'releaseItems':
+          await this.deps.registry.releaseArcade(op.number);
           break;
       }
       this.data.ops = this.data.ops.filter((x) => x.id !== op.id);

@@ -32,6 +32,7 @@ check('CLOUDFLARE_API_TOKEN', 'secret', (v) => v.length >= 30, 'Cloudflare → M
 check('BOT_TOKEN', 'secret', (v) => /^\d{5,}:[\w-]{30,}$/.test(v), '@BotFather bergan token (123456789:AA...)');
 check('ADMIN_IDS', 'variable', (v) => /^\d{3,20}(\s*,\s*\d{3,20})*$/.test(v), "bot egalarining Telegram ID lari, vergul bilan (berilmasa wrangler.toml dagi standart)", true);
 check('CLOUDFLARE_ACCOUNT_ID', 'secret', (v) => /^[a-f0-9]{32}$/.test(v), 'Cloudflare → Workers & Pages → o\'ng tomonda "Account ID"', true);
+check('STARS_MODE', 'variable', (v) => ['off', 'admins', 'all'].includes(v), "off | admins | all (berilmasa wrangler.toml dagi standart: admins)", true);
 check('DEV_FAKE_PLAYERS', 'variable', (v) => v === 'true' || v === 'false', 'true yoki false (berilmasa wrangler.toml dagi standart)', true);
 
 console.log('Sozlamalar (GitHub → Settings → Secrets and variables → Actions):\n');

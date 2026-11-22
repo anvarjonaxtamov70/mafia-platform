@@ -29,7 +29,7 @@ const tg = createServer((req, res) => {
     const params = body ? JSON.parse(body) : {};
     calls.push({ method, params });
     let result = true;
-    if (method === 'sendMessage') result = { message_id: nextId++ };
+    if (method === 'sendMessage' || method === 'sendInvoice') result = { message_id: nextId++ };
     if (method === 'getMe') result = { id: 1, is_bot: true, first_name: 'Mafia', username: 'e2e_mafia_bot' };
     if (method === 'getChatMember') result = { status: params.user_id === 1 ? 'creator' : 'member' };
     if (method === 'getWebhookInfo') result = { url: 'x', pending_update_count: 0 };
@@ -141,9 +141,44 @@ try {
   await sleep(300);
   check(texts(2).some((t) => t.includes('O‘yinlar: 1')), 'profil statistikasi saqlandi');
 
+  // ───── Iqtisodiyot (Durable Object SQLite transactionSync bilan) ─────
+  const edits = (chat) => calls.filter((c) => c.method === 'editMessageText' && c.params.chat_id === chat).map((c) => c.params.text);
+  check(texts(2).some((t) => t.includes('🪙 +')), 'o‘yin tugaganda Coins berildi');
+  await cb(2, 'e:daily:');
+  await sleep(200);
+  const dailyAnswer = calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.params.text ?? '';
+  check(dailyAnswer.includes('+50'), `kunlik mukofot (${dailyAnswer})`);
+  await cb(2, 'e:daily:');
+  await sleep(200);
+  check((calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.params.text ?? '').includes('allaqachon'), 'kunlik mukofot ikkinchi marta berilmaydi');
+
+  // ───── Telegram Stars: invoice → pre_checkout → successful_payment ─────
+  await sleep(3100); // tugma tezligi chegarasi
+  await cb(1, 'e:star:VIP_30');
+  await sleep(300);
+  const inv = calls.filter((c) => c.method === 'sendInvoice').at(-1);
+  check(inv && inv.params.currency === 'XTR' && inv.params.prices[0].amount === 99, 'VIP invoice (XTR, 99 ⭐)');
+  const payload = inv?.params.payload;
+  await send({ pre_checkout_query: { id: 'pc1', from: user(1), currency: 'XTR', total_amount: 99, invoice_payload: payload } });
+  const pre = calls.filter((c) => c.method === 'answerPreCheckoutQuery').at(-1);
+  check(pre?.params.ok === true, 'pre_checkout tasdiqlandi');
+  const pay = { message: { message_id: uid, chat: { id: 1, type: 'private' }, from: user(1), successful_payment: { currency: 'XTR', total_amount: 99, invoice_payload: payload, telegram_payment_charge_id: 'e2e-charge-1' } } };
+  await send(pay);
+  await send(pay);
+  await sleep(300);
+  check(texts(1).filter((t) => t.includes('To‘lov qabul qilindi')).length === 1, 'to‘lov bir marta qabul qilindi (takroriy update e’tiborsiz)');
+  await sleep(3100);
+  await cb(1, 'm:vip');
+  await sleep(300);
+  check((edits(1).at(-1) ?? '').includes('gacha'), 'VIP faol (muddati ko‘rsatildi)');
+  await pm(1, '/refund e2e-charge-1');
+  await sleep(300);
+  check(calls.some((c) => c.method === 'refundStarPayment' && c.params.telegram_payment_charge_id === 'e2e-charge-1'), '/refund → refundStarPayment');
+
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');
+  check(calls.some((c) => c.method === 'setWebhook' && c.params.allowed_updates.includes('pre_checkout_query')), 'webhook pre_checkout_query ni qabul qiladi');
   const diag = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   const diagBody = await diag.json();
   check(diagBody.registry?.ok && diagBody.room?.ok && diagBody.registry.finished >= 1, `/telegram/diag: registry va GameRoom ishlaydi (${JSON.stringify(diagBody.registry)})`);

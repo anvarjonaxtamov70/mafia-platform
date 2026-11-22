@@ -29,6 +29,7 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       ADMIN_IDS: ${{ vars.ADMIN_IDS }}
       DEV_FAKE_PLAYERS: ${{ vars.DEV_FAKE_PLAYERS }}
+      STARS_MODE: ${{ vars.STARS_MODE }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
@@ -51,7 +52,7 @@ jobs:
         working-directory: apps/cloudflare
         run: |
           args=()
-          for k in ADMIN_IDS DEV_FAKE_PLAYERS; do
+          for k in ADMIN_IDS DEV_FAKE_PLAYERS STARS_MODE; do
             v="${!k}"
             if [ -n "$v" ]; then args+=(--var "$k:$v"); fi
           done

@@ -394,6 +394,10 @@ export function createBot(token: string, deps: BotDeps): Bot {
       case 'action':
         await handleAction(ctx, u, data);
         return;
+      case 'eco':
+        // Iqtisodiyot hozircha Cloudflare versiyasida; VPS versiyasiga o'tishda qo'shiladi
+        await ctx.answerCallbackQuery({ text: t('common.soon', { section: '' }).replace(/<[^>]+>/g, '').slice(0, 190) });
+        return;
     }
   }
 

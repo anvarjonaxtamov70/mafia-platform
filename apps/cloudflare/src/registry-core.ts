@@ -6,9 +6,13 @@
  * SQL qatlami interfeys orqali: Workers'da ctx.storage.sql, testlarda node:sqlite.
  */
 import {
+  catalogItem,
   clampMinPlayers,
   DEFAULT_MIN_PLAYERS_KEY,
   displayName,
+  formatDate,
+  parseRefPayload,
+  TIER_BADGE,
   levelForXp,
   normalizeSettings,
   simpleRating,
@@ -18,10 +22,10 @@ import {
 } from '@mafia/bot-core';
 import { MIN_PLAYERS_FLOOR, type Faction, type MainOutcome, type PlayerOutcome, type RoleCode } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
+import { EconomyCore } from './economy-core';
+import type { Sql } from './sql';
 
-export interface Sql {
-  exec<T = Record<string, unknown>>(query: string, ...params: (string | number | null)[]): T[];
-}
+export type { Sql } from './sql';
 
 export interface TgUserInput {
   id: number;
@@ -45,6 +49,8 @@ export interface UserInfo {
   name: string;
   dmAvailable: boolean;
   banned: boolean;
+  /** VIP belgisi: '' | '👑' | '💎' */
+  badge: string;
 }
 
 export interface RecordPlayer {
@@ -57,6 +63,8 @@ export interface RecordPlayer {
   left: boolean;
   active: boolean;
   fake: boolean;
+  /** VIP belgisi (g'olib e'loni uchun; registry saqlamaydi) */
+  badge?: string;
 }
 
 export interface RecordGameInput {
@@ -75,7 +83,14 @@ export interface RecordedPlayer {
   tgId: number;
   outcome: PlayerOutcome;
   xp: number;
+  coins: number;
   ratingChange: number;
+}
+
+export interface RecordResult {
+  players: RecordedPlayer[];
+  /** Taklif qilgan do'stlarga mukofot (xabar yuborish uchun) */
+  referrals: { referrerId: number; referredName: string; reward: number }[];
 }
 
 export type ClaimResult = 'OK' | 'ALREADY' | 'BUSY';
@@ -150,13 +165,18 @@ const SCHEMA = [
 ];
 
 export class RegistryCore {
+  readonly eco: EconomyCore;
+
   constructor(
     private readonly sql: Sql,
     private readonly clock: () => number = Date.now,
-  ) {}
+  ) {
+    this.eco = new EconomyCore(sql, clock);
+  }
 
   migrate(): void {
     for (const q of SCHEMA) this.sql.exec(q);
+    this.eco.migrate();
   }
 
   private one<T>(q: string, ...p: (string | number | null)[]): T | undefined {
@@ -200,7 +220,18 @@ export class RegistryCore {
       name: displayName({ firstName: r.first_name, lastName: r.last_name, username: r.username }),
       dmAvailable: r.dm_available === 1,
       banned: this.isBanned(tgId),
+      badge: TIER_BADGE[this.eco.tierInfo(tgId).tier],
     };
+  }
+
+  /** /start: foydalanuvchi + (ixtiyoriy) referal havolasi. */
+  onStart(u: TgUserInput, payload: string): { user: UserInfo; referred: boolean } {
+    return this.sql.tx(() => {
+      const user = this.upsertUser(u, true);
+      const ref = parseRefPayload(payload);
+      const referred = ref !== null && this.eco.applyReferral(u.id, ref);
+      return { user, referred };
+    });
   }
 
   isBanned(tgId: number): boolean {
@@ -243,6 +274,7 @@ export class RegistryCore {
   }
 
   releaseGame(number: number, status: 'CANCELLED' | 'FINISHED' = 'CANCELLED'): void {
+    this.eco.releaseArcade(number);
     this.sql.exec(`DELETE FROM active_players WHERE game_number = ?`, number);
     this.sql.exec(`UPDATE games SET status = ?, finished_at = COALESCE(finished_at, ?) WHERE number = ? AND status <> 'FINISHED'`, status, this.clock(), number);
   }
@@ -334,9 +366,14 @@ export class RegistryCore {
   // ───────────────────────────── Natijalar ─────────────────────────────
 
   /** O'yin natijalarini bir marta yozadi (idempotent: game_results PRIMARY KEY). */
-  recordGame(input: RecordGameInput): RecordedPlayer[] {
+  recordGame(input: RecordGameInput): RecordResult {
+    return this.sql.tx(() => this.recordGameTx(input));
+  }
+
+  private recordGameTx(input: RecordGameInput): RecordResult {
     const now = this.clock();
     const out: RecordedPlayer[] = [];
+    const referrals: RecordResult['referrals'] = [];
     for (const p of input.practice ? [] : input.players) {
       if (p.fake) continue;
       const exists = this.one(`SELECT 1 AS x FROM game_results WHERE game_number = ? AND telegram_id = ?`, input.number, p.tgId);
@@ -402,7 +439,9 @@ export class RegistryCore {
         p.tgId,
         inc(won),
       );
-      out.push({ tgId: p.tgId, outcome: p.outcome, xp, ratingChange });
+      const reward = this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left });
+      if (reward.referral) referrals.push({ referrerId: reward.referral.referrerId, referredName: p.name, reward: reward.referral.reward });
+      out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange });
     }
     this.sql.exec(
       `UPDATE games SET status = 'FINISHED', finished_at = ?, outcome = ?, players = ?, days = ? WHERE number = ?`,
@@ -413,7 +452,7 @@ export class RegistryCore {
       input.number,
     );
     this.sql.exec(`DELETE FROM active_players WHERE game_number = ?`, input.number);
-    return out;
+    return { players: out, referrals };
   }
 
   // ───────────────────────────── Ko'rinishlar ─────────────────────────────
@@ -424,7 +463,17 @@ export class RegistryCore {
     this.sql.exec(`INSERT OR IGNORE INTO profiles (telegram_id) VALUES (?)`, tgId);
     const p = this.one<Record<string, number>>(`SELECT * FROM profiles WHERE telegram_id = ?`, tgId)!;
     const total = p['games_won']! + p['games_lost']! + p['games_drawn']!;
-    return t('profile.text', {
+    const w = this.eco.wallet(tgId);
+    const frame = w.frame ? catalogItem(w.frame) : undefined;
+    const title = w.title ? catalogItem(w.title) : undefined;
+    const until = w.tier === 'VIP_PRO' ? w.proUntil : w.vipUntil;
+    const extra = t('profile.extra', {
+      coins: w.coins,
+      tier: t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' }),
+      title: title ? t('profile.title_line', { emoji: title.emoji, name: t(`item.${title.code}`) }) : '',
+    });
+    const header = frame ? `${t('profile.frame_top', { emoji: frame.emoji })}\n` : '';
+    return header + t('profile.text', {
       name: escapeHtml(displayName({ firstName: u.first_name, lastName: u.last_name, username: u.username })),
       id: String(tgId),
       level: p['level']!,
@@ -441,7 +490,7 @@ export class RegistryCore {
       neutralWins: p['neutral_wins']!,
       streak: p['current_win_streak']!,
       bestStreak: p['best_win_streak']!,
-    });
+    }) + extra + (frame ? `\n${t('profile.frame_top', { emoji: frame.emoji })}` : '');
   }
 
   globalRating(tgId: number | null): string {

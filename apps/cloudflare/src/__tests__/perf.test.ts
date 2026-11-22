@@ -54,3 +54,35 @@ describe('CPU byudjeti (bepul tarif: 10 ms)', () => {
     expect(nightMs).toBeLessThan(10);
   }, 60_000);
 });
+
+describe('CPU byudjeti: natijalarni yozish (Registry)', () => {
+  it('30 o‘yinchi: XP, reyting, Coins, vazifalar, referal — bitta tranzaksiyada', async () => {
+    const w = new World();
+    const reg = w.registryCore;
+    const players = Array.from({ length: 30 }, (_, i) => ({
+      tgId: 500 + i,
+      name: `P${i}`,
+      role: 'CITIZEN' as const,
+      faction: 'CITY' as const,
+      outcome: (i % 2 ? 'WIN' : 'LOSS') as 'WIN' | 'LOSS',
+      survived: i % 3 === 0,
+      left: false,
+      active: true,
+      fake: false,
+    }));
+    for (const p of players) reg.onStart({ id: p.tgId, first_name: p.name }, i(p.tgId));
+    const run = (n: number) => reg.recordGame({ gameId: `g${n}`, number: n, chatId: -1, ranked: true, outcome: 'CITY', days: 5, players });
+    for (let k = 1; k <= 5; k++) run(k); // isitish
+    const start = process.cpuUsage();
+    run(100);
+    const d = process.cpuUsage(start);
+    const ms = (d.user + d.system) / 1000;
+    console.log(`CPU: recordGame(30)=${ms.toFixed(2)}ms`);
+    expect(ms).toBeLessThan(10);
+  });
+});
+
+function i(id: number): string {
+  // har ikkinchi o'yinchi birinchisi tomonidan taklif qilingan
+  return id % 2 ? `ref_${(500).toString(36)}` : '';
+}

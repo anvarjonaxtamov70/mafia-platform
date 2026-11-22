@@ -7,17 +7,37 @@ import { seededRng } from '@mafia/game-engine';
 import { RegistryCore, type Sql } from '../registry-core';
 import { RoomCore, type RegistryPort, type RoomData, type RoomStore } from '../room-core';
 import { Router, type RegistryApi, type RoomApi, type TgUpdate } from '../router';
+import { reentrantTx } from '../sql';
 import { TgError, type Telegram } from '../telegram';
+import type { StarsMode } from '@mafia/bot-core';
 
 export function sqliteSql(): Sql {
   const db = new DatabaseSync(':memory:');
+  // Durable Object SQLite ham tayyorlangan so'rovlarni keshlaydi
+  const cache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
   return {
     exec<T>(query: string, ...params: (string | number | null)[]): T[] {
-      const stmt = db.prepare(query);
-      if (/^\s*(SELECT|INSERT[\s\S]*RETURNING|WITH)/i.test(query)) return stmt.all(...params) as T[];
+      let stmt = cache.get(query);
+      if (!stmt) {
+        stmt = db.prepare(query);
+        cache.set(query, stmt);
+      }
+      if (/\bRETURNING\b/i.test(query) || /^\s*(SELECT|WITH|PRAGMA)/i.test(query)) return stmt.all(...params) as T[];
       stmt.run(...params);
       return [];
     },
+    // Durable Object transactionSync bilan bir xil: xato bo'lsa ROLLBACK
+    tx: reentrantTx(<T>(fn: () => T): T => {
+      db.exec('BEGIN');
+      try {
+        const r = fn();
+        db.exec('COMMIT');
+        return r;
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+    }),
   };
 }
 
@@ -45,7 +65,7 @@ export class FakeTelegram implements Telegram {
       throw new TgError(403, 'Forbidden: bot was blocked by the user');
     }
     let result: unknown = true;
-    if (method === 'sendMessage') result = { message_id: this.nextId++ };
+    if (method === 'sendMessage' || method === 'sendInvoice') result = { message_id: this.nextId++ };
     if (method === 'getChatMember') result = { status: this.admins.has(Number(params['user_id'])) ? 'administrator' : 'member' };
     if (method === 'getMe') result = { username: 'test_mafia_bot' };
     return result as T;
@@ -77,12 +97,19 @@ export class MemStore implements RoomStore {
 }
 
 /** RPC ni simulyatsiya: har bir chaqiruv asinxron va natija nusxa (structured clone). */
-export function rpc<T extends object>(target: T): T {
+export function rpc<T extends object>(target: T, fallback?: object): T {
   return new Proxy(target, {
     get(obj, prop) {
-      const v = (obj as Record<string | symbol, unknown>)[prop];
+      if (prop === 'then') return undefined;
+      let self: object = obj;
+      let v = (obj as Record<string | symbol, unknown>)[prop];
+      // Registry DO iqtisodiyot metodlarini core.eco ga yo'naltiradi (index.ts dagi kabi)
+      if (v === undefined && fallback) {
+        self = fallback;
+        v = (fallback as Record<string | symbol, unknown>)[prop];
+      }
       if (typeof v !== 'function') return v;
-      return async (...args: unknown[]) => structuredClone(await (v as (...a: unknown[]) => unknown).apply(obj, structuredClone(args)));
+      return async (...args: unknown[]) => structuredClone(await (v as (...a: unknown[]) => unknown).apply(self, structuredClone(args)));
     },
   });
 }
@@ -99,17 +126,21 @@ export class World {
   devFake = false;
   admins = new Set<number>([1]);
 
-  constructor(opts: { devFake?: boolean } = {}) {
+  starsMode: StarsMode;
+
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode } = {}) {
     this.devFake = !!opts.devFake;
+    this.starsMode = opts.starsMode ?? 'admins';
     this.registryCore = new RegistryCore(sqliteSql(), () => this.now);
     this.registryCore.migrate();
-    this.registry = rpc(this.registryCore) as unknown as RegistryPort & RegistryApi;
+    this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({
       tg: this.tg,
       registry: this.registry,
       room: (chatId) => this.roomApi(chatId),
       admins: this.admins,
       devFake: this.devFake,
+      starsMode: this.starsMode,
       botUsername: async () => 'test_mafia_bot',
       now: () => this.now,
     });
@@ -204,4 +235,43 @@ export function groupText(from: number, text: string, chatId = GROUP): Omit<TgUp
 export function callback(from: number, data: string, chatId?: number): Omit<TgUpdate, 'update_id'> {
   const chat = chatId !== undefined ? { id: chatId, type: 'supergroup' as const, title: 'Mafia guruh' } : { id: from, type: 'private' as const };
   return { callback_query: { id: String(msgId++), from: user(from), data, message: { message_id: 77, chat } } };
+}
+
+// ───────────────────────────── O'yin yordamchilari ─────────────────────────────
+
+/** Har o'yinchi /start bosadi, birinchisi admin sifatida /game (ixtiyoriy rejim), qolganlar tugma bilan qo'shiladi */
+export async function lobby(w: World, ids: number[], mode = ''): Promise<number> {
+  for (const id of ids) await w.send(privateText(id, '/start'));
+  w.tg.admins.add(ids[0]!);
+  await w.send(groupText(ids[0]!, mode ? `/game ${mode}` : '/game'));
+  const core = await w.loaded(GROUP);
+  const number = core.data.game!.number;
+  for (const id of ids.slice(1)) await w.send(callback(id, `l:j:${number}`, GROUP));
+  return number;
+}
+
+export function roomState(w: World) {
+  return w.rooms.get(GROUP)?.data.game?.state ?? null;
+}
+
+/** Shahar uchun ochiq o'yin: Mafia hujum qilmaydi, hamma Mafiaga ovoz beradi */
+export async function playToEnd(w: World, number: number): Promise<void> {
+  for (let step = 0; step < 200; step++) {
+    const s = roomState(w);
+    if (!s) return;
+    const alive = s.players.filter((p) => p.status === 'ALIVE');
+    if (s.phase === 'NIGHT') {
+      for (const p of alive) {
+        const id = Number(p.id);
+        if (p.faction === 'MAFIA') await w.send(callback(id, `mv:${number}:${s.phaseSeq}:0`));
+        await w.send(callback(id, `a:${number}:${s.phaseSeq}:SKIP`));
+      }
+    } else if (s.phase === 'DAY_VOTING') {
+      const mafia = alive.find((p) => p.faction === 'MAFIA')!;
+      for (const p of alive) if (p.id !== mafia.id) await w.send(callback(Number(p.id), `v:${number}:${s.phaseSeq}:${mafia.seat}`, GROUP));
+    }
+    const after = roomState(w);
+    if (after && after.phaseSeq === s.phaseSeq) await w.advance((after.phaseEndsAt ?? w.now) - w.now + 1000);
+  }
+  throw new Error('game did not finish');
 }

@@ -9,9 +9,12 @@
  *   Registry (bitta)               — foydalanuvchilar, profillar, reyting, sozlamalar
  */
 import { DurableObject } from 'cloudflare:workers';
+import { parseStarsMode } from '@mafia/bot-core';
 import { cryptoRng } from '@mafia/game-engine';
 import { t } from '@mafia/localization';
+import type { PaymentInput } from './economy-core';
 import { RegistryCore, type Sql, type TgUserInput } from './registry-core';
+import { reentrantTx } from './sql';
 import { RoomCore, type RoomData, type RoomDeps } from './room-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi, type TgUpdate } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
@@ -23,6 +26,8 @@ export interface Env {
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
+  /** Telegram Stars: off | admins | all (standart: admins) */
+  STARS_MODE?: string;
   /** Faqat testlar: soxta Telegram API manzili */
   TELEGRAM_API?: string;
   /** Faqat testlar: /__test/* yo'llari */
@@ -57,13 +62,86 @@ export class Registry extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    const sql: Sql = { exec: (q, ...p) => ctx.storage.sql.exec(q, ...p).toArray() as never };
+    const sql: Sql = {
+      exec: (q, ...p) => ctx.storage.sql.exec(q, ...p).toArray() as never,
+      // transactionSync: xato bo'lsa hamma o'zgarishlar bekor qilinadi
+      tx: reentrantTx((fn) => ctx.storage.transactionSync(fn)),
+    };
     this.core = new RegistryCore(sql);
     void ctx.blockConcurrencyWhile(async () => this.core.migrate());
   }
 
   upsertUser(u: TgUserInput, dmOpened: boolean) {
     return this.core.upsertUser(u, dmOpened);
+  }
+  onStart(u: TgUserInput, payload: string) {
+    return this.core.onStart(u, payload);
+  }
+  // ── iqtisodiyot ──
+  wallet(tgId: number) {
+    return this.core.eco.wallet(tgId);
+  }
+  inventory(tgId: number) {
+    return this.core.eco.inventory(tgId);
+  }
+  buy(tgId: number, code: string, idem: string) {
+    return this.core.eco.buy(tgId, code, idem);
+  }
+  toggleArm(tgId: number, code: string) {
+    return this.core.eco.toggleArm(tgId, code);
+  }
+  equip(tgId: number, kind: 'FRAME' | 'TITLE', code: string | null) {
+    return this.core.eco.equip(tgId, kind, code);
+  }
+  dailyInfo(tgId: number) {
+    return this.core.eco.dailyInfo(tgId);
+  }
+  claimDaily(tgId: number) {
+    return this.core.eco.claimDaily(tgId);
+  }
+  claimQuest(tgId: number, code: string) {
+    return this.core.eco.claimQuest(tgId, code);
+  }
+  referralInfo(tgId: number) {
+    return this.core.eco.referralInfo(tgId);
+  }
+  roleStats(tgId: number) {
+    return this.core.eco.roleStats(tgId);
+  }
+  reserveArcade(number: number, tgIds: number[]) {
+    return this.core.eco.reserveArcade(number, tgIds);
+  }
+  settleArcade(number: number, used: Record<string, string[]>) {
+    this.core.eco.settleArcade(number, used);
+  }
+  releaseArcade(number: number) {
+    this.core.eco.releaseArcade(number);
+  }
+  // ── to'lovlar ──
+  createOrder(tgId: number, code: string) {
+    return this.core.eco.createOrder(tgId, code);
+  }
+  checkOrder(payload: string, tgId: number, amount: number, currency: string) {
+    return this.core.eco.checkOrder(payload, tgId, amount, currency);
+  }
+  completePayment(p: PaymentInput) {
+    return this.core.eco.completePayment(p);
+  }
+  paymentInfo(chargeId: string) {
+    return this.core.eco.paymentInfo(chargeId);
+  }
+  markRefunded(chargeId: string, by: string) {
+    return this.core.eco.markRefunded(chargeId, by);
+  }
+  recentPayments(limit?: number, tgId?: number) {
+    return this.core.eco.recentPayments(limit, tgId);
+  }
+  // ── murojaatlar ──
+  createTicket(tgId: number, category: string, message: string) {
+    return this.core.eco.createTicket(tgId, category, message);
+  }
+  answerTicket(id: number, by: string, answer: string) {
+    return this.core.eco.answerTicket(id, by, answer);
   }
   activeOf(tgId: number) {
     return this.core.activeOf(tgId);
@@ -254,6 +332,7 @@ function getRouter(env: Env): Router {
       room: (chatId) => roomApi(env, chatId),
       admins: new Set((env.ADMIN_IDS ?? '').split(',').map((x) => Number(x.trim())).filter((x) => Number.isInteger(x) && x > 0)),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
+      starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
       now: Date.now,
     },
@@ -278,7 +357,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
   await tg.call('setWebhook', {
     url,
     secret_token: await webhookSecret(env.BOT_TOKEN),
-    allowed_updates: ['message', 'callback_query', 'my_chat_member'],
+    // pre_checkout_query — Telegram Stars to'lovini tasdiqlash uchun
+    allowed_updates: ['message', 'callback_query', 'my_chat_member', 'pre_checkout_query'],
     max_connections: 40,
   });
   await tg.call('setMyDescription', { description: t('bot.description') });
@@ -288,9 +368,16 @@ async function setup(env: Env, origin: string): Promise<Response> {
     commands: [
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
+      { command: 'daily', description: 'Kunlik mukofot va vazifalar' },
+      { command: 'shop', description: 'Do‘kon' },
+      { command: 'inventory', description: 'Inventar' },
+      { command: 'vip', description: 'VIP obuna' },
+      { command: 'invite', description: 'Do‘stlarni taklif qilish' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
       { command: 'help', description: 'Yordam' },
+      { command: 'support', description: 'Yordam so‘rash' },
+      { command: 'paysupport', description: 'To‘lov bo‘yicha yordam' },
       { command: 'privacy', description: 'Maxfiylik' },
     ],
   });

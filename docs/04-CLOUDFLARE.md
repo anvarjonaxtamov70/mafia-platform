@@ -60,6 +60,26 @@ Shundan keyin `main` ga tushgan har bir o‘zgarish avtomatik deploy bo‘ladi.
 
 ---
 
+## Do‘kon va Telegram Stars
+
+Coins (🪙) o‘yin, kunlik mukofot, vazifalar va do‘st taklif qilish orqali olinadi. Ular haqiqiy pulga almashtirilmaydi. Telegram Stars (⭐) faqat VIP uchun.
+
+| `STARS_MODE` | Kim to‘lay oladi |
+|---|---|
+| `off` | Hech kim |
+| `admins` (hozir) | Faqat `ADMIN_IDS` — sinash uchun, 1 ⭐ lik test to‘lov ham bor |
+| `all` | Hamma |
+
+**Sinash tartibi (bot egasi):**
+1. Botga `/vip` → **🧪 Test to‘lov · 1 ⭐** → to‘lang. Bot `charge_id` ni yuboradi.
+2. `/refund <charge_id>` — Stars qaytadi.
+3. Kerak bo‘lsa `👑 VIP · 99 ⭐` ni ham sinab, `/refund` bilan qaytaring.
+4. Hammaga ochish: GitHub → Variables → `STARS_MODE` = `all` → Actions → Deploy → Run workflow.
+
+**Admin buyruqlari** (botga shaxsiy chatda): `/admin_payments` — oxirgi to‘lovlar, `/refund <charge_id>`, `/reply <raqam> <matn>` — murojaatga javob.
+
+Stars daromadi Telegram'da: BotFather → bot → **Balance** (Fragment orqali yechib olinadi).
+
 ## Kuzatish
 
 - **`/admin_stats`** (botga shaxsiy chatda, faqat `ADMIN_IDS`): foydalanuvchilar, guruhlar, faol o‘yinlar, oxirgi 24 soatdagi ichki xatolar va oxirgi 3 tasi.

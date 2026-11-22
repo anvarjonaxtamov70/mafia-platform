@@ -144,10 +144,14 @@ npm run cf:e2e            # haqiqiy Cloudflare runtime (workerd) + soxta Telegra
 | Telegram adapter (menyu, lobby, tugmalar, sozlamalar, jimlik) | 🟡 TESTED — soxta Bot API bilan E2E; haqiqiy guruhda odamlar bilan hali o‘ynalmagan |
 | Webhook rejimi | 🟡 IMPLEMENTED — HTTPS domen kerak, sinalmagan |
 | Docker / docker-compose | 🟡 IMPLEMENTED — sandboxda Docker ishlamaydi, sinalmagan |
-| Do‘kon, Coins, inventar, kunlik mukofot, vazifalar | ⏳ PENDING (sxema tayyor) |
-| Telegram Stars, VIP, refund, `/paysupport` | ⏳ PENDING (sxema tayyor) |
-| Referal, yutuqlar, turnir, haftalik reytinglar | ⏳ PENDING |
-| To‘liq admin tizimi, support ticketlar, web-admin | ⏳ PENDING (asosiy superadmin buyruqlari bor) |
+| Coins ledger, kunlik mukofot, kunlik vazifalar | ✅ VERIFIED (Cloudflare) — unit + workerd E2E |
+| Do‘kon, inventar, ramka/unvonlar, Arcade buyumlari (qalqon, soxta hujjat) | ✅ VERIFIED (Cloudflare) |
+| Telegram Stars: VIP / VIP PRO, `pre_checkout`, `successful_payment`, `/refund`, `/paysupport` | ✅ VERIFIED (Cloudflare, soxta Telegram bilan); haqiqiy Stars bilan — `STARS_MODE=admins` da bot egalari sinaydi |
+| Referal (`ref_` havola, 2 o‘yindan keyin 100 🪙) | ✅ VERIFIED (Cloudflare) |
+| Murojaatlar: `/support`, `/paysupport`, admin `/reply` | ✅ VERIFIED (Cloudflare) |
+| Node/VPS versiyasida iqtisodiyot | ⏳ PENDING — VPS ga o‘tishda (`packages/bot-core` dagi qoidalar va ko‘rinishlar tayyor) |
+| Yutuqlar, turnir, haftalik reytinglar, Stars avto-obuna | ⏳ PENDING |
+| To‘liq admin tizimi, web-admin | ⏳ PENDING (asosiy superadmin buyruqlari bor) |
 | Rus va ingliz tillari | ⏳ PENDING (arxitektura tayyor) |
 
 ### Ma’lum cheklovlar

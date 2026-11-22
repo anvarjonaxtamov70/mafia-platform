@@ -33,8 +33,10 @@ enabled = true
 # Standart qiymatlar. GitHub Actions → Variables da shu nomli o'zgaruvchi berilsa, o'sha ustun turadi.
 #   ADMIN_IDS        — bot egalari (/admin_minplayers, /admin_stats). Telegram ID maxfiy emas.
 #   DEV_FAKE_PLAYERS — true: guruhda /devfill N (bot-o'yinchilar, mashq o'yini, statistikaga yozilmaydi)
+#   STARS_MODE       — Telegram Stars to'lovlari: off | admins (faqat bot egalari sinaydi) | all (hamma)
 [vars]
 ADMIN_IDS = "5105291033,7184608742"
 DEV_FAKE_PLAYERS = "true"
+STARS_MODE = "admins"
 
 # Sir (GitHub Actions orqali shifrlangan holda yoziladi): BOT_TOKEN

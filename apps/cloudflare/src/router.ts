@@ -5,24 +5,46 @@
 import {
   applySettingsOp,
   backRow,
+  buyConfirmView,
+  catalogItem,
+  dailyView,
   decode,
   encode,
   engineErrorText,
+  formatDate,
+  inventoryView,
+  inviteView,
+  itemName,
   lobbyErrorText,
   mainMenu,
   plainAlert,
+  profileKeyboard,
+  refCode,
+  REFERRAL,
+  roleStatsView,
   rolesText,
   SELECTABLE_MODES,
   settingsView,
-  SOON_SECTIONS,
+  shopCategoryView,
+  shopHomeView,
   splitLong,
+  starsProduct,
+  vipView,
   type CallbackData,
+  type DailyInfo,
   type GroupSettingsData,
+  type InventoryInfo,
+  type ItemKind,
   type Keyboard,
   type LobbyError,
+  type ReferralInfo,
+  type RoleStatRow,
+  type StarsMode,
+  type WalletInfo,
 } from '@mafia/bot-core';
 import { MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type EngineErrorCode, type GameMode } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
+import type { BuyResult, CheckOrderResult, ClaimDailyResult, PaymentInput, PaymentResult, PaymentRow } from './economy-core';
 import type { TgUserInput, UserInfo } from './registry-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
@@ -44,6 +66,13 @@ export interface TgMessage {
   sender_chat?: TgChat;
   text?: string;
   migrate_to_chat_id?: number;
+  successful_payment?: {
+    currency: string;
+    total_amount: number;
+    invoice_payload: string;
+    telegram_payment_charge_id: string;
+    provider_payment_charge_id?: string;
+  };
 }
 export interface TgCallback {
   id: string;
@@ -56,12 +85,35 @@ export interface TgUpdate {
   message?: TgMessage;
   callback_query?: TgCallback;
   my_chat_member?: { chat: TgChat; from: TgUser; old_chat_member: { status: string }; new_chat_member: { status: string } };
+  pre_checkout_query?: { id: string; from: TgUser; currency: string; total_amount: number; invoice_payload: string };
 }
 
 // ───────────────────────────── Portlar ─────────────────────────────
 
 export interface RegistryApi {
   upsertUser(u: TgUserInput, dmOpened: boolean): Promise<UserInfo>;
+  onStart(u: TgUserInput, payload: string): Promise<{ user: UserInfo; referred: boolean }>;
+  // iqtisodiyot
+  wallet(tgId: number): Promise<WalletInfo>;
+  inventory(tgId: number): Promise<InventoryInfo>;
+  buy(tgId: number, code: string, idem: string): Promise<BuyResult>;
+  toggleArm(tgId: number, code: string): Promise<boolean>;
+  equip(tgId: number, kind: 'FRAME' | 'TITLE', code: string | null): Promise<boolean>;
+  dailyInfo(tgId: number): Promise<DailyInfo>;
+  claimDaily(tgId: number): Promise<ClaimDailyResult>;
+  claimQuest(tgId: number, code: string): Promise<{ ok: true; reward: number; balance: number } | { ok: false }>;
+  referralInfo(tgId: number): Promise<ReferralInfo>;
+  roleStats(tgId: number): Promise<RoleStatRow[]>;
+  // to'lovlar
+  createOrder(tgId: number, code: string): Promise<{ ok: true; id: string; payload: string } | { ok: false }>;
+  checkOrder(payload: string, tgId: number, amount: number, currency: string): Promise<CheckOrderResult>;
+  completePayment(p: PaymentInput): Promise<PaymentResult>;
+  paymentInfo(chargeId: string): Promise<PaymentRow | null>;
+  markRefunded(chargeId: string, by: string): Promise<boolean>;
+  recentPayments(limit?: number, tgId?: number): Promise<PaymentRow[]>;
+  // murojaatlar
+  createTicket(tgId: number, category: string, message: string): Promise<{ ok: true; id: number } | { ok: false }>;
+  answerTicket(id: number, by: string, answer: string): Promise<{ tgId: number } | null>;
   activeOf(tgId: number): Promise<{ chatId: number; number: number } | null>;
   gameChat(number: number): Promise<number | null>;
   upsertGroup(chatId: number, title: string, opts?: { status?: string; botIsAdmin?: boolean }): Promise<void>;
@@ -103,6 +155,8 @@ export interface RouterDeps {
   room(chatId: number): RoomApi;
   admins: ReadonlySet<number>;
   devFake: boolean;
+  /** Telegram Stars: off | admins (faqat bot egalari sinaydi) | all */
+  starsMode: StarsMode;
   botUsername(): Promise<string>;
   now(): number;
 }
@@ -228,9 +282,11 @@ export class Router {
 
   async handle(update: TgUpdate): Promise<void> {
     if (update.callback_query) return this.onCallback(update.callback_query);
+    if (update.pre_checkout_query) return this.onPreCheckout(update.pre_checkout_query);
     if (update.my_chat_member) return this.onMyChatMember(update.my_chat_member);
     const m = update.message;
     if (!m) return;
+    if (m.successful_payment) return this.onPayment(m);
     if (m.migrate_to_chat_id) {
       await this.d.registry.migrateGroup(m.chat.id, m.migrate_to_chat_id);
       await this.d.room(m.chat.id).migrate(m.migrate_to_chat_id);
@@ -242,10 +298,12 @@ export class Router {
 
   private async parseCommand(text: string | undefined): Promise<{ cmd: string; args: string } | null> {
     if (!text || !text.startsWith('/')) return null;
-    const [head = '', ...rest] = text.split(/\s+/);
-    const [cmd = '', at] = head.slice(1).split('@');
+    // Argumentlardagi qator ko'chishlari saqlanadi (murojaat matni uchun)
+    const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
+    if (!m) return null;
+    const [cmd = '', at] = m[1]!.split('@');
     if (at && at.toLowerCase() !== (await this.d.botUsername()).toLowerCase()) return null;
-    return { cmd: cmd.toLowerCase(), args: rest.join(' ').trim() };
+    return { cmd: cmd.toLowerCase(), args: (m[2] ?? '').trim() };
   }
 
   private async onMyChatMember(u: NonNullable<TgUpdate['my_chat_member']>): Promise<void> {
@@ -277,7 +335,8 @@ export class Router {
     const chatId = m.chat.id;
     switch (c.cmd) {
       case 'start': {
-        const user = await this.d.registry.upsertUser(from, true);
+        const { user, referred } = await this.d.registry.onStart(from, c.args);
+        if (referred) await this.reply(chatId, t('invite.welcome_referred', { games: REFERRAL.gamesRequired }));
         const join = /^join_(\d+)$/.exec(c.args);
         if (join) {
           const number = Number(join[1]);
@@ -295,7 +354,21 @@ export class Router {
       case 'support':
       case 'report':
       case 'paysupport':
-        return this.reply(chatId, t('support.text'));
+        return this.ticket(from, c.cmd, c.args);
+      case 'daily':
+      case 'shop':
+      case 'inventory':
+      case 'vip':
+      case 'invite': {
+        const v = await this.section(from, c.cmd, true);
+        return this.reply(chatId, v!.text, v!.keyboard);
+      }
+      case 'refund':
+        return this.refund(from, c.args);
+      case 'reply':
+        return this.answerTicket(from, c.args);
+      case 'admin_payments':
+        return this.adminPayments(from);
       case 'privacy':
         return this.reply(chatId, t('privacy.text'));
       case 'rules':
@@ -304,9 +377,10 @@ export class Router {
         for (const part of splitLong(rolesText())) await this.reply(chatId, part);
         return;
       case 'profile':
-      case 'mystats':
-        await this.d.registry.upsertUser(from, true);
-        return this.reply(chatId, await this.d.registry.profileText(from.id));
+      case 'mystats': {
+        const v = await this.section(from, 'profile', true);
+        return this.reply(chatId, v!.text, v!.keyboard);
+      }
       case 'delete_me':
         return this.reply(chatId, t('delete.confirm'), [
           [
@@ -456,6 +530,8 @@ export class Router {
       case 'menu':
         await this.menu(cb, data.section);
         return this.answer(cb);
+      case 'eco':
+        return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
           await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu());
@@ -542,8 +618,6 @@ export class Router {
           [{ text: t('play.rules'), callback_data: encode({ t: 'menu', section: 'rules' }) }],
           backRow(),
         ]);
-      case 'profile':
-        return this.edit(cb, await this.d.registry.profileText(user.id), [backRow()]);
       case 'rating':
         return this.edit(cb, await this.d.registry.globalRating(user.id), [backRow()]);
       case 'rules':
@@ -561,9 +635,258 @@ export class Router {
         return this.edit(cb, t('settings.text'), [backRow()]);
       case 'help':
         return this.edit(cb, t('help.text'), [backRow()]);
-      default:
-        if ((SOON_SECTIONS as readonly string[]).includes(section)) return this.edit(cb, t('common.soon', { section: t(`menu.${section}`) }), [backRow()]);
+      default: {
+        const v = await this.section(from, section, cb.message?.chat.type === 'private');
+        if (v) return this.edit(cb, v.text, v.keyboard);
         return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu());
+      }
     }
+  }
+
+  // ───────────────────────────── Iqtisodiyot ─────────────────────────────
+
+  private starsAllowed(tgId: number): boolean {
+    if (this.d.starsMode === 'all') return true;
+    if (this.d.starsMode === 'admins') return this.isSuperadmin(tgId);
+    return false;
+  }
+
+  /** Bo'lim ko'rinishi (buyruq va menyu tugmasi uchun umumiy). null — bunday bo'lim yo'q. */
+  private async section(from: TgUser, section: string, dmOpened: boolean): Promise<{ text: string; keyboard: Keyboard } | null> {
+    const id = from.id;
+    switch (section) {
+      case 'profile': {
+        await this.d.registry.upsertUser(from, dmOpened);
+        return { text: await this.d.registry.profileText(id), keyboard: profileKeyboard() };
+      }
+      case 'shop':
+        return shopHomeView((await this.d.registry.wallet(id)).coins);
+      case 'inventory':
+        return inventoryView(await this.d.registry.inventory(id));
+      case 'vip':
+        return vipView(await this.d.registry.wallet(id), { starsAllowed: this.starsAllowed(id), isAdmin: this.isSuperadmin(id) });
+      case 'daily':
+        return dailyView(await this.d.registry.dailyInfo(id));
+      case 'invite': {
+        await this.d.registry.upsertUser(from, dmOpened);
+        const link = `https://t.me/${await this.d.botUsername()}?start=ref_${refCode(id)}`;
+        return inviteView(await this.d.registry.referralInfo(id), link);
+      }
+      default:
+        return null;
+    }
+  }
+
+  private async eco(cb: TgCallback, op: string, arg: string): Promise<void> {
+    const id = cb.from.id;
+    const reg = this.d.registry;
+    switch (op) {
+      case 'shop': {
+        const v = shopHomeView((await reg.wallet(id)).coins);
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb);
+      }
+      case 'cat': {
+        if (arg !== 'FRAME' && arg !== 'TITLE' && arg !== 'ARCADE') return this.answer(cb, t('cb.stale'));
+        const v = shopCategoryView(arg as ItemKind, await reg.inventory(id));
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb);
+      }
+      case 'buy': {
+        const item = catalogItem(arg);
+        if (!item || item.price === null) return this.answer(cb, t('shop.unknown'));
+        const v = buyConfirmView(item, (await reg.wallet(id)).coins);
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb);
+      }
+      case 'buyok': {
+        const item = catalogItem(arg);
+        // callback_query id har bosishda noyob: Telegram qayta yuborsa ham ikki marta yechilmaydi
+        const r = await reg.buy(id, arg, `buy:${cb.id}`);
+        if (!r.ok) {
+          const msg =
+            r.error === 'INSUFFICIENT'
+              ? t('shop.insufficient', { price: r.price ?? 0, coins: r.balance })
+              : r.error === 'OWNED'
+                ? t('shop.already_owned')
+                : r.error === 'TIER_ONLY'
+                  ? t('shop.tier_only', { tier: t(`tier.${item?.tier ?? 'VIP'}`) })
+                  : t('shop.unknown');
+          return this.answer(cb, msg, true);
+        }
+        const v = shopCategoryView(item!.kind, await reg.inventory(id));
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb, t('shop.bought', { name: itemName(arg), coins: r.balance }), true);
+      }
+      case 'arm':
+      case 'ef':
+      case 'et':
+      case 'uf':
+      case 'ut': {
+        const ok =
+          op === 'arm'
+            ? await reg.toggleArm(id, arg)
+            : await reg.equip(id, op === 'ef' || op === 'uf' ? 'FRAME' : 'TITLE', op === 'uf' || op === 'ut' ? null : arg);
+        const v = inventoryView(await reg.inventory(id));
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb, ok ? t('inv.saved') : t('inv.not_owned'));
+      }
+      case 'daily': {
+        const r = await reg.claimDaily(id);
+        const v = dailyView(await reg.dailyInfo(id));
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb, r.ok ? t('daily.got', { amount: r.amount, streak: r.streak, coins: r.balance }) : t('daily.already'), r.ok);
+      }
+      case 'qc': {
+        const r = await reg.claimQuest(id, arg);
+        const v = dailyView(await reg.dailyInfo(id));
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb, r.ok ? t('quest.claimed', { reward: r.reward, coins: r.balance }) : t('quest.not_done'), r.ok);
+      }
+      case 'stats': {
+        const [w, stats] = await Promise.all([reg.wallet(id), reg.roleStats(id)]);
+        const v = roleStatsView(stats, w);
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb);
+      }
+      case 'star':
+        return this.sendInvoice(cb, arg);
+      default:
+        return this.answer(cb, t('cb.stale'));
+    }
+  }
+
+  // ───────────────────────────── Telegram Stars ─────────────────────────────
+
+  private async sendInvoice(cb: TgCallback, code: string): Promise<void> {
+    const id = cb.from.id;
+    const product = starsProduct(code);
+    if (!product) return this.answer(cb, t('cb.stale'));
+    if (!this.starsAllowed(id)) return this.answer(cb, t('pay.disabled'), true);
+    if (product.adminOnly && !this.isSuperadmin(id)) return this.answer(cb, t('pay.admin_only'), true);
+    const order = await this.d.registry.createOrder(id, code);
+    if (!order.ok) return this.answer(cb, t('common.error'));
+    const title = t(`invoice.${code}.title`);
+    await this.d.tg.call('sendInvoice', {
+      chat_id: id,
+      title,
+      description: t(`invoice.${code}.desc`),
+      payload: order.payload,
+      provider_token: '',
+      currency: 'XTR',
+      prices: [{ label: title, amount: product.stars }],
+    });
+    return this.answer(cb, t('pay.sent'));
+  }
+
+  /** pre_checkout_query: Telegram 10 soniya ichida javob kutadi — faqat tez tekshiruv. */
+  private async onPreCheckout(q: NonNullable<TgUpdate['pre_checkout_query']>): Promise<void> {
+    const deny = (message: string) =>
+      this.d.tg.call('answerPreCheckoutQuery', { pre_checkout_query_id: q.id, ok: false, error_message: plainAlert(message) }).catch(() => undefined);
+    if (!this.starsAllowed(q.from.id)) return void (await deny(t('pay.disabled')));
+    const r = await this.d.registry.checkOrder(q.invoice_payload, q.from.id, q.total_amount, q.currency);
+    if (!r.ok) return void (await deny(t('pay.precheck_failed')));
+    if (r.product.adminOnly && !this.isSuperadmin(q.from.id)) return void (await deny(t('pay.admin_only')));
+    await this.d.tg.call('answerPreCheckoutQuery', { pre_checkout_query_id: q.id, ok: true });
+  }
+
+  /** successful_payment: mahsulot faqat shu yerda beriladi (tugma bosilishiga ishonilmaydi). */
+  private async onPayment(m: TgMessage): Promise<void> {
+    const sp = m.successful_payment!;
+    const from = m.from;
+    if (!from) return;
+    const r = await this.d.registry.completePayment({
+      tgId: from.id,
+      payload: sp.invoice_payload,
+      amount: sp.total_amount,
+      currency: sp.currency,
+      chargeId: sp.telegram_payment_charge_id,
+    });
+    if (r.status === 'DUPLICATE') return;
+    if (r.status === 'UNMATCHED') {
+      await this.reply(from.id, t('pay.unmatched'));
+      for (const admin of this.d.admins) {
+        await this.reply(
+          admin,
+          t('pay.admin_unmatched', { user: from.id, stars: sp.total_amount, payload: escapeHtml(sp.invoice_payload.slice(0, 64)), charge: escapeHtml(sp.telegram_payment_charge_id) }),
+        );
+      }
+      return;
+    }
+    if (r.product === 'TEST_1') {
+      return this.reply(from.id, t('pay.test_success', { stars: sp.total_amount, charge: escapeHtml(sp.telegram_payment_charge_id) }));
+    }
+    await this.reply(
+      from.id,
+      t('pay.success', {
+        product: `<b>${t(`invoice.${r.product}.title`)}</b>`,
+        until: r.until ? t('pay.success_until', { date: formatDate(r.until) }) : '',
+      }),
+    );
+  }
+
+  private async refund(from: TgUser, args: string): Promise<void> {
+    if (!this.isSuperadmin(from.id)) return this.reply(from.id, t('admin.no_access'));
+    const chargeId = args.trim();
+    if (!chargeId) return this.reply(from.id, t('admin.refund_usage'));
+    const p = await this.d.registry.paymentInfo(chargeId);
+    if (!p || p.status === 'REFUNDED') return this.reply(from.id, t('admin.refund_not_found'));
+    try {
+      await this.d.tg.call('refundStarPayment', { user_id: p.tgId, telegram_payment_charge_id: chargeId });
+    } catch (e) {
+      return this.reply(from.id, t('admin.refund_failed', { error: escapeHtml(e instanceof TgError ? e.description : String(e)) }));
+    }
+    await this.d.registry.markRefunded(chargeId, String(from.id));
+    const product = p.product ? t(`invoice.${p.product}.title`) : '—';
+    await this.reply(p.tgId, t('pay.refunded_user', { stars: p.amount, product }));
+    return this.reply(from.id, t('admin.refund_done', { stars: p.amount, user: p.tgId }));
+  }
+
+  private async adminPayments(from: TgUser): Promise<void> {
+    if (!this.isSuperadmin(from.id)) return this.reply(from.id, t('admin.no_access'));
+    const list = await this.d.registry.recentPayments(10);
+    if (list.length === 0) return this.reply(from.id, t('admin.payments_empty'));
+    const lines = list.map((p) => this.paymentLine(p));
+    return this.reply(from.id, `${t('admin.payments_title')}\n\n${lines.join('\n\n')}`);
+  }
+
+  private paymentLine(p: PaymentRow): string {
+    return t('admin.payment_line', {
+      date: formatDate(p.createdAt),
+      user: p.tgId,
+      product: p.product ?? '—',
+      stars: p.amount,
+      status: p.status,
+      charge: escapeHtml(p.chargeId),
+    });
+  }
+
+  // ───────────────────────────── Murojaatlar ─────────────────────────────
+
+  private async ticket(from: TgUser, cmd: string, text: string): Promise<void> {
+    if (!text) return this.reply(from.id, t('support.usage'));
+    const category = cmd === 'paysupport' ? 'PAYMENT' : cmd === 'report' ? 'REPORT' : 'SUPPORT';
+    const user = await this.d.registry.upsertUser(from, true);
+    const r = await this.d.registry.createTicket(from.id, category, text);
+    if (!r.ok) return this.reply(from.id, t('support.limit'));
+    let payments = '';
+    if (category === 'PAYMENT') {
+      const list = await this.d.registry.recentPayments(5, from.id);
+      if (list.length > 0) payments = t('support.admin_payments', { list: list.map((p) => this.paymentLine(p)).join('\n') });
+    }
+    const msg = t('support.admin_new', { id: r.id, category, user: escapeHtml(user.name), tgId: from.id, text: escapeHtml(text.slice(0, 2000)), payments });
+    for (const admin of this.d.admins) await this.reply(admin, msg);
+    return this.reply(from.id, t('support.created', { id: r.id }));
+  }
+
+  private async answerTicket(from: TgUser, args: string): Promise<void> {
+    if (!this.isSuperadmin(from.id)) return this.reply(from.id, t('admin.no_access'));
+    const m = /^(\d+)\s+([\s\S]+)$/.exec(args);
+    if (!m) return this.reply(from.id, t('admin.reply_usage'));
+    const id = Number(m[1]);
+    const r = await this.d.registry.answerTicket(id, String(from.id), m[2]!);
+    if (!r) return this.reply(from.id, t('admin.reply_not_found'));
+    await this.reply(r.tgId, t('support.answer', { id, text: escapeHtml(m[2]!) }));
+    return this.reply(from.id, t('admin.reply_done', { id }));
   }
 }

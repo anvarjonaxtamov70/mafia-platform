@@ -74,14 +74,25 @@ Rejadan farqlar (sabablari bilan):
 - Profil, global reyting, guruh reytingi, `/mystats`.
 - `PENDING`: haftalik/oylik/mavsumiy reytinglar (jadval tayyor: `leaderboard_seasons`, `rating_entries`).
 
-### M7 — Iqtisodiyot — `PENDING`
-Sxema tayyor (`wallet_transactions`, `products`, `inventory_items`, `daily_reward_claims`, `quests`). Menyu “keyingi bosqich” deb ochiq ko‘rsatadi.
+### M7 — Iqtisodiyot — `VERIFIED` (Cloudflare)
+- Coins ledger: har o‘zgarish `wallet_tx` da noyob kalit bilan, balans manfiy bo‘lmaydi, xarid + buyum bitta tranzaksiyada.
+- O‘yin uchun: tugatish +10, g‘alaba +15 🪙 (mashq o‘yinida yo‘q).
+- Kunlik mukofot: 50 → 75 → 100 → 125 → 150 → 200 → 300 🪙, Toshkent kuni bo‘yicha.
+- Kunlik vazifalar: 2 ta o‘yin (60), 1 g‘alaba (80), oxirigacha tirik qolish (50).
+- Do‘kon: ramkalar, unvonlar, Arcade buyumlari. Inventar: tanlash, Arcade’da ishlatishni yoqish.
+- Arcade: o‘yin boshida band qilinadi, guruhga soni e’lon qilinadi, ishlatilgani sarflanadi, qolgani qaytadi, bekor qilinsa hammasi qaytadi.
+- `PENDING`: Node/VPS versiyasiga ko‘chirish, admin orqali narxlarni o‘zgartirish.
 
-### M8 — Telegram Stars va VIP — `PENDING`
-Sxema tayyor (`orders`, `payments` unique `telegram_payment_charge_id`, `payment_refunds`, `subscriptions`).
+### M8 — Telegram Stars va VIP — `VERIFIED` (Cloudflare)
+- VIP (99 ⭐) va VIP PRO (249 ⭐), 30 kunlik bir martalik xarid; qayta xarid muddatni uzaytiradi.
+- Buyurtma → `sendInvoice` (XTR) → `pre_checkout_query` tekshiruvi → `successful_payment` da berish; `telegram_payment_charge_id` bir marta.
+- `/refund` (admin) → `refundStarPayment`, VIP davri bekor; `/admin_payments`; `/paysupport` murojaati.
+- `STARS_MODE`: `off` / `admins` (hozir — faqat bot egalari, 1 ⭐ test to‘lov bilan) / `all`.
+- `PENDING`: CLUB (guruh tarifi), Telegram avto-obunasi (`subscription_period`).
 
-### M9 — Ijtimoiy — `PENDING`
-Sxema tayyor (`referrals`, `achievements`, `user_achievements`).
+### M9 — Ijtimoiy — qisman `VERIFIED`
+- Referal: `ref_` havola, do‘st 2 ta o‘yin yakunlasa 100 🪙, o‘zini/takroriy taklif rad etiladi.
+- `PENDING`: yutuqlar, turnir, haftalik/oylik reytinglar.
 
 ### M10 — Admin, moderatsiya, support — `IMPLEMENTED` (qisman)
 - Bor: `/admin_minplayers`, `/admin_stats` (superadmin), audit log (sozlamalar o‘zgarishi), `/privacy`, `/delete_me` (anonimlashtirish).
