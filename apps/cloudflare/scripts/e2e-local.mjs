@@ -101,6 +101,7 @@ const setupSecret = createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('
 const force = () => fetch(`${base}/__test/force?chat=${GROUP}`, { method: 'POST', headers: { 'x-setup-key': setupSecret } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const texts = (chat) => calls.filter((c) => c.method === 'sendMessage' && c.params.chat_id === chat).map((c) => c.params.text);
+const edits = (chat) => calls.filter((c) => c.method === 'editMessageText' && c.params.chat_id === chat).map((c) => c.params.text);
 const buttons = (chat) =>
   calls
     .filter((c) => c.method === 'sendMessage' && c.params.chat_id === chat)
@@ -194,7 +195,6 @@ try {
   check(texts(2).some((t) => t.includes('O‘yinlar: 1')), 'profil statistikasi saqlandi');
 
   // ───── Iqtisodiyot (Durable Object SQLite transactionSync bilan) ─────
-  const edits = (chat) => calls.filter((c) => c.method === 'editMessageText' && c.params.chat_id === chat).map((c) => c.params.text);
   check(texts(2).some((t) => t.includes('🪙 +')), 'o‘yin tugaganda Coins berildi');
   await cb(2, 'e:daily:');
   await sleep(200);
