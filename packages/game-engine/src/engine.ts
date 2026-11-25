@@ -144,6 +144,8 @@ export function createGame(input: CreateGameInput): EngineResult | { ok: false; 
         shield: config.allowArcadeItems && !!items?.shield,
         fakeDocument: config.allowArcadeItems && !!items?.fakeDocument,
         ...(config.allowArcadeItems && items?.voteShield ? { voteShield: true } : {}),
+        ...(config.allowArcadeItems && items?.heroShot ? { heroShot: true } : {}),
+        ...(config.allowArcadeItems && items?.heroShield ? { heroShield: true } : {}),
       },
       missedActions: 0,
       missedVotes: 0,
@@ -420,6 +422,46 @@ function executeCandidate(s: GameState, candidateId: string, events: GameEvent[]
     }
   }
   grantTwinBonus(s, deaths, s.dayNumber + 1, (to, body) => events.push({ ...body, audience: { kind: 'private', playerId: to } }));
+}
+
+/** One hero shot per Arcade match, during discussion after dawn. */
+export function heroAttack(state: GameState, actorId: string, targetId: string, now: number, rng: Rng, seq: number): EngineResult {
+  const stale = checkStale(state, seq);
+  if (stale) return fail(state, stale);
+  if (!state.config.allowArcadeItems || state.phase !== 'DAY_DISCUSSION' || (state.phaseEndsAt !== null && now >= state.phaseEndsAt)) return fail(state, 'WRONG_PHASE');
+  const actor = getPlayer(state, actorId);
+  if (!actor) return fail(state, 'NOT_A_PLAYER');
+  if (actor.status !== 'ALIVE') return fail(state, 'PLAYER_NOT_ALIVE');
+  if (!actor.items.heroShot) return fail(state, 'NO_CHARGES');
+  const target = getPlayer(state, targetId);
+  if (!target || target.status !== 'ALIVE' || targetId === actorId) return fail(state, 'INVALID_TARGET');
+  const s = clone(state);
+  getPlayer(s, actorId)!.items.heroShot = false;
+  const victim = getPlayer(s, targetId)!;
+  const events: GameEvent[] = [];
+  if (victim.items.heroShield) {
+    victim.items.heroShield = false;
+    events.push({ type: 'HERO_PROTECTED', playerId: targetId, audience: { kind: 'public' } });
+    return ok(s, events);
+  }
+  const killed = [targetId];
+  victim.status = 'DEAD';
+  victim.death = { cause: 'HERO', at: 'DAY', number: s.dayNumber };
+  const lovers = s.links.lovers;
+  if (lovers?.includes(targetId)) {
+    const partner = getPlayer(s, lovers[0] === targetId ? lovers[1] : lovers[0]);
+    if (partner?.status === 'ALIVE') {
+      partner.status = 'DEAD';
+      partner.death = { cause: 'HEARTBREAK', at: 'DAY', number: s.dayNumber };
+      killed.push(partner.id);
+    }
+  }
+  events.push({ type: 'DAY_DEATHS', deaths: killed.map(id => ({ playerId: id, role: s.config.revealRolesOnDeath ? getPlayer(s,id)!.role : null })), audience: { kind: 'public' } });
+  grantTwinBonus(s,killed,s.dayNumber+1,(to,body)=>events.push({...body,audience:{kind:'private',playerId:to}}));
+  events.push(...applyPersonalWins(s,'VERDICT',rng));
+  const outcome=checkMainVictory(s);
+  if(outcome)finish(s,outcome,outcomeReason(s,outcome),now,rng,events);
+  return ok(s,events);
 }
 
 function finish(s: GameState, outcome: MainOutcome, reason: 'FACTION_WIN' | 'MAX_CYCLES' | 'ALL_DEAD' | 'NO_MAIN_FACTION', now: number, rng: Rng, events: GameEvent[]): void {

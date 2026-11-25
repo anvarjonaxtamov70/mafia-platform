@@ -29,6 +29,7 @@ import {
   canEndPhaseEarly,
   createGame,
   getRole,
+  heroAttack,
   judgeVeto,
   leaveGame,
   revealMayor,
@@ -48,7 +49,6 @@ import { escapeHtml, t } from '@mafia/localization';
 import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
-import { heroDefinition } from './hero-core';
 
 export type { ConfigSnapshot };
 
@@ -79,7 +79,7 @@ export interface RoomGame {
   createdAt: number;
   startedAt?: number;
   /** Arcade: o'yin boshida band qilingan buyumlar (tgId → bor/yo'q) */
-  arcade?: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }>;
+  arcade?: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }>;
 }
 
 export interface OutItem {
@@ -124,7 +124,7 @@ export interface RegistryPort {
   releaseGame(number: number, status: 'CANCELLED' | 'FINISHED'): Promise<void>;
   markRunning(number: number, players: number): Promise<void>;
   recordGame(input: RecordGameInput): Promise<RecordResult>;
-  reserveArcade(number: number, tgIds: number[]): Promise<Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }>>;
+  reserveArcade(number: number, tgIds: number[]): Promise<Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }>>;
   settleArcade(number: number, used: Record<string, string[]>): Promise<void>;
   releaseArcade(number: number): Promise<void>;
   markDmBlocked(tgIds: number[]): Promise<void>;
@@ -445,7 +445,7 @@ export class RoomCore {
     }
 
     // Arcade: yoqilgan buyumlar band qilinadi (har turdan bittadan, §18.1)
-    let items: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> = {};
+    let items: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }> = {};
     if (g.config.allowArcadeItems) {
       this.externalCalls++;
       items = await this.deps.registry.reserveArcade(
@@ -594,6 +594,7 @@ export class RoomCore {
           if (had.shield && fin && !fin.shield) list.push('SHIELD');
           if (had.fakeDocument && fin && !fin.fakeDocument) list.push('FAKE_DOC');
           if (had.voteShield && fin && !fin.voteShield) list.push('VOTE_SHIELD');
+          if (had.heroShield && fin && !fin.heroShield) list.push('HERO_SHIELD');
           if (list.length) used[id] = list;
         }
         this.addOp({ type: 'settleItems', number: g.number, used });
@@ -721,6 +722,15 @@ export class RoomCore {
     return { ok: true, text, ...(still ? { keyboard: mv.keyboard } : {}) };
   }
 
+  async heroAttack(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>> {
+    const g = this.checkGame(input.number);
+    if (!g?.state || g.state.phaseSeq !== input.seq) return {ok:false,error:'STALE_PHASE'};
+    const target = this.seatToId(g.state,input.seat);
+    if (!target) return {ok:false,error:'INVALID_TARGET'};
+    const result = await this.mutate(input.tgId,(s,now,rng)=>heroAttack(s,String(input.tgId),target,now,rng,input.seq));
+    return result.ok ? {ok:true,text:t('hero.attack_done')} : result;
+  }
+
   async dayVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<{ targetName: string | null }>> {
     const g = this.checkGame(input.number);
     if (!g || !g.state) return { ok: false, error: 'STALE_PHASE' };
@@ -837,7 +847,7 @@ export class RoomCore {
             }
             for (const r of recorded.players) {
               const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
-              const hero = r.hero ? '\n' + t('hero.reward', { name: escapeHtml(heroDefinition(r.hero.code)?.name ?? r.hero.code), xp: r.hero.xp, level: r.hero.level }) + (r.hero.leveled ? ' 🎉' : '') : '';
+              const hero = r.hero ? '\n' + t('hero.reward', { xp: r.hero.xp, level: r.hero.level }) + (r.hero.leveled ? ' 🎉' : '') : '';
               const reward = r.points === undefined ? t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }) : t('reward.v7', { outcome: t(`dm.outcome.${r.outcome}`), dollars: r.coins, points: (r.points > 0 ? '+' : '') + r.points });
               this.send(r.tgId, reward + hero);
             }

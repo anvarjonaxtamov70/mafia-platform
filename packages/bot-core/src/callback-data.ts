@@ -39,6 +39,7 @@ export type CallbackData =
   | { t: 'skip'; game: number; seq: number }
   | { t: 'mafia'; game: number; seq: number; seat: number }
   | { t: 'vote'; game: number; seq: number; seat: number }
+  | { t: 'hero'; game: number; seq: number; seat: number }
   | { t: 'mayor'; game: number }
   | { t: 'veto'; game: number; seq: number }
   | { t: 'lobby'; op: 'j' | 'l' | 's' | 'c'; game: number }
@@ -61,6 +62,9 @@ export function encode(d: CallbackData): string {
       break;
     case 'mafia':
       out = `mv:${d.game}:${d.seq}:${d.seat}`;
+      break;
+    case 'hero':
+      out = `h:${d.game}:${d.seq}:${d.seat}`;
       break;
     case 'vote':
       out = `v:${d.game}:${d.seq}:${d.seat}`;
@@ -108,12 +112,13 @@ export function decode(raw: string): CallbackData | null {
       return { t: 'action', game, seq, kind, seats: seats as number[] };
     }
     case 'mv':
+    case 'h':
     case 'v': {
       const game = int(p[1]);
       const seq = int(p[2]);
       const seat = int(p[3]);
       if (p.length !== 4 || game === null || seq === null || seat === null) return null;
-      return { t: p[0] === 'mv' ? 'mafia' : 'vote', game, seq, seat };
+      return { t: p[0] === 'mv' ? 'mafia' : p[0] === 'h' ? 'hero' : 'vote', game, seq, seat };
     }
     case 'my': {
       const game = int(p[1]);
