@@ -108,9 +108,10 @@ describe('O‘yin mukofotlari va vazifalar', () => {
     const eco = w.registryCore.eco;
     for (const id of ids) {
       const coins = eco.coins(id);
-      expect([10, 25]).toContain(coins);
+      expect(coins).toBeGreaterThanOrEqual(0);
+      expect(coins).toBeLessThanOrEqual(66);
     }
-    expect(w.tg.texts(2).some((x) => x.includes('🪙 +'))).toBe(true);
+    expect(w.tg.texts(2).some((x) => x.includes('💵 +'))).toBe(true);
     const q1 = eco.dailyInfo(2).quests.find((q) => q.code === 'PLAY_2')!;
     expect(q1.progress).toBe(1);
     expect(eco.claimQuest(2, 'PLAY_2')).toEqual({ ok: false });
@@ -189,7 +190,7 @@ describe('Do‘kon va inventar (§18, §21)', () => {
     await w.send(callback(7, 'e:arm:SHIELD'));
     expect(w.registryCore.eco.inventory(7).items.find((i) => i.code === 'SHIELD')!.armed).toBe(true);
     await w.send(callback(7, 'm:inventory'));
-    expect(lastEdit(w)).toContain('Qalqon: 2 ta');
+    expect(lastEdit(w)).toContain('Himoya: 2 ta');
   });
 });
 

@@ -227,6 +227,7 @@ export class Registry extends DurableObject<Env> {
   groupLeaderboard(chatId: number) {
     return this.core.groupLeaderboard(chatId);
   }
+  pointsTop(chatId: number | null, days: 0 | 1 | 7 | 30, actor: number) { return this.core.pointsTop(chatId, days, actor); }
   adminStats() {
     return this.core.adminStats();
   }
@@ -462,7 +463,10 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'status', description: 'O‘yin holati' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'mystats', description: 'Mening statistikam' },
-      { command: 'leaderboard', description: 'Guruh reytingi' },
+      { command: 'top', description: 'Guruh TOP 20 — barcha vaqt' },
+      { command: 'top1', description: 'Guruh TOP 20 — 24 soat' },
+      { command: 'top7', description: 'Guruh TOP 20 — 7 kun' },
+      { command: 'top30', description: 'Guruh TOP 20 — 30 kun' },
       { command: 'cancelgame', description: 'O‘yinni bekor qilish' },
       { command: 'settings', description: 'Guruh sozlamalari' },
     ],

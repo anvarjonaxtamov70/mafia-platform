@@ -195,7 +195,7 @@ try {
   check(texts(2).some((t) => t.includes('O‘yinlar: 1')), 'profil statistikasi saqlandi');
 
   // ───── Iqtisodiyot (Durable Object SQLite transactionSync bilan) ─────
-  check(texts(2).some((t) => t.includes('🪙 +')), 'o‘yin tugaganda Coins berildi');
+  check(texts(2).some((t) => t.includes('💵 +')), 'o‘yin tugaganda Coins berildi');
   await cb(2, 'e:daily:');
   await sleep(200);
   const dailyAnswer = calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.params.text ?? '';

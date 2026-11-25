@@ -77,6 +77,7 @@ export interface RoomGame {
   state: GameState | null;
   version: number;
   createdAt: number;
+  startedAt?: number;
   /** Arcade: o'yin boshida band qilingan buyumlar (tgId → bor/yo'q) */
   arcade?: Record<string, { shield: boolean; fakeDocument: boolean }>;
 }
@@ -486,6 +487,7 @@ export class RoomCore {
     const fakes = new Set(g.players.filter((p) => p.fake).map((p) => String(p.id)));
     const pp = this.postProcess(created.state, created.events, fakes, -1, now);
     g.status = 'RUNNING';
+    g.startedAt = now;
     g.deadline = null;
     this.applyState(g, null, pp.state, pp.events);
     this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'CLEAR_KEYBOARD', refKey: lobbyRef(g.id) }, dedupeKey: '' }]);
@@ -605,6 +607,9 @@ export class RoomCore {
           practice: g.players.some((p) => p.fake),
           outcome: state.result.outcome,
           days: state.dayNumber,
+          rewardVersion: 1,
+          completedAt: state.result.finishedAt,
+          durationMs: Math.max(0, state.result.finishedAt - (g.startedAt ?? state.result.finishedAt)),
           players: state.result.players.map((r) => {
             const sp = state.players.find((x) => x.id === r.playerId)!;
             const rp = byId.get(r.playerId)!;
@@ -618,6 +623,7 @@ export class RoomCore {
               left: r.left,
               active: sp.missedVotes === 0 && sp.missedActions === 0,
               afk: sp.afkPenalized === true,
+              missed: sp.missedVotes + sp.missedActions,
               fake: rp.fake,
               ...(rp.badge ? { badge: rp.badge } : {}),
             };
@@ -831,7 +837,8 @@ export class RoomCore {
             for (const r of recorded.players) {
               const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
               const hero = r.hero ? '\n' + t('hero.reward', { name: escapeHtml(heroDefinition(r.hero.code)?.name ?? r.hero.code), xp: r.hero.xp, level: r.hero.level }) + (r.hero.leveled ? ' 🎉' : '') : '';
-              this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }) + hero);
+              const reward = r.points === undefined ? t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }) : t('reward.v7', { outcome: t(`dm.outcome.${r.outcome}`), dollars: r.coins, points: (r.points > 0 ? '+' : '') + r.points });
+              this.send(r.tgId, reward + hero);
             }
             for (const ref of recorded.referrals) {
               this.send(ref.referrerId, t('invite.reward_dm', { name: escapeHtml(ref.referredName), games: REFERRAL.gamesRequired, reward: ref.reward }));

@@ -16,7 +16,6 @@ import {
   levelForXp,
   normalizeSettings,
   simpleRating,
-  totalXpForLevel,
   xpFor,
   type GroupSettingsData,
 } from '@mafia/bot-core';
@@ -25,6 +24,7 @@ import { escapeHtml, t } from '@mafia/localization';
 import { EconomyCore } from './economy-core';
 import { SecurityCore } from './security-core';
 import { HeroCore, type HeroAward } from './hero-core';
+import { matchReward } from './match-rewards';
 import type { Sql } from './sql';
 
 export type { Sql } from './sql';
@@ -65,6 +65,7 @@ export interface RecordPlayer {
   left: boolean;
   active: boolean;
   afk?: boolean;
+  missed?: number;
   fake: boolean;
   /** VIP belgisi (g'olib e'loni uchun; registry saqlamaydi) */
   badge?: string;
@@ -79,6 +80,10 @@ export interface RecordGameInput {
   practice?: boolean;
   outcome: MainOutcome;
   days: number;
+  /** Optional for previously persisted v6 result operations. */
+  rewardVersion?: 1;
+  durationMs?: number;
+  completedAt?: number;
   players: RecordPlayer[];
 }
 
@@ -89,6 +94,7 @@ export interface RecordedPlayer {
   coins: number;
   ratingChange: number;
   hero?: HeroAward;
+  points?: number;
 }
 
 export interface RecordResult {
@@ -162,6 +168,10 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS game_results_player_recent ON game_results (telegram_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS game_results_period ON game_results (created_at, telegram_id)`,
+  `CREATE TABLE IF NOT EXISTS match_points (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, points INTEGER NOT NULL CHECK(points BETWEEN -8 AND 150), dollars INTEGER NOT NULL CHECK(dollars BETWEEN 0 AND 66), at INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`,
+  `CREATE INDEX IF NOT EXISTS match_points_group_time ON match_points(chat_id, at, telegram_id)`,
+  `CREATE INDEX IF NOT EXISTS match_points_time ON match_points(at, telegram_id)`,
+  `CREATE INDEX IF NOT EXISTS match_points_user ON match_points(telegram_id)`,
   `CREATE TABLE IF NOT EXISTS game_participation (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, afk INTEGER NOT NULL, left_game INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`,
   `CREATE TABLE IF NOT EXISTS bans (telegram_id INTEGER PRIMARY KEY, reason TEXT NOT NULL, created_by TEXT, created_at INTEGER NOT NULL, expires_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS error_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, place TEXT NOT NULL, message TEXT NOT NULL)`,
@@ -344,6 +354,7 @@ export class RegistryCore {
     this.upsertGroup(newChatId, old.title);
     if (old.settings) this.sql.exec(`UPDATE groups SET settings = ? WHERE chat_id = ?`, old.settings, newChatId);
     this.sql.exec(`UPDATE groups SET status = 'MIGRATED' WHERE chat_id = ?`, oldChatId);
+    this.sql.exec(`UPDATE match_points SET chat_id = ? WHERE chat_id = ?`, newChatId, oldChatId);
   }
 
   globalMinPlayers(): number {
@@ -395,6 +406,10 @@ export class RegistryCore {
 
   private recordGameTx(input: RecordGameInput): RecordResult {
     const now = this.clock();
+    const scoreVersion = input.rewardVersion === 1;
+    const unique = new Set(input.players.map((p) => p.tgId)).size === input.players.length;
+    const scoreContext = { playerCount: input.players.length, days: input.days, durationMs: input.durationMs ?? 0, activeRatio: input.players.filter((p) => p.active && !p.left && !p.afk && !p.fake).length / Math.max(1, input.players.length), ranked: input.ranked, practice: Boolean(input.practice || !unique || input.players.some((p) => p.fake)) };
+    const at = Number.isSafeInteger(input.completedAt) && input.completedAt! > 0 ? Math.min(now, input.completedAt!) : now;
     const heroEligible = input.ranked && !input.practice && input.players.length >= 4 && new Set(input.players.map((p) => p.tgId)).size === input.players.length && !input.players.some((p) => p.fake);
     const out: RecordedPlayer[] = [];
     const referrals: RecordResult['referrals'] = [];
@@ -408,6 +423,10 @@ export class RegistryCore {
       const progression = penalized ? { ...result, outcome: 'LOSS' as const, left: true } : result;
       const xp = xpFor(progression, p.active);
       const ratingChange = simpleRating.change(progression, input.ranked);
+      const scored = scoreVersion ? matchReward(scoreContext, p) : undefined;
+      if (scored && scoreContext.ranked && !scoreContext.practice && scoreContext.playerCount >= 4 && scoreContext.playerCount <= 30) {
+        this.sql.exec(`INSERT INTO match_points (game_number, telegram_id, chat_id, points, dollars, at) VALUES (?, ?, ?, ?, ?, ?)`, input.number, p.tgId, input.chatId, scored.points, scored.dollars, at);
+      }
       this.sql.exec(`INSERT OR IGNORE INTO game_participation (game_number, telegram_id, afk, left_game) VALUES (?, ?, ?, ?)`, input.number, p.tgId, penalized ? 1 : 0, p.left ? 1 : 0);
       this.sql.exec(
         `INSERT INTO game_results (game_number, telegram_id, role, faction, result, survived, xp, rating_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -467,10 +486,10 @@ export class RegistryCore {
         p.tgId,
         inc(won),
       );
-      const reward = penalized || p.left ? { coins: 0, referral: null } : this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left });
+      const reward = penalized || p.left ? { coins: 0, referral: null } : this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left, ...(scored ? { dollarOverride: scored.dollars } : {}) });
       if (reward.referral) referrals.push({ referrerId: reward.referral.referrerId, referredName: p.name, reward: reward.referral.reward });
       const hero = heroEligible && p.active && !penalized && !p.left ? this.heroes.award(p.tgId, input.number, won) : undefined;
-      out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange, ...(hero ? { hero } : {}) });
+      out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange, ...(scored ? { points: scored.points } : {}), ...(hero ? { hero } : {}) });
     }
     this.sql.exec(
       `UPDATE games SET status = 'FINISHED', finished_at = ?, outcome = ?, players = ?, days = ? WHERE number = ?`,
@@ -496,35 +515,19 @@ export class RegistryCore {
     if (!u) return t('common.error');
     this.sql.exec(`INSERT OR IGNORE INTO profiles (telegram_id) VALUES (?)`, tgId);
     const p = this.one<Record<string, number>>(`SELECT * FROM profiles WHERE telegram_id = ?`, tgId)!;
-    const total = p['games_won']! + p['games_lost']! + p['games_drawn']!;
     const w = this.eco.wallet(tgId);
+    const inv = this.eco.inventory(tgId);
     const frame = w.frame ? catalogItem(w.frame) : undefined;
-    const title = w.title ? catalogItem(w.title) : undefined;
     const until = w.tier === 'VIP_PRO' ? w.proUntil : w.vipUntil;
-    const extra = t('profile.extra', {
-      coins: w.coins,
-      tier: w.permanentOwner ? t('owner.tier') : t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' }),
-      title: title ? t('profile.title_line', { emoji: title.emoji, name: t(`item.${title.code}`) }) : '',
-    });
-    const header = frame ? `${t('profile.frame_top', { emoji: frame.emoji })}\n` : '';
-    return header + t('profile.text', {
-      name: escapeHtml(displayName({ firstName: u.first_name, lastName: u.last_name, username: u.username })),
-      id: String(tgId),
-      level: p['level']!,
-      xp: p['xp']!,
-      nextXp: totalXpForLevel(p['level']! + 1),
-      rating: p['rating']!,
-      played: p['games_played']!,
-      won: p['games_won']!,
-      lost: p['games_lost']!,
-      drawn: p['games_drawn']!,
-      winRate: total > 0 ? ((p['games_won']! / total) * 100).toFixed(2) : '0.00',
-      mafiaWins: p['mafia_wins']!,
-      cityWins: p['city_wins']!,
-      neutralWins: p['neutral_wins']!,
-      streak: p['current_win_streak']!,
-      bestStreak: p['best_win_streak']!,
-    }) + extra + (frame ? `\n${t('profile.frame_top', { emoji: frame.emoji })}` : '');
+    const tier = w.permanentOwner ? t('owner.tier') : w.tier === 'FREE' ? '' : t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' });
+    const name = escapeHtml(displayName({ firstName: u.first_name, lastName: u.last_name, username: u.username }));
+    return (frame ? t('profile.frame_top', { emoji: frame.emoji }) + '\n' : '') + t('profile.v7', {
+      name, tier: tier ? '\n' + tier : '', dollars: w.permanentOwner ? '1000000000 (∞)' : w.coins,
+      diamonds: w.permanentOwner ? '∞' : (w.diamonds ?? 0), points: this.points(tgId),
+      shield: inv.items.find((i) => i.code === 'SHIELD')?.qty ?? 0,
+      document: inv.items.find((i) => i.code === 'FAKE_DOC')?.qty ?? 0,
+      wins: p['games_won']!, played: p['games_played']!,
+    }) + (frame ? '\n' + t('profile.frame_top', { emoji: frame.emoji }) : '');
   }
 
   /** Last ten completed games of the requester only; never expose other players' hidden roles. */
@@ -560,6 +563,26 @@ export class RegistryCore {
     return title + '\n\n' + t('period.info') + '\n\n' + rows.map((x, i) => t('group_rating.line', {
       place: i + 1, name: escapeHtml(displayName({ firstName: x.first_name, lastName: x.last_name, username: x.username })), wins: x.wins, games: x.games,
     })).join('\n');
+  }
+
+  points(tgId: number): number {
+    return this.one<{ points: number }>(`SELECT COALESCE(SUM(points), 0) AS points FROM match_points WHERE telegram_id = ?`, tgId)!.points;
+  }
+
+  pointsTop(chatId: number | null, days: 0 | 1 | 7 | 30, actor: number): string {
+    if (chatId === null && !this.eco.isOwner(actor)) return t('admin.no_access');
+    if (![0,1,7,30].includes(days)) return t('common.error');
+    const now = this.clock();
+    const from = days === 0 ? 0 : now - days * 86_400_000;
+    const params: number[] = chatId === null ? [from, now, now] : [chatId, from, now, now];
+    const rows = this.sql.exec<{ points: number; first_name: string; last_name: string | null; username: string | null }>(
+      `SELECT SUM(m.points) AS points, u.first_name, u.last_name, u.username
+       FROM match_points m JOIN users u ON u.telegram_id = m.telegram_id
+       WHERE ${chatId === null ? '' : 'm.chat_id = ? AND '}m.at >= ? AND m.at <= ? AND u.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM bans b WHERE b.telegram_id = m.telegram_id AND (b.expires_at IS NULL OR b.expires_at > ?))
+       GROUP BY m.telegram_id ORDER BY points DESC, m.telegram_id ASC LIMIT 20`, ...params);
+    const title = (chatId === null ? 'Umumiy' : 'Guruh') + ' TOP 20 · ' + (days === 0 ? 'Barcha vaqt' : days === 1 ? '24 soat' : days + ' kun');
+    return '<b>' + title + '</b>\n\n' + (rows.length ? rows.map((x, i) => (i + 1) + '. ' + escapeHtml(displayName({ firstName: x.first_name, lastName: x.last_name, username: x.username })) + ' — <b>' + x.points + '</b> ball').join('\n') : t('rating.empty'));
   }
 
   globalRating(tgId: number | null): string {
