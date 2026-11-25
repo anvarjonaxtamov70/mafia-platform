@@ -12,6 +12,7 @@ import {
   ARCADE_FIELD,
   catalogItem,
   DAILY_QUESTS,
+  DIAMOND_VIP_PRICE,
   dailyAmount,
   DAY_MS,
   gameCoins,
@@ -272,11 +273,34 @@ export class EconomyCore {
 
   // ───────────────────────────── Do'kon ─────────────────────────────
 
+  private spendableDiamonds(tgId: number): number { return this.isOwner(tgId) ? 1_000_000_000 : this.diamonds(tgId); }
+
+  private diamondPurchase(tgId: number, code: string, price: number, idem: string, deliver: () => void): BuyResult {
+    return this.sql.tx(() => {
+      const key = 'purchase:' + idem;
+      const prior = this.one<{ telegram_id: number; reason: string }>(`SELECT telegram_id, reason FROM diamond_tx WHERE idem = ?`, key);
+      if (prior) return prior.telegram_id === tgId && prior.reason === code ? { ok: true, balance: this.spendableDiamonds(tgId), code } : { ok: false, error: 'UNKNOWN', balance: this.spendableDiamonds(tgId) };
+      if (this.spendableDiamonds(tgId) < price) return { ok: false, error: 'INSUFFICIENT', balance: this.spendableDiamonds(tgId), price };
+      this.creditDiamonds(tgId, this.isOwner(tgId) ? 0 : -price, code, key);
+      deliver();
+      return { ok: true, balance: this.spendableDiamonds(tgId), code };
+    });
+  }
+
+  buyDiamondVip(tgId: number, idem: string): BuyResult {
+    return this.diamondPurchase(tgId, 'VIP_DIAMOND_30', DIAMOND_VIP_PRICE, idem, () => {
+      if (!this.isOwner(tgId)) this.extendTier(tgId, 'VIP', 30, null);
+    });
+  }
+
   buy(tgId: number, code: string, idem: string): BuyResult {
     const item = catalogItem(code);
     if (!item) return { ok: false, error: 'UNKNOWN', balance: this.spendableCoins(tgId) };
     if (item.price === null) return { ok: false, error: 'TIER_ONLY', balance: this.spendableCoins(tgId) };
     const price = item.price;
+    if (item.currency === 'DIAMOND') return this.diamondPurchase(tgId, code, price, idem, () => {
+      this.sql.exec(`INSERT INTO inventory (telegram_id, item, qty) VALUES (?, ?, 1) ON CONFLICT (telegram_id, item) DO UPDATE SET qty = qty + 1`, tgId, code);
+    });
     return this.sql.tx((): BuyResult => {
       if (this.one(`SELECT 1 AS x FROM wallet_tx WHERE idem = ?`, idem)) return { ok: true, balance: this.spendableCoins(tgId), code };
       const owned = this.one<{ qty: number }>(`SELECT qty FROM inventory WHERE telegram_id = ? AND item = ?`, tgId, code)?.qty ?? 0;
@@ -421,11 +445,11 @@ export class EconomyCore {
   // ───────────────────────────── Arcade buyumlari ─────────────────────────────
 
   /** O'yin boshlanishida yoqilgan (armed) buyumlarni band qilish: har turdan bittadan. Idempotent. */
-  reserveArcade(number: number, tgIds: number[]): Record<string, { shield: boolean; fakeDocument: boolean }> {
+  reserveArcade(number: number, tgIds: number[]): Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> {
     return this.sql.tx(() => {
-      const out: Record<string, { shield: boolean; fakeDocument: boolean }> = {};
+      const out: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> = {};
       for (const tgId of tgIds) {
-        const got = { shield: false, fakeDocument: false };
+        const got: { shield: boolean; fakeDocument: boolean; voteShield?: boolean } = { shield: false, fakeDocument: false };
         for (const [code, field] of Object.entries(ARCADE_FIELD)) {
           const already = this.one(`SELECT 1 AS x FROM item_reservations WHERE game_number = ? AND telegram_id = ? AND item = ?`, number, tgId, code);
           if (already) {
@@ -441,7 +465,7 @@ export class EconomyCore {
           this.sql.exec(`INSERT INTO item_reservations (game_number, telegram_id, item, created_at) VALUES (?, ?, ?, ?)`, number, tgId, code, this.clock());
           got[field] = true;
         }
-        if (got.shield || got.fakeDocument) out[String(tgId)] = got;
+        if (got.shield || got.fakeDocument || got.voteShield) out[String(tgId)] = got;
       }
       return out;
     });
@@ -543,7 +567,7 @@ export class EconomyCore {
   }
 
   /** Yangi davr joriy obuna tugagan joydan boshlanadi (muddat qo'shiladi). */
-  private extendTier(tgId: number, tier: PaidTier, days: number, chargeId: string): void {
+  private extendTier(tgId: number, tier: PaidTier, days: number, chargeId: string | null): void {
     const now = this.clock();
     const last = this.one<{ e: number | null }>(
       `SELECT MAX(expires_at) AS e FROM subscriptions WHERE telegram_id = ? AND tier = ? AND status = 'ACTIVE'`,

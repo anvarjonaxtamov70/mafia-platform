@@ -120,6 +120,8 @@ export interface ArcadeItems {
   shield: boolean;
   /** Soxta hujjat: birinchi jamoa tekshiruvida SHAHAR ko'rsatadi */
   fakeDocument: boolean;
+  /** Optional for snapshots from before v8. One actual execution only. */
+  voteShield?: boolean;
 }
 
 export interface PlayerDeath {
@@ -305,6 +307,7 @@ export type EventBody =
     }
   | { type: 'VERDICT_STARTED'; candidateId: string }
   | { type: 'JUDGE_VETO'; candidateId: string }
+  | { type: 'VOTE_PROTECTED'; playerId: string }
   | { type: 'PLAYER_EXECUTED'; playerId: string; role: RoleCode | null }
   | { type: 'DAY_DEATHS'; deaths: DeathInfo[] }
   | { type: 'PERSONAL_WIN'; playerId: string; role: RoleCode }

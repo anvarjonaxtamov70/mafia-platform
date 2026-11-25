@@ -318,6 +318,10 @@ export function present(input: PresentInput): OutboxDraft[] {
       case 'JUDGE_VETO':
         group(t('game.judge_veto'));
         break;
+      case 'VOTE_PROTECTED':
+        group(t('game.vote_protected', { name: nameOf(state, e.playerId) }));
+        dm(e.playerId, t('game.vote_protected_dm'));
+        break;
       case 'PLAYER_EXECUTED':
         group(deathLine(e.playerId, e.role, 'executed'));
         dm(e.playerId, t('dm.dead_info'));
