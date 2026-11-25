@@ -282,6 +282,7 @@ export class Registry extends DurableObject<Env> {
 
 const ROOM_METHODS = [
   'createLobby',
+  'cleanupCommand',
   'join',
   'leave',
   'leaveLobbyForTransfer',
