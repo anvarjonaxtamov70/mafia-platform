@@ -8,7 +8,7 @@ describe('group command cleanup',()=>{
   it('member, admin, owner and anonymous admin: direct reply precedes exact command deletion',async()=>{
     const w=new World();w.tg.admins.add(3);
     for(const id of [1,2,3,4]){
-      const u=groupText(id,id===2?'/startgame@TEST_MAFIA_BOT':'/status');
+      const u=groupText(id,id===2?'/startgame@TEST_MAFIA_BOT':id===4?'/settings':'/status');
       if(id===4)u.message={...u.message!,from:{...u.message!.from!,is_bot:true},sender_chat:u.message!.chat};
       const before=w.tg.calls.length;
       await w.send(u);
@@ -51,7 +51,7 @@ describe('group command cleanup',()=>{
     expect(deletion(w,join.message!.message_id)).toBeGreaterThan(edit);
     const start=groupText(1,'/startgame');await w.send(start);
     expect((await w.loaded(GROUP)).data.game?.status).toBe('RUNNING');
-    const sent=w.tg.calls.findIndex(c=>c.method==='sendMessage'&&c.params['chat_id']===GROUP&&String(c.params['text']).includes('O‘YIN BOSHLANDI'));
+    const sent=w.tg.calls.findIndex(c=>c.method==='sendMessage'&&c.params['chat_id']===GROUP&&/O‘YIN BOSHLANDI|TUN BOSHLANDI/.test(String(c.params['text'])));
     expect(sent).toBeGreaterThanOrEqual(0);
     expect(deletion(w,start.message!.message_id)).toBeGreaterThan(sent);
     const cancel=groupText(1,'/cancelgame');await w.send(cancel);

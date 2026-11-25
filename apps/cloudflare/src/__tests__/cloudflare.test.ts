@@ -325,10 +325,11 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     victim.status = 'DEAD';
     st.phase = 'DAY_DISCUSSION';
     const alive = st.players.find((p) => p.status === 'ALIVE')!;
-    await w.send(groupText(Number(victim.id), 'salom'));
     const deletes = () => w.tg.calls.filter((c) => c.method === 'deleteMessage').length;
+    const beforeDead = deletes();
+    await w.send(groupText(Number(victim.id), 'salom'));
     const afterDead = deletes();
-    expect(afterDead).toBeGreaterThan(0);
+    expect(afterDead).toBe(beforeDead+1);
     await w.send(groupText(Number(victim.id), '/status'));
     expect(deletes()).toBe(afterDead+1);
     w.now += 20_000; // kesh yangilanishi
