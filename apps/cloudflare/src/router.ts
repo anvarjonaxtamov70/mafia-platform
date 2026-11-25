@@ -290,14 +290,16 @@ export class Router {
     if(result.ok||result.error!=='IN_OTHER_GAME')return result;
     const active=await this.d.registry.activeOf(user.id);
     if(!active)return room.join(user,number);
-    if(number!==undefined&&active.number===number)return result;
+    const target=number??Number(result.details?.['number']);
+    if(!Number.isSafeInteger(target)||target<=0||active.number===target)return result;
     const moved=await this.d.room(active.chatId).leaveLobbyForTransfer(user.id,active.number);
     if(!moved.ok)return {ok:false,error:'IN_OTHER_GAME'};
-    return room.join(user,number);
+    return room.join(user,target);
   }
 
   private errText(r: { error: string; details?: Record<string, string | number> }): string {
     const lobbyErrors: string[] = ['GROUP_ACTIVE_GAME', 'NOT_LOBBY', 'FULL', 'NEED_DM', 'IN_OTHER_GAME', 'ALREADY_JOINED', 'NOT_JOINED', 'NO_PERMISSION', 'NOT_ENOUGH', 'BANNED', 'CREATE_FORBIDDEN', 'DM_FAILED'];
+    if(r.error==='NOT_LOBBY'&&r.details?.['running']===1)return t('lobby.running_locked');
     if (lobbyErrors.includes(r.error)) return lobbyErrorText(r.error as LobbyError, r.details);
     if (r.error === 'NOT_FOUND') return t('lobby.not_found');
     return engineErrorText(r.error as EngineErrorCode);

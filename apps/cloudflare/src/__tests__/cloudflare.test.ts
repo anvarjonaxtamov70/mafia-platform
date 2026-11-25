@@ -191,8 +191,9 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     await w.send(groupText(50, '/game', OTHER));
     const other = (await w.loaded(OTHER)).data.game!;
     await w.send(callback(2, `l:j:${other.number}`, OTHER));
-    expect(other.players.some((p) => p.id === 2)).toBe(false);
-    expect((await w.loaded(OTHER)).data.game!.players.some((p) => p.id === 2)).toBe(false);
+    expect(other.players.some((p) => p.id === 2)).toBe(true);
+    expect((await w.loaded(GROUP)).data.game!.players.some(p=>p.id===2)).toBe(false);
+    expect(w.registryCore.activeOf(2)?.number).toBe(other.number);
   });
 
   it('lobby muddati tugasa: kam bo‘lsa bekor, yetarli bo‘lsa avtostart', async () => {

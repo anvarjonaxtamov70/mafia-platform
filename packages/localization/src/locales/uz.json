@@ -62,7 +62,7 @@
   "lobby.left": "🚪 Siz o‘yindan chiqdingiz.",
   "lobby.not_joined": "Siz bu o‘yinda emassiz.",
   "lobby.full": "O‘yin to‘lgan.",
-  "lobby.need_dm": "Avval botga shaxsiy chatda /start bosing — rolingiz o‘sha yerga yuboriladi. Lobby xabaridagi «🤖 Botni ochish» tugmasini bosing.",
+  "lobby.need_dm": "Avval botning shaxsiy chatida /start bosing, keyin Qo‘shilish tugmasini qayta bosing.",
   "lobby.in_other_game": "Siz boshqa o‘yindasiz. U boshlangan bo‘lsa, tugashini kuting. Ro‘yxatdan o‘tish bosqichida avtomatik o‘tish mumkin; vaqtinchalik band bo‘lsa qayta urinib ko‘ring.",
   "lobby.exists": "Bu guruhda allaqachon faol o‘yin bor. /status",
   "lobby.not_found": "Bu guruhda faol lobby yo‘q. Yangi o‘yin: /game",
@@ -525,5 +525,6 @@
   "gsettings.btn_verdict": "Hukm vaqti",
   "lobby.need_more_manual": "Kamida {min} kishi kerak. Avtostart o‘chirilgan.",
   "gsettings.auto_help": "<b>Avtostart</b>\n/autostart on — yoqish\n/autostart off — o‘chirish\n/autostart 120 — vaqt (30–1800 soniya)",
-  "lobby.not_lobby": "O‘yin boshlangan yoki boshlanmoqda. O‘yin tugashini kuting."
+  "lobby.not_lobby": "O‘yin boshlangan yoki boshlanmoqda. O‘yin tugashini kuting.",
+  "lobby.running_locked": "O‘yin boshlangan. Tugaguncha boshqa o‘yinga o‘ta olmaysiz."
 }

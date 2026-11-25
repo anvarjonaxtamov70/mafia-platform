@@ -177,9 +177,15 @@ try {
   const lobbyMsg = calls.filter((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA')).at(-1);
   check(!!lobbyMsg, 'lobby xabari guruhga yuborildi (alarm orqali)');
   const joinBtn = lobbyMsg?.params.reply_markup.inline_keyboard[0][0].callback_data;
+  check(calls.some(c=>c.method==='pinChatMessage'&&c.params.chat_id===GROUP), 'registration pinned');
+  await gm(2,'/game');
+  await sleep(2500);
+  const refreshed=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+  check(refreshed!==lobbyMsg&&refreshed?.params.reply_markup.inline_keyboard[0][0].callback_data===joinBtn,'same active registration reposted');
   for (const p of players.slice(1)) await cb(p, joinBtn, true);
   await gm(1, '/gstart');
   await sleep(2000);
+  check(calls.some(c=>c.method==='unpinChatMessage'&&c.params.chat_id===GROUP),'registration unpinned');
   for (const p of players) check(texts(p).some((t) => t.includes('SIZNING ROLINGIZ')), `o‘yinchi ${p} ga rol yuborildi`);
   check(!texts(GROUP).some((t) => t.includes('SIZNING ROLINGIZ')), 'guruhga rol oshkor qilinmadi');
   check(texts(GROUP).some((t) => t.includes('TUN BOSHLANDI')), 'tun boshlandi');

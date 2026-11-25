@@ -117,6 +117,7 @@ export interface RoomData {
   nextId: number;
   alarmAt: number | null;
   lobbyTasks?: LobbyTask[];
+  lobbyPostedAt?: number;
 }
 
 export interface RegistryPort {
@@ -287,12 +288,14 @@ export class RoomCore {
     if(this.data.outbox.some(o=>o.storeRefAs===key)) return;
     const v=this.lobbyView(g);
     this.send(this.chatId,v.text,v.keyboard,{storeRefAs:key});
+    const queued=this.data.outbox.at(-1)!;
+    if(this.data.refs[key]) queued.notBefore=Math.max(this.now,(this.data.lobbyPostedAt??0)+2000);
   }
 
   private lobbyTask(kind: LobbyTask['kind'], ref: {chatId:number;messageId:number}, number:number): void {
     const tasks=this.data.lobbyTasks??=[];
     if(tasks.some(x=>x.kind===kind&&x.chatId===ref.chatId&&x.messageId===ref.messageId))return;
-    tasks.push({id:this.data.nextId++,kind,...ref,number,attempts:0,at:this.now});
+    tasks.push({id:this.data.nextId++,kind,chatId:ref.chatId,messageId:ref.messageId,number,attempts:0,at:this.now});
   }
   private retireBoard(ref: {chatId:number;messageId:number}, number:number): void {
     this.data.lobbyTasks=(this.data.lobbyTasks??[]).filter(x=>!(x.kind==='pin'&&x.chatId===ref.chatId&&x.messageId===ref.messageId));
@@ -376,7 +379,7 @@ export class RoomCore {
     if(this.data.ops.some(op=>op.type==='release'&&op.tgId===user.id&&op.number===g.number))return {ok:false,error:'IN_OTHER_GAME'};
     if (g.players.length >= g.config.maxPlayers) return { ok: false, error: 'FULL' };
     const c = await this.deps.registry.claim(user.id, this.chatId, g.number);
-    if (c === 'BUSY') return { ok: false, error: 'IN_OTHER_GAME' };
+    if (c === 'BUSY') return { ok: false, error: 'IN_OTHER_GAME', details:{number:g.number} };
     // await dan keyin qayta tekshirish
     if (this.data.game !== g || g.status !== 'LOBBY' || this.starting) {
       // ALREADY may belong to another concurrent join; only release our own fresh claim.
@@ -408,7 +411,7 @@ export class RoomCore {
       await this.commit();
       return { ok: true };
     }
-    return {ok:false,error:'NOT_LOBBY'};
+    return {ok:false,error:'NOT_LOBBY',details:{running:1}};
   }
 
   /** Source room is authoritative: never transfer a running or starting participant. */
@@ -1065,6 +1068,7 @@ export class RoomCore {
           const old=this.data.refs[key];
           if(old&&old.messageId!==fresh.messageId)this.retireBoard(old,lobby.number);
           this.data.refs[key]=fresh;
+          this.data.lobbyPostedAt=this.now;
           this.lobbyTask('pin',fresh,lobby.number);
         }
       }else if (item.storeRefAs) this.data.refs[item.storeRefAs] = { chatId: item.chatId, messageId: res.message_id };
