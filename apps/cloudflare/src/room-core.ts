@@ -87,6 +87,8 @@ export interface OutItem {
   payload: OutboxPayload;
   storeRefAs?: string;
   coalesceKey?: string;
+  /** Only delete commands after this message was successfully delivered. */
+  commandMessageIds?: number[];
   attempts: number;
   notBefore: number;
 }
@@ -102,7 +104,7 @@ export type PendingOp =
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
-type LobbyTask = { id: number; kind: 'pin' | 'clear' | 'unpin'; chatId: number; messageId: number; number: number; attempts: number; at: number };
+type LobbyTask = { id: number; kind: 'pin' | 'clear' | 'unpin' | 'deleteCommand'; chatId: number; messageId: number; number: number; attempts: number; at: number };
 
 export interface RoomData {
   v: 1;
@@ -271,7 +273,20 @@ export class RoomCore {
     );
   }
 
-  private lobbyEdit(g: RoomGame): void {
+  private attachCommand(item: OutItem | undefined, messageId?: number): void {
+    if (!item || item.chatId !== this.chatId || this.chatId >= 0 || !Number.isSafeInteger(messageId) || !messageId || messageId < 1) return;
+    const ids=item.commandMessageIds??=[];
+    if (!ids.includes(messageId) && ids.length < 200) ids.push(messageId);
+  }
+
+  /** Internal RPC for immediate replies that Telegram already accepted. */
+  async cleanupCommand(messageId:number):Promise<void> {
+    if(this.chatId>=0||!Number.isSafeInteger(messageId)||messageId<1)return;
+    this.lobbyTask('deleteCommand',{chatId:this.chatId,messageId},0);
+    await this.commit();
+  }
+
+  private lobbyEdit(g: RoomGame, commandMessageId?: number): void {
     const v = this.lobbyView(g);
     this.enqueue([
       {
@@ -281,15 +296,18 @@ export class RoomCore {
         coalesceKey: `lobby:${g.id}`,
       },
     ]);
+    this.attachCommand(this.data.outbox.at(-1),commandMessageId);
   }
 
   /** One current board per lobby, with bounded coalescing under group-wide spam. */
-  private queueLobbyBoard(g: RoomGame): void {
+  private queueLobbyBoard(g: RoomGame, commandMessageId?:number): void {
     const key=lobbyRef(g.id);
-    if(this.data.outbox.some(o=>o.storeRefAs===key)) return;
+    const pending=this.data.outbox.find(o=>o.storeRefAs===key);
+    if(pending){this.attachCommand(pending,commandMessageId);return;}
     const v=this.lobbyView(g);
     this.send(this.chatId,v.text,v.keyboard,{storeRefAs:key});
     const queued=this.data.outbox.at(-1)!;
+    this.attachCommand(queued,commandMessageId);
     if(this.data.refs[key]) queued.notBefore=Math.max(this.now,(this.data.lobbyPostedAt??0)+2000);
   }
 
@@ -309,24 +327,24 @@ export class RoomCore {
     if(ref)this.retireBoard(ref,g.number);
     delete this.data.refs[key];
   }
-  private async refreshLobby(g:RoomGame):Promise<RoomResult<{number:number;hostJoined:boolean;refreshed?:boolean}>> {
+  private async refreshLobby(g:RoomGame,commandMessageId?:number):Promise<RoomResult<{number:number;hostJoined:boolean;refreshed?:boolean}>> {
     if(g.status!=='LOBBY'||this.starting)return {ok:false,error:'GROUP_ACTIVE_GAME'};
-    this.queueLobbyBoard(g);
+    this.queueLobbyBoard(g,commandMessageId);
     await this.commit();
     return {ok:true,number:g.number,hostJoined:false,refreshed:true};
   }
 
   // ───────────────────────────── Lobby ─────────────────────────────
 
-  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>> {
+  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean; commandMessageId?:number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>> {
     if (input.host.banned) return { ok: false, error: 'BANNED' };
-    if (this.data.game) return this.refreshLobby(this.data.game);
+    if (this.data.game) return this.refreshLobby(this.data.game,input.commandMessageId);
     const settings = await this.deps.registry.getSettings(this.chatId);
     const number = await this.deps.registry.allocateGame(this.chatId);
     // await davomida boshqa /game kelgan bo'lishi mumkin
     if (this.data.game) {
       await this.deps.registry.releaseGame(number, 'CANCELLED');
-      return this.refreshLobby(this.data.game);
+      return this.refreshLobby(this.data.game,input.commandMessageId);
     }
     const mode = input.mode ?? settings.mode;
     const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: false, ...(input.quick ? { quick: true } : {}) } };
@@ -365,12 +383,12 @@ export class RoomCore {
       }
     }
     if(this.data.game!==g||g.status!=='LOBBY')return {ok:false,error:'NOT_LOBBY'};
-    this.queueLobbyBoard(g);
+    this.queueLobbyBoard(g,input.commandMessageId);
     await this.commit();
     return { ok: true, number, hostJoined };
   }
 
-  async join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>> {
+  async join(user: UserInfo, number?: number, commandMessageId?:number): Promise<RoomResult<{ title: string }>> {
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (g.status !== 'LOBBY' || this.starting) return { ok: false, error: 'NOT_LOBBY' };
@@ -394,7 +412,7 @@ export class RoomCore {
     }
     g.players.push({ id: user.id, name: user.name, fake: false, badge: user.badge });
     g.version++;
-    this.lobbyEdit(g);
+    this.lobbyEdit(g,commandMessageId);
     await this.commit();
     return { ok: true, title: this.data.title };
   }
@@ -467,7 +485,7 @@ export class RoomCore {
     return failing;
   }
 
-  async start(trigger: { by: number; isAdmin: boolean } | 'auto', number?: number): Promise<RoomResult> {
+  async start(trigger: { by: number; isAdmin: boolean; commandMessageId?:number } | 'auto', number?: number): Promise<RoomResult> {
     if (trigger === 'auto' || trigger?.isAdmin !== true) return {ok:false,error:'NO_PERMISSION'};
     if (this.starting) return { ok: false, error: 'NOT_LOBBY' };
     this.starting = true;
@@ -478,7 +496,7 @@ export class RoomCore {
     }
   }
 
-  private async startOnce(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult> {
+  private async startOnce(trigger: { by: number; isAdmin: boolean; commandMessageId?:number }, number?: number): Promise<RoomResult> {
     this.externalCalls = 0;
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
@@ -495,6 +513,7 @@ export class RoomCore {
       for (const p of removed) this.addOp({ type: 'release', tgId: p.id, number: g.number });
       this.addOp({ type: 'dmBlocked', tgIds: failing });
       this.send(this.chatId, t('lobby.dm_failed', { names: removed.map((p) => escapeHtml(p.name)).join(', ') }));
+      this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
       this.lobbyEdit(g);
       await this.commit();
       return { ok: false, error: 'DM_FAILED', details: { names: removed.map((p) => p.name).join(', ') } };
@@ -546,19 +565,22 @@ export class RoomCore {
     g.startedAt = now;
     g.deadline = null;
     this.closeLobby(g);
+    const firstId=this.data.nextId;
     this.applyState(g, null, pp.state, pp.events);
+    this.attachCommand(this.data.outbox.find(o=>o.id>=firstId&&o.chatId===this.chatId&&o.payload.kind==='SEND'&&!o.payload.visual),trigger.commandMessageId);
     this.addOp({ type: 'running', number: g.number, players: g.players.length });
     await this.commit();
     return { ok: true };
   }
 
-  async cancel(trigger: { by: number; isAdmin: boolean } | 'timeout', text?: string, number?: number): Promise<RoomResult> {
+  async cancel(trigger: { by: number; isAdmin: boolean; commandMessageId?:number } | 'timeout', text?: string, number?: number): Promise<RoomResult> {
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
     if(g.status==='LOBBY')this.closeLobby(g);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
+    if(trigger!=='timeout')this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
     this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
     this.data.game = null;
     await this.commit();
@@ -954,7 +976,7 @@ export class RoomCore {
         this.data.lobbyTasks=this.data.lobbyTasks!.filter(x=>x.id!==task.id);continue;
       }
       try{
-        const method=task.kind==='pin'?'pinChatMessage':task.kind==='unpin'?'unpinChatMessage':'editMessageReplyMarkup';
+        const method=task.kind==='pin'?'pinChatMessage':task.kind==='unpin'?'unpinChatMessage':task.kind==='deleteCommand'?'deleteMessage':'editMessageReplyMarkup';
         await this.deps.telegram.call(method,{chat_id:task.chatId,message_id:task.messageId,...(task.kind==='pin'?{disable_notification:true}:task.kind==='clear'?{reply_markup:{inline_keyboard:[]}}:{})});
         // A lobby may close during the Telegram call. Unpin precisely that message again.
         if(task.kind==='pin'&&(this.data.game!==g||g?.status!=='LOBBY'||this.data.refs[lobbyRef(g.id)]?.messageId!==task.messageId))this.lobbyTask('unpin',task,task.number);
@@ -975,13 +997,16 @@ export class RoomCore {
     while (this.data.outbox.length > 0 && sent < budget) {
       const item = this.data.outbox[0]!;
       if (item.notBefore > this.now) break;
-      if (item.coalesceKey && this.data.outbox.some((o) => o.id > item.id && o.coalesceKey === item.coalesceKey)) {
+      const successor=item.coalesceKey?this.data.outbox.find(o=>o.id>item.id&&o.coalesceKey===item.coalesceKey):undefined;
+      if(successor){
+        for(const id of item.commandMessageIds??[])this.attachCommand(successor,id);
         this.drop(item.id);
         continue;
       }
       try {
         sent++;
-        await this.deliver(item);
+        const delivered=await this.deliver(item);
+        if(delivered)for(const id of item.commandMessageIds??[])this.lobbyTask('deleteCommand',{chatId:item.chatId,messageId:id},0);
         this.drop(item.id);
       } catch (e) {
         const err = e instanceof TgError ? e : new TgError(0, String(e));
@@ -997,7 +1022,7 @@ export class RoomCore {
         }
         if (err.code === 400) {
           // "message is not modified", "message to edit not found", noto'g'ri so'rov — qayta urinish foydasiz
-          void desc;
+          if(item.payload.kind==='EDIT'&&desc.includes('message is not modified'))for(const id of item.commandMessageIds??[])this.lobbyTask('deleteCommand',{chatId:item.chatId,messageId:id},0);
           this.drop(item.id);
           continue;
         }
@@ -1015,20 +1040,20 @@ export class RoomCore {
     this.data.outbox = this.data.outbox.filter((o) => o.id !== id);
   }
 
-  private async deliver(item: OutItem): Promise<void> {
+  private async deliver(item: OutItem): Promise<boolean> {
     let p = item.payload;
     const key=item.storeRefAs;
     const lobbySend=p.kind==='SEND'&&key?.startsWith('lobby:');
     const lobby=lobbySend?this.data.game:null;
     if(lobbySend){
-      if(!lobby||lobby.status!=='LOBBY'||key!==lobbyRef(lobby.id))return;
+      if(!lobby||lobby.status!=='LOBBY'||key!==lobbyRef(lobby.id))return false;
       const v=this.lobbyView(lobby);
       p={kind:'SEND',text:v.text,keyboard:v.keyboard};
     }
     if (p.kind === 'SEND') {
       if (p.visual) {
         if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual, undefined, p.keyboard);
-        return;
+        return false;
       }
       const res = await this.deps.telegram.call<{ message_id: number }>('sendMessage', {
         chat_id: item.chatId,
@@ -1047,10 +1072,10 @@ export class RoomCore {
           this.lobbyTask('pin',fresh,lobby.number);
         }
       }else if (item.storeRefAs) this.data.refs[item.storeRefAs] = { chatId: item.chatId, messageId: res.message_id };
-      return;
+      return true;
     }
     const ref = this.data.refs[p.refKey];
-    if (!ref) return; // asl xabar yuborilmagan — tahrirlash shart emas
+    if (!ref) return false; // asl xabar yuborilmagan — tahrirlash shart emas
     if (p.kind === 'EDIT') {
       await this.deps.telegram.call('editMessageText', {
         chat_id: ref.chatId,
@@ -1064,6 +1089,7 @@ export class RoomCore {
     } else {
       await this.deps.telegram.call('deleteMessage', { chat_id: ref.chatId, message_id: ref.messageId });
     }
+    return true;
   }
 
   /** Faqat testlar uchun: joriy muddatni hozirga surish. */

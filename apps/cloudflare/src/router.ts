@@ -141,12 +141,13 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
-  join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean; commandMessageId?: number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
+  join(user: UserInfo, number?: number, commandMessageId?: number): Promise<RoomResult<{ title: string }>>;
   leave(tgId: number, number?: number): Promise<RoomResult>;
   leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult>;
-  start(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult>;
-  cancel(trigger: { by: number; isAdmin: boolean }, text?: string, number?: number): Promise<RoomResult>;
+  start(trigger: { by: number; isAdmin: boolean; commandMessageId?: number }, number?: number): Promise<RoomResult>;
+  cancel(trigger: { by: number; isAdmin: boolean; commandMessageId?: number }, text?: string, number?: number): Promise<RoomResult>;
+  cleanupCommand(messageId: number): Promise<void>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
@@ -219,15 +220,11 @@ export class Router {
   // ───── yordamchilar ─────
 
   private async reply(chatId: number, text: string, keyboard?: Keyboard, replyTo?: number): Promise<void> {
-    await this.d.tg
-      .call('sendMessage', {
-        chat_id: chatId,
-        text,
-        ...HTML,
-        ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-        ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
-      })
-      .catch(() => undefined);
+    // Standalone group reply: no quote from a command that will be removed.
+    try {
+      await this.d.tg.call('sendMessage', { chat_id: chatId, text, ...HTML, ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}) });
+    } catch { return; }
+    if (replyTo && chatId < 0) await this.d.room(chatId).cleanupCommand(replyTo).catch(() => undefined);
   }
 
   private async edit(cb: TgCallback, text: string, keyboard?: Keyboard): Promise<void> {
@@ -284,16 +281,16 @@ export class Router {
   }
 
   /** A destination validates its lobby first; the source then releases only a waiting player. */
-  private async joinRoom(room:RoomApi,user:UserInfo,number?:number):Promise<RoomResult<{title:string}>>{
-    const result=await room.join(user,number);
+  private async joinRoom(room:RoomApi,user:UserInfo,number?:number,commandMessageId?:number):Promise<RoomResult<{title:string}>>{
+    const result=await room.join(user,number,commandMessageId);
     if(result.ok||result.error!=='IN_OTHER_GAME')return result;
     const active=await this.d.registry.activeOf(user.id);
-    if(!active)return room.join(user,number);
+    if(!active)return room.join(user,number,commandMessageId);
     const target=number??Number(result.details?.['number']);
     if(!Number.isSafeInteger(target)||target<=0||active.number===target)return result;
     const moved=await this.d.room(active.chatId).leaveLobbyForTransfer(user.id,active.number);
     if(!moved.ok)return {ok:false,error:'IN_OTHER_GAME'};
-    return room.join(user,target);
+    return room.join(user,target,commandMessageId);
   }
 
   private errText(r: { error: string; details?: Record<string, string | number> }): string {
@@ -478,7 +475,7 @@ export class Router {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = anonymous ? { id: chatId, name: m.chat.title ?? 'Guruh administratori', dmAvailable: false, banned: false, badge: '' } : await this.d.registry.upsertUser(from, false);
         const arg = c.args.toUpperCase() as GameMode;
-        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
+        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, commandMessageId: replyTo, ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
         if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
@@ -486,7 +483,7 @@ export class Router {
       }
       case 'join': {
         const user = await this.d.registry.upsertUser(from, false);
-        const r = await this.joinRoom(room,user);
+        const r = await this.joinRoom(room,user,undefined,replyTo);
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
@@ -522,13 +519,13 @@ export class Router {
         return this.reply(chatId, await this.d.registry.profileText(from.id), undefined, replyTo);
       case 'startgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
-        const r = await room.start({ by: anonymous ? chatId : from.id, isAdmin: true });
+        const r = await room.start({ by: anonymous ? chatId : from.id, isAdmin: true, commandMessageId: replyTo });
         if (!r.ok && r.error !== 'DM_FAILED') return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
       case 'cancelgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
-        const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true });
+        const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true, commandMessageId: replyTo });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
