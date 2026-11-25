@@ -47,7 +47,7 @@ export async function readTelegramUpdate(request: Request): Promise<{ ok: true; 
   try {
     let size = 0;
     let body = '';
-    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
