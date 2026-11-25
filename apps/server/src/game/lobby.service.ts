@@ -94,14 +94,14 @@ export class LobbyService {
 
   // ───────────────────────────── Yaratish ─────────────────────────────
 
-  async createLobby(input: { chatId: number; title: string; host: TgUser; isAdmin: boolean; mode?: GameMode }): Promise<LobbyResult<{ gameId: string; number: number; hostJoined: boolean }>> {
+  async createLobby(input: { chatId: number; title: string; host: TgUser; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<LobbyResult<{ gameId: string; number: number; hostJoined: boolean }>> {
     const group = await this.ensureGroup(input.chatId, input.title);
     const settings = await loadGroupSettings(this.db, group.id);
     if (settings.adminOnlyCreate && !input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
     const host = await this.users.upsert(input.host);
     if (await this.users.isBanned(host.id)) return { ok: false, error: 'BANNED' };
     const mode = input.mode ?? settings.mode;
-    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart } };
+    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart, ...(input.quick ? { quick: true } : {}) } };
     const deadline = new Date(this.clock() + settings.lobbySec * 1000);
 
     let created: { id: string; number: number; hostJoined: boolean };

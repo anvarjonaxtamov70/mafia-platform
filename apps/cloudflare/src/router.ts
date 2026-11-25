@@ -23,6 +23,7 @@ import {
   REFERRAL,
   roleStatsView,
   rolesText,
+  learningView,
   SELECTABLE_MODES,
   settingsView,
   shopCategoryView,
@@ -131,11 +132,11 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode }): Promise<RoomResult<{ number: number; hostJoined: boolean }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>>;
   join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>>;
-  leave(tgId: number): Promise<RoomResult>;
+  leave(tgId: number, number?: number): Promise<RoomResult>;
   start(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult>;
-  cancel(trigger: { by: number; isAdmin: boolean }): Promise<RoomResult>;
+  cancel(trigger: { by: number; isAdmin: boolean }, text?: string, number?: number): Promise<RoomResult>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
@@ -373,6 +374,11 @@ export class Router {
         return this.reply(chatId, t('privacy.text'));
       case 'rules':
         return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }));
+      case 'characters':
+      case 'guide': {
+        const view = learningView(c.cmd)!;
+        return this.reply(chatId, view.text, view.keyboard);
+      }
       case 'roles':
         for (const part of splitLong(rolesText())) await this.reply(chatId, part);
         return;
@@ -415,11 +421,12 @@ export class Router {
     const isAdmin = async () => (m.sender_chat && m.sender_chat.id === chatId) || (await this.isChatAdmin(chatId, from.id));
     const replyTo = m.message_id;
     switch (c.cmd) {
+      case 'quick':
       case 'game': {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = await this.d.registry.upsertUser(from, false);
         const arg = c.args.toUpperCase() as GameMode;
-        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: await isAdmin(), ...(SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
+        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: await isAdmin(), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
         if (!r.hostJoined) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
@@ -551,11 +558,11 @@ export class Router {
           return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && r.error === 'NEED_DM');
         }
         if (data.op === 'l') {
-          const r = await room.leave(from.id);
+          const r = await room.leave(from.id, data.game);
           return this.answer(cb, r.ok ? t('lobby.left') : this.errText(r));
         }
         const isAdmin = await this.isChatAdmin(chat.id, from.id);
-        const r = data.op === 's' ? await room.start({ by: from.id, isAdmin }, data.game) : await room.cancel({ by: from.id, isAdmin });
+        const r = data.op === 's' ? await room.start({ by: from.id, isAdmin }, data.game) : await room.cancel({ by: from.id, isAdmin }, undefined, data.game);
         return this.answer(cb, r.ok ? undefined : this.errText(r), !r.ok);
       }
       case 'gs': {
@@ -608,6 +615,8 @@ export class Router {
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
+    const learning = learningView(section);
+    if (learning) return this.edit(cb, learning.text, learning.keyboard);
     const username = await this.d.botUsername();
     switch (section) {
       case 'home':
@@ -622,7 +631,7 @@ export class Router {
         return this.edit(cb, await this.d.registry.globalRating(user.id), [backRow()]);
       case 'rules':
         return this.edit(cb, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), [
-          [{ text: '🎭 /roles', callback_data: encode({ t: 'menu', section: 'roles' }) }],
+          [{ text: t('menu.characters'), callback_data: encode({ t: 'menu', section: 'characters' }) }],
           backRow(),
         ]);
       case 'roles': {

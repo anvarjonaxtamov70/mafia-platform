@@ -32,9 +32,9 @@
   "rules.special": "✨ <b>Maxsus (Shahar)</b>",
   "help.text": "🆘 <b>YORDAM</b>\n\n<b>Guruhda:</b>\n/game — yangi o‘yin (/game arcade — Arcade rejimi)\n/join — qo‘shilish\n/leave — chiqish\n/players — ishtirokchilar\n/gstart — o‘yinni boshlash\n/status — o‘yin holati\n/cancelgame — o‘yinni bekor qilish\n/settings — sozlamalar (admin)\n/leaderboard — guruh reytingi\n\n<b>Shaxsiy chatda:</b>\n/start — bosh menyu\n/profile — profil\n/daily — kunlik mukofot va vazifalar\n/shop — do‘kon\n/inventory — inventar\n/vip — VIP\n/invite — do‘stlarni taklif qilish\n/rules, /roles — qoidalar\n/support — yordam so‘rash\n/paysupport — to‘lov bo‘yicha yordam\n/privacy — maxfiylik\n/delete_me — ma’lumotlarni o‘chirish",
   "support.text": "🆘 Muammo haqida xabar berish tizimi keyingi bosqichda ishga tushadi. Hozircha guruh administratoriga murojaat qiling.",
-  "privacy.text": "🔒 <b>MAXFIYLIK</b>\n\nBot faqat o‘yin uchun zarur ma’lumotlarni saqlaydi: Telegram ID, ism, username, o‘yin natijalari va statistika.\n\nGuruhdagi oddiy suhbatlar saqlanmaydi. O‘lgan o‘yinchilar yoki tungi xabarlarni o‘chirish yoqilgan bo‘lsa, bot ularni faqat o‘chiradi, saqlamaydi.\n\nMa’lumotlaringizni o‘chirish: /delete_me",
-  "delete.confirm": "⚠️ Profilingiz anonimlashtiriladi: ism va username o‘chiriladi. O‘yin natijalari va to‘lov yozuvlari qonuniy hisob uchun anonim holda qoladi.\n\nDavom etasizmi?",
-  "delete.done": "✅ Ma’lumotlaringiz anonimlashtirildi.",
+  "privacy.text": "🔒 <b>MAXFIYLIK</b>\n\nBot Telegram ID, ism, username, o‘yin natijalari, profil statistikasi va iqtisodiyot ma’lumotlarini saqlashi mumkin. To‘lovlar va yordam murojaatlari ham qayd etiladi.\n\nGuruhdagi oddiy suhbatlar saqlanmaydi. /delete_me profil ismi va username’ni olib tashlaydi, lekin Telegram ID va u bilan bog‘langan yozuvlar qoladi. Bu to‘liq o‘chirish emas.\n\nSavollar uchun /support.",
+  "delete.confirm": "⚠️ Profilingizdagi ism va username olib tashlanadi. Telegram ID, o‘yin natijalari va to‘lov yozuvlari saqlanadi. Bu to‘liq anonimlashtirish emas.\n\nDavom etasizmi?",
+  "delete.done": "✅ Profilingizdagi ism va username olib tashlandi.",
   "delete.in_game": "Faol o‘yinda qatnashayotganingiz uchun hozir o‘chirib bo‘lmaydi.",
   "settings.text": "⚙️ <b>SOZLAMALAR</b>\n\n🌐 Til: O‘zbekcha\n\nRus va ingliz tillari keyingi bosqichda qo‘shiladi.",
   "profile.text": "👤 <b>O‘YINCHI PROFILI</b>\n\nIsm: {name}\nID: <code>{id}</code>\n🎖 Daraja: {level}\n⭐ XP: {xp} (keyingi daraja: {nextXp})\n🏅 Reyting: {rating} RP\n\n🎮 O‘yinlar: {played}\n🏆 G‘alabalar: {won}\n💀 Mag‘lubiyatlar: {lost}\n🤝 Durranglar: {drawn}\n📊 G‘alaba foizi: {winRate}%\n\n🔴 Mafia g‘alabalari: {mafiaWins}\n🔵 Shahar g‘alabalari: {cityWins}\n🟣 Mustaqil g‘alabalar: {neutralWins}\n\n🔥 Ketma-ket g‘alabalar: {streak} (eng yaxshi: {bestStreak})",
@@ -436,5 +436,13 @@
   "profile.frame_top": "{emoji}━━━━━━━━━━━━━━{emoji}",
   "dm.game_over_coins": "🏁 O‘yin tugadi. Natijangiz: {outcome}\n⭐ +{xp} XP · 🪙 +{coins}{rating}",
   "game.arcade_items": "🛡 <b>ARCADE BUYUMLARI</b>\n\nQalqon bilan: {shields} o‘yinchi\nSoxta hujjat bilan: {docs} o‘yinchi",
-  "game.vip_pro_winner": "💎 <b>VIP PRO g‘olib:</b> {names}"
+  "game.vip_pro_winner": "💎 <b>VIP PRO g‘olib:</b> {names}",
+  "menu.characters": "🎭 Personajlar",
+  "menu.guide": "🎓 Qanday o‘ynaladi?",
+  "guide.text": "🎓 <b>BIRINCHI O‘YININGIZ</b>\n\n1. Botga /start bosing va uni guruhga qo‘shing.\n2. Guruhda /game yoki tezkor /quick buyrug‘ini yuboring.\n3. Qo‘shilish tugmasini bosing. Kamida 4 ishtirokchi kerak.\n4. Rolingiz shaxsiy chatga keladi — uni boshqalarga oshkor qilmang.\n5. Tunda qobiliyatingizdan foydalaning. Kunduz muhokama qilib ovoz bering.\n6. Jamoangiz yoki shaxsiy rolingizning g‘alaba shartini bajaring.\n\n⚡ /quick — reytingsiz, qisqa taymerli o‘yin.\n📖 Har bir rolning vazifasi personajlar katalogida.",
+  "characters.home": "🎭 <b>PERSONAJLAR KATALOGI</b>\n\n{count} ta noyob rol. Jamoani tanlang va har bir personajning qobiliyatini o‘rganing.",
+  "characters.select": "Batafsil ma’lumot uchun personajni tanlang.",
+  "characters.minimum": "👥 Rol uchun minimal o‘yinchilar: {count}",
+  "characters.modes": "🎮 Mos rejimlar: {modes}",
+  "quick.banner": "⚡ <b>TEZKOR O‘YIN</b>\nTun 45s · Muhokama 60s · Ovoz 30s · Hukm 10s\nReytingsiz o‘yin."
 }

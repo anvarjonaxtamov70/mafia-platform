@@ -36,7 +36,7 @@ enabled = true
 #   STARS_MODE       — Telegram Stars to'lovlari: off | admins (faqat bot egalari sinaydi) | all (hamma)
 [vars]
 ADMIN_IDS = "5105291033,7184608742"
-DEV_FAKE_PLAYERS = "true"
+DEV_FAKE_PLAYERS = "false"
 STARS_MODE = "admins"
 
 # Sir (GitHub Actions orqali shifrlangan holda yoziladi): BOT_TOKEN

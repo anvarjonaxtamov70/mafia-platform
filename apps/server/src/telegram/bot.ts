@@ -17,6 +17,7 @@ import {
   nightActionMessage,
   plainAlert,
   rolesText,
+  learningView,
   SELECTABLE_MODES,
   settingsView,
   splitLong,
@@ -142,6 +143,8 @@ export function createBot(token: string, deps: BotDeps): Bot {
   pm.command(['support', 'report', 'paysupport'], (ctx) => ctx.reply(t('support.text'), HTML));
   pm.command('privacy', (ctx) => ctx.reply(t('privacy.text'), HTML));
   pm.command('rules', (ctx) => ctx.reply(t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), HTML));
+  pm.command('characters', (ctx) => { const view = learningView('characters')!; return ctx.reply(view.text, { ...HTML, ...kb(view.keyboard) }); });
+  pm.command('guide', (ctx) => { const view = learningView('guide')!; return ctx.reply(view.text, { ...HTML, ...kb(view.keyboard) }); });
   pm.command('roles', async (ctx) => {
     for (const part of splitLong(rolesText())) await ctx.reply(part, HTML);
   });
@@ -185,6 +188,15 @@ export function createBot(token: string, deps: BotDeps): Bot {
 
   // ───── Guruh ─────
   const grp = bot.chatType(['group', 'supergroup']);
+
+  grp.command('quick', async (ctx) => {
+    const u = from(ctx);
+    if (!u) return;
+    const r = await lobby.createLobby({ chatId: ctx.chat.id, title: ctx.chat.title ?? '', host: u, isAdmin: await isAdminCtx(ctx), mode: 'PRIVATE', quick: true });
+    if (!r.ok) return replyHtml(ctx, lobbyErrorText(r.error, r.details));
+    if (!r.hostJoined) return replyHtml(ctx, t('lobby.need_dm'));
+    return undefined;
+  });
 
   grp.command('game', async (ctx) => {
     const u = from(ctx);
@@ -453,6 +465,8 @@ export function createBot(token: string, deps: BotDeps): Bot {
 
   async function handleMenu(ctx: Context, u: TgUser, section: string): Promise<void> {
     const user = await users.upsert(u, ctx.chat?.type === 'private' ? { dmOpened: true } : {});
+    const learning = learningView(section);
+    if (learning) return safeEdit(ctx, learning.text, learning.keyboard);
     switch (section) {
       case 'home':
         return safeEdit(ctx, t('menu.welcome', { name: escapeHtml(user.firstName || 'do‘st') }), mainMenu());
@@ -468,7 +482,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
         return safeEdit(ctx, await queries.globalRating(user.id), [backRow()]);
       case 'rules':
         return safeEdit(ctx, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), [
-          [{ text: '🎭 /roles', callback_data: encode({ t: 'menu', section: 'roles' }) }],
+          [{ text: t('menu.characters'), callback_data: encode({ t: 'menu', section: 'characters' }) }],
           backRow(),
         ]);
       case 'roles': {
@@ -509,6 +523,8 @@ export async function registerCommands(bot: Bot): Promise<void> {
       { command: 'profile', description: 'Mening profilim' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
+      { command: 'characters', description: 'Personajlar katalogi' },
+      { command: 'guide', description: 'Boshlovchilar qo‘llanmasi' },
       { command: 'help', description: 'Yordam' },
       { command: 'privacy', description: 'Maxfiylik' },
     ],
@@ -517,6 +533,7 @@ export async function registerCommands(bot: Bot): Promise<void> {
   await bot.api.setMyCommands(
     [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
+      { command: 'quick', description: 'Tezkor, reytingsiz o‘yin' },
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },
       { command: 'players', description: 'Ishtirokchilar' },

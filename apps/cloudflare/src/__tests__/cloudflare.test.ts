@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { decode } from '@mafia/bot-core';
+import { decode, learningView } from '@mafia/bot-core';
+import { ALL_ROLES } from '@mafia/game-engine';
 import type { GameState } from '@mafia/game-engine';
 import { TgError } from '../telegram';
 import { callback, GROUP, groupText, privateText, World } from './harness';
@@ -340,5 +341,49 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     expect(w.tg.texts(Number(mafia[1]!.id)).some((t) => t.includes('Anvarni olamiz'))).toBe(true);
     const city = st.players.find((p) => p.faction === 'CITY')!;
     expect(w.tg.texts(Number(city.id)).some((t) => t.includes('Anvarni olamiz'))).toBe(false);
+  });
+});
+
+
+describe('Hypernova v2 — Telegram-first', () => {
+  it('eski lobby chiqish va bekor qilish tugmalari yangi lobbyga ta’sir qilmaydi', async () => {
+    const w = new World();
+    const old = await lobby(w, [1, 2, 3, 4]);
+    await w.send(groupText(1, '/cancelgame'));
+    const current = await lobby(w, [1, 2, 3, 4]);
+    expect(current).not.toBe(old);
+    await w.send(callback(2, 'l:l:' + old, GROUP));
+    await w.send(callback(1, 'l:c:' + old, GROUP));
+    const g = (await w.loaded(GROUP)).data.game!;
+    expect(g.number).toBe(current);
+    expect(g.players).toHaveLength(4);
+  });
+
+  it('/quick qisqa taymerli reytingsiz o‘yin yaratadi va guruh sozlamasini o‘zgartirmaydi', async () => {
+    const w = new World();
+    await w.send(privateText(1, '/start'));
+    const before = w.registryCore.getSettings(GROUP);
+    await w.send(groupText(1, '/quick'));
+    const g = (await w.loaded(GROUP)).data.game!;
+    expect(g.mode).toBe('PRIVATE');
+    expect(g.config).toMatchObject({ ranked: false, allowArcadeItems: false, nightDurationSec: 45, discussionDurationSec: 60, votingDurationSec: 30, verdictDurationSec: 10 });
+    expect(w.registryCore.getSettings(GROUP)).toEqual(before);
+    expect(w.tg.texts(GROUP).join(' ')).toContain('TEZKOR O‘YIN');
+  });
+
+  it('katalogda 30 ta rol va yaroqli callback tugmalari bor', async () => {
+    const w = new World();
+    await w.send(privateText(1, '/characters'));
+    expect(w.tg.texts(1).join(' ')).toContain('PERSONAJLAR KATALOGI');
+    await w.send(callback(1, 'm:roles_city'));
+    await w.send(callback(1, 'm:role_commissar'));
+    expect(w.tg.calls.filter((c) => c.method === 'editMessageText').at(-1)?.params['text']).toContain('KOMISSAR');
+    for (const role of ALL_ROLES) {
+      const section = 'role_' + role.code.toLowerCase();
+      expect(decode('m:' + section)).toEqual({ t: 'menu', section });
+      expect(learningView(section)?.text).toContain('minimal');
+    }
+    await w.send(privateText(1, '/guide'));
+    expect(w.tg.texts(1).join(' ')).toContain('BIRINCHI O‘YININGIZ');
   });
 });
