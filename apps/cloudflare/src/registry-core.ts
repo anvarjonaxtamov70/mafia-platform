@@ -63,6 +63,7 @@ export interface RecordPlayer {
   survived: boolean;
   left: boolean;
   active: boolean;
+  afk?: boolean;
   fake: boolean;
   /** VIP belgisi (g'olib e'loni uchun; registry saqlamaydi) */
   badge?: string;
@@ -157,6 +158,9 @@ const SCHEMA = [
     result TEXT NOT NULL, survived INTEGER NOT NULL, xp INTEGER NOT NULL, rating_change INTEGER NOT NULL, created_at INTEGER NOT NULL,
     PRIMARY KEY (game_number, telegram_id)
   )`,
+  `CREATE INDEX IF NOT EXISTS game_results_player_recent ON game_results (telegram_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS game_results_period ON game_results (created_at, telegram_id)`,
+  `CREATE TABLE IF NOT EXISTS game_participation (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, afk INTEGER NOT NULL, left_game INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`,
   `CREATE TABLE IF NOT EXISTS bans (telegram_id INTEGER PRIMARY KEY, reason TEXT NOT NULL, created_by TEXT, created_at INTEGER NOT NULL, expires_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS error_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, place TEXT NOT NULL, message TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS audit_logs (
@@ -385,8 +389,11 @@ export class RegistryCore {
       const exists = this.one(`SELECT 1 AS x FROM game_results WHERE game_number = ? AND telegram_id = ?`, input.number, p.tgId);
       if (exists) continue;
       const result = { playerId: String(p.tgId), role: p.role, faction: p.faction, outcome: p.outcome, survived: p.survived, left: p.left, achievements: [] };
-      const xp = xpFor(result, p.active);
-      const ratingChange = simpleRating.change(result, input.ranked);
+      const penalized = p.afk === true;
+      const progression = penalized ? { ...result, outcome: 'LOSS' as const, left: true } : result;
+      const xp = xpFor(progression, p.active);
+      const ratingChange = simpleRating.change(progression, input.ranked);
+      this.sql.exec(`INSERT OR IGNORE INTO game_participation (game_number, telegram_id, afk, left_game) VALUES (?, ?, ?, ?)`, input.number, p.tgId, penalized ? 1 : 0, p.left ? 1 : 0);
       this.sql.exec(
         `INSERT INTO game_results (game_number, telegram_id, role, faction, result, survived, xp, rating_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         input.number,
@@ -404,7 +411,7 @@ export class RegistryCore {
         `SELECT xp, rating, current_win_streak, best_win_streak FROM profiles WHERE telegram_id = ?`,
         p.tgId,
       )!;
-      const won = p.outcome === 'WIN' || p.outcome === 'PERSONAL_WIN';
+      const won = !penalized && (p.outcome === 'WIN' || p.outcome === 'PERSONAL_WIN');
       const newXp = Math.max(0, prof.xp + xp);
       const streak = won ? prof.current_win_streak + 1 : p.outcome === 'DRAW' ? prof.current_win_streak : 0;
       const inc = (b: boolean) => (b ? 1 : 0);
@@ -420,9 +427,9 @@ export class RegistryCore {
         inc(!p.left),
         inc(p.left),
         inc(won),
-        inc(p.outcome === 'LOSS'),
-        inc(p.outcome === 'DRAW'),
-        inc(p.outcome === 'PERSONAL_WIN'),
+        inc(penalized || p.outcome === 'LOSS'),
+        inc(!penalized && p.outcome === 'DRAW'),
+        inc(!penalized && p.outcome === 'PERSONAL_WIN'),
         inc(won && p.faction === 'MAFIA'),
         inc(won && p.faction === 'CITY'),
         inc(won && p.faction === 'NEUTRAL'),
@@ -445,7 +452,7 @@ export class RegistryCore {
         p.tgId,
         inc(won),
       );
-      const reward = this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left });
+      const reward = penalized || p.left ? { coins: 0, referral: null } : this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left });
       if (reward.referral) referrals.push({ referrerId: reward.referral.referrerId, referredName: p.name, reward: reward.referral.reward });
       out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange });
     }
@@ -499,10 +506,45 @@ export class RegistryCore {
     }) + extra + (frame ? `\n${t('profile.frame_top', { emoji: frame.emoji })}` : '');
   }
 
+  /** Last ten completed games of the requester only; never expose other players' hidden roles. */
+  gameHistory(tgId: number): string {
+    const rows = this.sql.exec<{ game_number: number; role: string; result: string; xp: number; rating_change: number; created_at: number; afk: number | null; left_game: number | null }>(
+      `SELECT r.game_number, r.role, r.result, r.xp, r.rating_change, r.created_at, p.afk, p.left_game
+       FROM game_results r LEFT JOIN game_participation p ON p.game_number = r.game_number AND p.telegram_id = r.telegram_id
+       WHERE r.telegram_id = ? ORDER BY r.created_at DESC, r.game_number DESC LIMIT 10`, tgId);
+    if (!rows.length) return t('history.title') + '\n\n' + t('history.empty');
+    return t('history.title') + '\n\n' + rows.map((x) => t('history.line', {
+      number: x.game_number, role: t('role.' + x.role + '.name'), outcome: t('dm.outcome.' + x.result),
+      date: formatDate(x.created_at), xp: x.xp, rp: (x.rating_change > 0 ? '+' : '') + x.rating_change,
+      note: x.afk ? ' · AFK' : x.left_game ? ' · ' + t('history.left') : '',
+    })).join('\n\n');
+  }
+
+  /** Calendar week (Monday) and month, Uzbekistan time UTC+5. Counts wins, not lifetime RP. */
+  periodRating(period: 'weekly' | 'monthly'): string {
+    const now = this.clock();
+    const offset = 5 * 60 * 60 * 1000;
+    const local = new Date(now + offset);
+    local.setUTCHours(0, 0, 0, 0);
+    if (period === 'monthly') local.setUTCDate(1);
+    else local.setUTCDate(local.getUTCDate() - (local.getUTCDay() + 6) % 7);
+    const start = local.getTime() - offset;
+    const title = t('period.' + period);
+    const rows = this.sql.exec<{ wins: number; games: number; first_name: string; last_name: string | null; username: string | null }>(
+      `SELECT SUM(CASE WHEN r.result IN ('WIN','PERSONAL_WIN') AND r.xp > 0 THEN 1 ELSE 0 END) AS wins,
+       COUNT(*) AS games, u.first_name, u.last_name, u.username FROM game_results r JOIN users u ON u.telegram_id = r.telegram_id
+       WHERE r.created_at >= ? AND r.created_at <= ? AND u.deleted_at IS NULL AND r.xp > 0
+       GROUP BY r.telegram_id HAVING wins > 0 ORDER BY wins DESC, games ASC, r.telegram_id ASC LIMIT 10`, start, now);
+    if (!rows.length) return title + '\n\n' + t('rating.empty');
+    return title + '\n\n' + t('period.info') + '\n\n' + rows.map((x, i) => t('group_rating.line', {
+      place: i + 1, name: escapeHtml(displayName({ firstName: x.first_name, lastName: x.last_name, username: x.username })), wins: x.wins, games: x.games,
+    })).join('\n');
+  }
+
   globalRating(tgId: number | null): string {
     const top = this.sql.exec<{ telegram_id: number; rating: number; first_name: string; last_name: string | null; username: string | null }>(
       `SELECT p.telegram_id, p.rating, u.first_name, u.last_name, u.username FROM profiles p JOIN users u ON u.telegram_id = p.telegram_id
-       WHERE p.games_played > 0 AND u.deleted_at IS NULL ORDER BY p.rating DESC, p.games_won DESC LIMIT 10`,
+       WHERE p.games_played > 0 AND u.deleted_at IS NULL ORDER BY p.rating DESC, p.games_won DESC, p.telegram_id ASC LIMIT 10`,
     );
     if (top.length === 0) return `${t('rating.title')}\n\n${t('rating.empty')}`;
     const medals = ['🥇', '🥈', '🥉'];
@@ -527,7 +569,7 @@ export class RegistryCore {
   groupLeaderboard(chatId: number): string {
     const rows = this.sql.exec<{ games: number; wins: number; first_name: string; last_name: string | null; username: string | null }>(
       `SELECT g.games, g.wins, u.first_name, u.last_name, u.username FROM group_stats g JOIN users u ON u.telegram_id = g.telegram_id
-       WHERE g.chat_id = ? ORDER BY g.wins DESC, g.games DESC LIMIT 10`,
+       WHERE g.chat_id = ? AND u.deleted_at IS NULL ORDER BY g.wins DESC, g.games DESC, g.telegram_id ASC LIMIT 10`,
       chatId,
     );
     if (rows.length === 0) return `${t('group_rating.title')}\n\n${t('rating.empty')}`;

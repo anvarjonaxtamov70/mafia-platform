@@ -330,6 +330,9 @@ export function present(input: PresentInput): OutboxDraft[] {
       case 'PERSONAL_WIN':
         group(t('game.personal_win', { name: nameOf(state, e.playerId), role: roleLabel(e.role) }));
         break;
+      case 'AFK_NOTICE':
+        dm(e.playerId, t(e.penalized ? 'afk.penalty' : 'afk.warning'));
+        break;
       case 'PLAYER_LEFT':
         group(e.role ? t('game.left_role', { name: nameOf(state, e.playerId), role: roleLabel(e.role) }) : t('game.left', { name: nameOf(state, e.playerId) }));
         break;

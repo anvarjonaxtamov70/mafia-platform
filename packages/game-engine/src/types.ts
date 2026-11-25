@@ -140,6 +140,9 @@ export interface PlayerState {
   items: ArcadeItems;
   missedActions: number;
   missedVotes: number;
+  /** Optional for persisted games created before v4. */
+  consecutiveMissedVotes?: number;
+  afkPenalized?: boolean;
 }
 
 export interface NightActionRecord {
@@ -306,6 +309,7 @@ export type EventBody =
   | { type: 'DAY_DEATHS'; deaths: DeathInfo[] }
   | { type: 'PERSONAL_WIN'; playerId: string; role: RoleCode }
   | { type: 'PLAYER_LEFT'; playerId: string; role: RoleCode | null }
+  | { type: 'AFK_NOTICE'; playerId: string; penalized: boolean }
   | { type: 'GAME_ENDED'; result: GameResult };
 
 export type EventType = EventBody['type'];

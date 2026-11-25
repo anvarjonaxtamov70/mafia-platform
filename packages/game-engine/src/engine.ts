@@ -101,6 +101,8 @@ export function createGame(input: CreateGameInput): EngineResult | { ok: false; 
   if (n > Math.min(MAX_PLAYERS_CEILING, config.maxPlayers)) return { ok: false, error: 'TOO_MANY_PLAYERS' };
   if (new Set(input.players.map((p) => p.id)).size !== n) return { ok: false, error: 'DUPLICATE_PLAYER' };
 
+  // Fundamental repeatable roles are required to guarantee a valid composition at every size.
+  if (!input.fixedRoles && (config.disabledRoles.includes('CITIZEN') || config.disabledRoles.includes('MAFIOSO'))) return { ok: false, error: 'DISTRIBUTION_FAILED' };
   let roles: RoleCode[];
   if (input.fixedRoles) {
     try {
@@ -114,7 +116,7 @@ export function createGame(input: CreateGameInput): EngineResult | { ok: false; 
       roles = shuffle(distributeRoles({ playerCount: n, mode: input.mode, config, rng }), rng);
     } catch (e) {
       if (!(e instanceof DistributionError)) throw e;
-      roles = shuffle(safeComposition(n), rng);
+      roles = shuffle(safeComposition(n, config.disabledRoles), rng);
     }
   }
 
@@ -144,6 +146,8 @@ export function createGame(input: CreateGameInput): EngineResult | { ok: false; 
       },
       missedActions: 0,
       missedVotes: 0,
+      consecutiveMissedVotes: 0,
+      afkPenalized: false,
     };
   });
 
@@ -466,7 +470,19 @@ export function advancePhase(state: GameState, now: number, rng: Rng = cryptoRng
       startPhase(s, 'DAY_VOTING', now, events);
       break;
     case 'DAY_VOTING': {
-      for (const p of alivePlayers(s)) if (s.day.votes[p.id] === undefined) p.missedVotes++;
+      for (const p of alivePlayers(s)) {
+        if (s.day.votes[p.id] !== undefined) {
+          p.consecutiveMissedVotes = 0;
+          continue;
+        }
+        p.missedVotes++;
+        p.consecutiveMissedVotes = (p.consecutiveMissedVotes ?? 0) + 1;
+        if (p.consecutiveMissedVotes === 1 && !p.afkPenalized) events.push({ type: 'AFK_NOTICE', playerId: p.id, penalized: false, audience: { kind: 'private', playerId: p.id } });
+        if (p.consecutiveMissedVotes >= 2 && !p.afkPenalized) {
+          p.afkPenalized = true;
+          events.push({ type: 'AFK_NOTICE', playerId: p.id, penalized: true, audience: { kind: 'private', playerId: p.id } });
+        }
+      }
       const t = tallyVotes(s);
       events.push({ type: 'VOTE_RESULT', dayNumber: s.dayNumber, ...t, audience: { kind: 'public' } });
       if (t.candidateId) {

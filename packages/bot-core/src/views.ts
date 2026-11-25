@@ -14,11 +14,12 @@ export function displayName(u: { firstName: string; lastName?: string | null; us
 
 // ───────────────────────────── Menyular ─────────────────────────────
 
-export function mainMenu(): Keyboard {
+export function mainMenu(competition = false): Keyboard {
   const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
   return [
     [b('menu.play', 'play')],
     [b('menu.profile', 'profile'), b('menu.rating', 'rating')],
+    ...(competition ? [[b('menu.history', 'history'), b('menu.weekly', 'weekly')]] : []),
     [b('menu.shop', 'shop'), b('menu.inventory', 'inventory')],
     [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
     [b('menu.invite', 'invite')],
