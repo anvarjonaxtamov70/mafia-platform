@@ -18,6 +18,9 @@ export class SecurityCore {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS security_rate (telegram_id INTEGER PRIMARY KEY, window_at INTEGER NOT NULL, hits INTEGER NOT NULL)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS security_rate_at ON security_rate(window_at)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS security_alerts (kind TEXT PRIMARY KEY, at INTEGER NOT NULL)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS security_game_signals (game_number INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, roster TEXT NOT NULL, at INTEGER NOT NULL, inactive INTEGER NOT NULL, players INTEGER NOT NULL, flagged INTEGER NOT NULL)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS security_signals_at ON security_game_signals(at)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS security_signals_roster ON security_game_signals(chat_id, roster, at)`);
   }
 
   begin(updateId: number, userId: number): Admission {
@@ -57,6 +60,23 @@ export class SecurityCore {
   claimAlert(kind: 'webhook' | 'alarm' | 'registry'): boolean {
     const now = this.clock();
     return this.sql.exec(`INSERT INTO security_alerts (kind, at) VALUES (?, ?) ON CONFLICT (kind) DO UPDATE SET at = excluded.at WHERE security_alerts.at <= ? RETURNING kind`, kind, now, now - ALERT_COOLDOWN).length === 1;
+  }
+
+  /** Review-only signal, not proof of cheating. No automatic ban or confiscation. */
+  observeGame(number: number, chat: number, players: readonly { tgId: number; active: boolean; fake: boolean; left: boolean }[]): void {
+    const real = players.filter((p) => !p.fake);
+    if (real.length < 4) return;
+    const now = this.clock();
+    const roster = real.map((p) => p.tgId).sort((a, b) => a - b).join(',');
+    const inactive = real.filter((p) => !p.active || p.left).length;
+    const repeat = this.sql.exec<{ c: number }>(`SELECT COUNT(*) AS c FROM security_game_signals WHERE chat_id = ? AND roster = ? AND at >= ? AND game_number <> ?`, chat, roster, now - 60 * 60 * 1000, number)[0]!.c;
+    const flagged = repeat >= 5 && inactive * 2 >= real.length ? 1 : 0;
+    this.sql.exec(`INSERT OR IGNORE INTO security_game_signals (game_number, chat_id, roster, at, inactive, players, flagged) VALUES (?, ?, ?, ?, ?, ?, ?)`, number, chat, roster, now, inactive, real.length, flagged);
+    this.sql.exec(`DELETE FROM security_game_signals WHERE game_number IN (SELECT game_number FROM security_game_signals WHERE at < ? ORDER BY at LIMIT 256)`, now - RETENTION);
+  }
+
+  abuseStats(): { suspiciousGames: number } {
+    return { suspiciousGames: this.sql.exec<{ c: number }>(`SELECT COUNT(*) AS c FROM security_game_signals WHERE flagged = 1 AND at >= ?`, this.clock() - 24 * 60 * 60 * 1000)[0]!.c };
   }
 
   stats(): { limited: number; uncertain: number; processing: number } {

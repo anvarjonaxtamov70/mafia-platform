@@ -448,6 +448,6 @@
   "owner.tier": "💎 VIP PRO — doimiy (Superadmin)",
   "owner.vip": "💎 <b>SUPERADMIN · VIP PRO</b>\n\nVIP PRO: doimiy va bepul.\n🪙 Coins: cheklanmagan (1 000 000 000 ko‘rsatiladi, xaridlarda kamaymaydi).\nBarcha VIP ramkalari va unvonlari ochiq.\nHaqiqiy Telegram Stars alohida hisoblanadi.",
   "owner.already_vip": "Sizda VIP PRO doimiy faol. Obuna sotib olish shart emas.",
-  "security.stats": "🛡 <b>Xavfsizlik · 24 soat</b>\nCheklangan so‘rovlar: {limited}\nTekshirish kerak: {uncertain}\nJarayonda: {processing}",
+  "security.stats": "🛡 <b>Xavfsizlik · 24 soat</b>\nCheklangan so‘rovlar: {limited}\nTekshirish kerak: {uncertain}\nJarayonda: {processing}\nShubhali o‘yinlar (tekshiruv uchun): {suspiciousGames}",
   "security.refund_pending": "⚠️ Refund jarayoni tasdiqlanishi kutilmoqda. Takroriy refund yuborilmaydi. /admin_payments va Telegram Stars tranzaksiyalarini tekshiring."
 }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { reconcileRefunds } from '../refund-reconcile';
+import type { Telegram } from '../telegram';
 import { DAY_MS, decode, encode, refCode, tashkentDay } from '@mafia/bot-core';
 import { callback, GROUP, groupText, lobby, playToEnd, privateText, user, World } from './harness';
 
@@ -527,5 +529,27 @@ describe('Security v3 refund safety', () => {
     expect(eco.tierInfo(2).tier).toBe('FREE');
     await w.send({ message: { message_id: 8, chat: { id: 2, type: 'private' }, from: user(2), refunded_payment: event } });
     expect(eco.paymentInfo('refund-pending')?.status).toBe('REFUNDED');
+  });
+});
+
+
+describe('Provider refund reconciliation', () => {
+  it('matches only outgoing same charge, same payer and full Stars amount; never calls refund', async () => {
+    const w = new World({ starsMode: 'all' });
+    await w.send(privateText(2, '/start'));
+    await buyStars(w, 2, 'VIP_30', 'provider-refund');
+    const eco = w.registryCore.eco;
+    expect(eco.beginRefund('provider-refund')).toBe(true);
+    const calls: string[] = [];
+    const incoming = { id: 'provider-refund', amount: 99, source: { type: 'user', user: { id: 2 } } };
+    const wrong = { id: 'provider-refund', amount: 99, receiver: { type: 'user', user: { id: 3 } } };
+    const partial = { id: 'provider-refund', amount: 98, receiver: { type: 'user', user: { id: 2 } } };
+    const good = { id: 'provider-refund', amount: 99, receiver: { type: 'user', user: { id: 2 } } };
+    const telegram: Telegram = { async call<T>(method: string): Promise<T> { calls.push(method); return { transactions: [incoming, wrong, partial, good] } as T; } };
+    expect(await reconcileRefunds(telegram, eco.pendingRefunds(), async (charge) => eco.markRefunded(charge, 'test'))).toBe(1);
+    expect(eco.paymentInfo('provider-refund')?.status).toBe('REFUNDED');
+    expect(eco.tierInfo(2).tier).toBe('FREE');
+    expect(await reconcileRefunds(telegram, eco.pendingRefunds(), async (charge) => eco.markRefunded(charge, 'test'))).toBe(0);
+    expect(calls).toEqual(['getStarTransactions']);
   });
 });

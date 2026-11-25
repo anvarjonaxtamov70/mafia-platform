@@ -379,6 +379,7 @@ export class RegistryCore {
     const now = this.clock();
     const out: RecordedPlayer[] = [];
     const referrals: RecordResult['referrals'] = [];
+    if (!input.practice && !input.players.some((p) => p.fake)) this.security.observeGame(input.number, input.chatId, input.players);
     for (const p of input.practice ? [] : input.players) {
       if (p.fake) continue;
       const exists = this.one(`SELECT 1 AS x FROM game_results WHERE game_number = ? AND telegram_id = ?`, input.number, p.tgId);
@@ -558,7 +559,7 @@ export class RegistryCore {
     const s = this.stats();
     const e = this.recentErrors();
     const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
-    const security = this.security.stats();
+    const security = { ...this.security.stats(), ...this.security.abuseStats() };
     return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}`;
   }
 

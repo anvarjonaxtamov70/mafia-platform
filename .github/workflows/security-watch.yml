@@ -1,0 +1,25 @@
+name: Weekly security audit
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Production advisories
+        run: npm audit --omit=dev --audit-level=high
+      - name: Development advisories (report)
+        continue-on-error: true
+        run: npm audit --audit-level=high

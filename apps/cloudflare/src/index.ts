@@ -19,6 +19,7 @@ import { RoomCore, type RoomData, type RoomDeps } from './room-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
 import { readTelegramUpdate } from './webhook-input';
+import { reconcileRefunds } from './refund-reconcile';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<GameRoom>;
@@ -146,6 +147,9 @@ export class Registry extends DurableObject<Env> {
   paymentInfo(chargeId: string) {
     return this.core.eco.paymentInfo(chargeId);
   }
+  pendingRefunds() {
+    return this.core.eco.pendingRefunds();
+  }
   beginRefund(chargeId: string) {
     return this.core.eco.beginRefund(chargeId);
   }
@@ -235,7 +239,18 @@ export class Registry extends DurableObject<Env> {
     return this.core.security.claimAlert(kind);
   }
   securityStats() {
-    return this.core.security.stats();
+    return { ...this.core.security.stats(), ...this.core.security.abuseStats(), pendingRefunds: this.core.eco.pendingRefunds().length };
+  }
+  async recoveryCheckpoint(): Promise<void> {
+    const now = Date.now();
+    const last = await this.ctx.storage.get<{ at: number; bookmark: string }>('security:pitr');
+    if (last && now - last.at < 24 * 60 * 60 * 1000) return;
+    const bookmark = await this.ctx.storage.getCurrentBookmark();
+    await this.ctx.storage.put('security:pitr', { at: now, bookmark });
+  }
+  async recoveryStatus(): Promise<{ lastCheckpointAt: number | null }> {
+    const last = await this.ctx.storage.get<{ at: number; bookmark: string }>('security:pitr');
+    return { lastCheckpointAt: last?.at ?? null };
   }
   setGlobalMinPlayers(value: number, by: string) {
     return this.core.setGlobalMinPlayers(value, by);
@@ -444,6 +459,7 @@ async function diag(env: Env): Promise<Response> {
     const reg = registryStub(env);
     out['registry'] = { ok: true, ...(await reg.stats()) };
     out['security'] = await reg.securityStats();
+    out['recovery'] = await reg.recoveryStatus();
     out['errors'] = await reg.recentErrors();
   } catch (e) {
     ok = false;
@@ -470,6 +486,27 @@ async function diag(env: Env): Promise<Response> {
 }
 
 export default {
+  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    if (!env.BOT_TOKEN) return;
+    const reg = registryStub(env);
+    try {
+      const info = await telegram(env).call<{ url: string; pending_update_count: number; last_error_date?: number }>('getWebhookInfo');
+      if (!info.url.endsWith('/telegram/webhook') || info.pending_update_count >= 100 || (info.pending_update_count > 0 && (info.last_error_date ?? 0) * 1000 > Date.now() - 15 * 60_000)) {
+        await reportFailure(env, 'webhook');
+      }
+    } catch {
+      await reportFailure(env, 'webhook');
+    }
+    try {
+      await reconcileRefunds(telegram(env), await reg.pendingRefunds(), (charge) => reg.markRefunded(charge, 'telegram-reconcile'));
+    } catch {
+      await reportFailure(env, 'registry');
+    }
+    // PITR is a native Cloudflare capability, not a separate backup. It is unavailable in local dev.
+    if (!env.TELEGRAM_API) {
+      try { await reg.recoveryCheckpoint(); } catch { await reportFailure(env, 'registry'); }
+    }
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {

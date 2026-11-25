@@ -475,3 +475,19 @@ describe('Security v3 ingress and registry recovery', () => {
     expect(w.registryCore.activeOf(2)).toBeNull();
   });
 });
+
+
+describe('Security v3 abuse telemetry', () => {
+  it('repeated mostly inactive same-roster games are review signals, not bans', () => {
+    const w = new World();
+    const players = [1, 2, 3, 4].map((tgId) => ({ tgId, active: tgId === 1, fake: false, left: false }));
+    for (let n = 1; n <= 6; n++) w.registryCore.security.observeGame(n, GROUP, players);
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(1);
+    w.registryCore.security.observeGame(6, GROUP, players);
+    w.registryCore.security.observeGame(7, GROUP, players.map((p) => ({ ...p, active: true })));
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(1);
+    expect(w.registryCore.adminStats()).toContain('Shubhali o‘yinlar');
+    w.now += 25 * 60 * 60 * 1000;
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(0);
+  });
+});
