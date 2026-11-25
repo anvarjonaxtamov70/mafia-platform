@@ -32,7 +32,7 @@ import {
   type PlayerState,
   type Rng,
 } from '../types';
-import { validateNightAction } from '../validation';
+import { availableNightActions, validateNightAction } from '../validation';
 
 interface Protection {
   type: ProtectionType;
@@ -249,6 +249,12 @@ export function resolveNight(state: GameState, rng: Rng): NightResolution {
   const ctx = new NightContext(state);
   const n = state.nightNumber;
   const aliveAtStart = state.players.filter((p) => p.status === 'ALIVE');
+  // Evaluate availability before actions consume charges or change status.
+  for (const p of aliveAtStart) {
+    const missedRole = availableNightActions(state, p).length > 0 && !state.night.actions[p.id] && !state.night.skipped.includes(p.id);
+    const missedMafia = p.faction === 'MAFIA' && (n > 1 || state.config.firstNightActions) && state.night.mafiaVotes[p.id] === undefined;
+    if (missedRole || missedMafia) p.missedActions++;
+  }
 
   // 1. Harakatlarni yig'ish va qayta validatsiya
   const actions: ResolvedAction[] = [];
@@ -409,12 +415,6 @@ export function resolveNight(state: GameState, rng: Rng): NightResolution {
 
   // Egizaklar bonusi (§10.2)
   if (state.links.twins) grantTwinBonus(state, deaths, n, (to, body) => ctx.deferPrivate(to, body));
-
-  // AFK hisobi (§32.3): harakat imkoni bo'lib, hech narsa qilmaganlar
-  for (const p of aliveAtStart) {
-    if (state.night.actions[p.id] || state.night.skipped.includes(p.id)) continue;
-    if (getRole(p.role).night.length > 0) p.missedActions++;
-  }
 
   // Shaxsiy natijalar — faqat tirik qolganlarga (§12.3)
   const events: GameEvent[] = [];

@@ -606,6 +606,7 @@ export class RoomCore {
               survived: r.survived,
               left: r.left,
               active: sp.missedVotes === 0 && sp.missedActions === 0,
+              afk: sp.afkPenalized === true,
               fake: rp.fake,
               ...(rp.badge ? { badge: rp.badge } : {}),
             };
@@ -640,7 +641,8 @@ export class RoomCore {
 
   private checkGame(number: number): RoomGame | null {
     const g = this.data.game;
-    return g && g.number === number && g.status === 'RUNNING' ? g : null;
+    // A delayed alarm must not let old buttons mutate an already-expired phase.
+    return g && g.number === number && g.status === 'RUNNING' && g.state && (g.state.phaseEndsAt === null || g.state.phaseEndsAt > this.now) ? g : null;
   }
 
   /** Tungi harakat tugmasi: nishon yetarli bo'lmasa keyingi tanlov klaviaturasi qaytariladi. */

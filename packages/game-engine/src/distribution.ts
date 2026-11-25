@@ -55,6 +55,7 @@ function pickFromPool(pool: RoleDefinition[], rng: Rng): RoleDefinition | undefi
 /** Rollar ro'yxatini qaytaradi (hali o'yinchilarga biriktirilmagan). */
 export function distributeRoles(input: DistributionInput): RoleCode[] {
   const n = input.playerCount;
+  if (input.config.disabledRoles.includes('CITIZEN') || input.config.disabledRoles.includes('MAFIOSO')) throw new DistributionError('fundamental roles cannot be disabled');
   const plan = factionPlan(n);
   const roles: RoleCode[] = [];
 
@@ -140,11 +141,12 @@ export function validateComposition(roles: RoleCode[], n: number): void {
 }
 
 /** Har qanday holatda ishlaydigan xavfsiz kombinatsiya (fallback). */
-export function safeComposition(n: number): RoleCode[] {
+export function safeComposition(n: number, disabled: readonly RoleCode[] = []): RoleCode[] {
+  if (disabled.includes('CITIZEN') || disabled.includes('MAFIOSO')) throw new DistributionError('fundamental roles cannot be disabled');
   const plan = factionPlan(n);
-  const roles: RoleCode[] = ['DON'];
+  const roles: RoleCode[] = [disabled.includes('DON') ? 'MAFIOSO' : 'DON'];
   while (roles.length < plan.mafia) roles.push('MAFIOSO');
-  roles.push('COMMISSAR', 'DOCTOR');
+  for (const role of ['COMMISSAR', 'DOCTOR'] as const) if (!disabled.includes(role)) roles.push(role);
   while (roles.length < n) roles.push('CITIZEN');
   validateComposition(roles, n);
   return roles;

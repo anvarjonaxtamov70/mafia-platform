@@ -214,6 +214,12 @@ export class Registry extends DurableObject<Env> {
   globalRating(tgId: number | null) {
     return this.core.globalRating(tgId);
   }
+  gameHistory(tgId: number) {
+    return this.core.gameHistory(tgId);
+  }
+  periodRating(period: 'weekly' | 'monthly') {
+    return this.core.periodRating(period);
+  }
   groupLeaderboard(chatId: number) {
     return this.core.groupLeaderboard(chatId);
   }
@@ -415,6 +421,10 @@ async function setup(env: Env, origin: string): Promise<Response> {
     commands: [
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
+      { command: 'history', description: 'Oxirgi 10 o‘yin' },
+      { command: 'rating', description: 'Umumiy reyting' },
+      { command: 'weekly', description: 'Haftalik TOP 10' },
+      { command: 'monthly', description: 'Oylik TOP 10' },
       { command: 'daily', description: 'Kunlik mukofot va vazifalar' },
       { command: 'shop', description: 'Do‘kon' },
       { command: 'inventory', description: 'Inventar' },

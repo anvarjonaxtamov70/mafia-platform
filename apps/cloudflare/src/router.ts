@@ -126,6 +126,8 @@ export interface RegistryApi {
   saveSettings(chatId: number, data: GroupSettingsData, by: string): Promise<GroupSettingsData>;
   profileText(tgId: number): Promise<string>;
   globalRating(tgId: number | null): Promise<string>;
+  gameHistory(tgId: number): Promise<string>;
+  periodRating(period: 'weekly' | 'monthly'): Promise<string>;
   groupLeaderboard(chatId: number): Promise<string>;
   adminStats(): Promise<string>;
   setGlobalMinPlayers(value: number, by: string): Promise<number>;
@@ -351,7 +353,7 @@ export class Router {
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
         }
-        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu());
+        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true));
       }
       case 'help':
         return this.reply(chatId, t('help.text'));
@@ -385,6 +387,13 @@ export class Router {
       case 'roles':
         for (const part of splitLong(rolesText())) await this.reply(chatId, part);
         return;
+      case 'history':
+      case 'weekly':
+      case 'monthly':
+      case 'rating': {
+        const v = await this.competitionView(from.id, c.cmd);
+        return this.reply(chatId, v.text, v.keyboard);
+      }
       case 'profile':
       case 'mystats': {
         const v = await this.section(from, 'profile', true);
@@ -550,7 +559,7 @@ export class Router {
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
-          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu());
+          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true));
           return this.answer(cb);
         }
         const r = await this.d.registry.anonymize(from.id);
@@ -630,7 +639,7 @@ export class Router {
     const username = await this.d.botUsername();
     switch (section) {
       case 'home':
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu());
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true));
       case 'play':
         return this.edit(cb, t('play.text'), [
           ...(username ? [[{ text: t('play.add_to_group'), url: `https://t.me/${username}?startgroup=true` }]] : []),
@@ -638,7 +647,12 @@ export class Router {
           backRow(),
         ]);
       case 'rating':
-        return this.edit(cb, await this.d.registry.globalRating(user.id), [backRow()]);
+      case 'history':
+      case 'weekly':
+      case 'monthly': {
+        const v = await this.competitionView(user.id, section);
+        return this.edit(cb, v.text, v.keyboard);
+      }
       case 'rules':
         return this.edit(cb, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), [
           [{ text: t('menu.characters'), callback_data: encode({ t: 'menu', section: 'characters' }) }],
@@ -657,9 +671,15 @@ export class Router {
       default: {
         const v = await this.section(from, section, cb.message?.chat.type === 'private');
         if (v) return this.edit(cb, v.text, v.keyboard);
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu());
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true));
       }
     }
+  }
+
+  private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
+    const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
+    const text = section === 'history' ? await this.d.registry.gameHistory(id) : section === 'weekly' || section === 'monthly' ? await this.d.registry.periodRating(section) : await this.d.registry.globalRating(id);
+    return { text, keyboard: [[b('menu.rating', 'rating'), b('menu.weekly', 'weekly')], [b('menu.monthly', 'monthly'), b('menu.history', 'history')], backRow()] };
   }
 
   // ───────────────────────────── Iqtisodiyot ─────────────────────────────

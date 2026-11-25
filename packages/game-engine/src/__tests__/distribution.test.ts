@@ -87,3 +87,21 @@ describe('RoleDistributionService (§11)', () => {
     expect(roles.filter((r) => getRole(r).faction === 'MAFIA')).toHaveLength(2);
   });
 });
+
+
+describe('v4 disabled-role invariants', () => {
+  it('fallback and normal distribution never restore disabled optional roles', () => {
+    const disabled = ['DON', 'COMMISSAR', 'DOCTOR'] as const;
+    for (let n = 4; n <= 30; n++) {
+      for (const roles of [safeComposition(n, disabled), distributeRoles({ playerCount: n, mode: 'CLASSIC', config: { disabledRoles: [...disabled] }, rng: seededRng(n) })]) {
+        expect(roles).toHaveLength(n);
+        for (const role of disabled) expect(roles).not.toContain(role);
+        expect(() => validateComposition(roles, n)).not.toThrow();
+      }
+    }
+  });
+  it('rejects configurations that disable essential repeatable roles', () => {
+    expect(() => safeComposition(10, ['CITIZEN'])).toThrow();
+    expect(() => distributeRoles({ playerCount: 10, mode: 'CLASSIC', config: { disabledRoles: ['MAFIOSO'] }, rng: seededRng(1) })).toThrow();
+  });
+});

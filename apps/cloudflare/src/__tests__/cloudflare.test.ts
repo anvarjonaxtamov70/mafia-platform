@@ -491,3 +491,43 @@ describe('Security v3 abuse telemetry', () => {
     expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(0);
   });
 });
+
+
+describe('v4 competition and AFK', () => {
+  it('history is private, period ranking excludes AFK, and rewards cannot be farmed by AFK', async () => {
+    const w = new World();
+    for (const id of [9, 10]) await w.send(privateText(id, '/start'));
+    const n = w.registryCore.allocateGame(GROUP);
+    const players = [9, 10].map((tgId) => ({ tgId, name: 'U' + tgId, role: 'CITIZEN' as const, faction: 'CITY' as const, outcome: 'WIN' as const, survived: true, left: false, active: tgId === 9, fake: false, afk: tgId === 10 }));
+    const result = w.registryCore.recordGame({ gameId: 'v4', number: n, chatId: GROUP, ranked: true, outcome: 'CITY', days: 3, players });
+    expect(result.players.find((p) => p.tgId === 10)).toMatchObject({ xp: 0, coins: 0, ratingChange: -10 });
+    expect(w.registryCore.eco.coins(10)).toBe(0);
+    expect(w.registryCore.eco.coins(9)).toBe(25);
+    expect(w.registryCore.gameHistory(10)).toContain('AFK');
+    expect(w.registryCore.gameHistory(9)).not.toContain('AFK');
+    expect(w.registryCore.gameHistory(11)).toContain('Hali');
+    for (const period of ['weekly', 'monthly'] as const) {
+      expect(w.registryCore.periodRating(period)).toContain('U9');
+      expect(w.registryCore.periodRating(period)).not.toContain('U10');
+    }
+    await w.send(privateText(9, '/history'));
+    expect(w.tg.texts(9).at(-1)).toContain('OXIRGI 10');
+    await w.send(callback(9, 'm:monthly'));
+    expect(String(w.tg.calls.filter((c) => c.method === 'editMessageText').at(-1)?.params['text'])).toContain('OYLIK TOP');
+    w.now += 40 * 24 * 60 * 60_000;
+    expect(w.registryCore.periodRating('weekly')).not.toContain('U9');
+    expect(w.registryCore.periodRating('monthly')).not.toContain('U9');
+  });
+  it('expired phase rejects a callback even if the alarm is late', async () => {
+    const w = new World();
+    const n = await lobby(w, [1, 2, 3, 4]);
+    await w.send(groupText(1, '/gstart'));
+    const core = await w.loaded(GROUP);
+    const s = core.data.game!.state!;
+    const seq = s.phaseSeq;
+    w.now = s.phaseEndsAt! + 1;
+    expect(await core.skip({ tgId: 1, number: n, seq })).toMatchObject({ ok: false, error: 'STALE_PHASE' });
+    await core.alarm();
+    expect(core.data.game?.state?.phaseSeq).not.toBe(seq);
+  });
+});
