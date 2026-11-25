@@ -45,7 +45,7 @@ const wrangler = spawn(
   'npx',
   [
     'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', persist, '--show-interactive-dev-session=false',
-    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1',
+    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1,6', '--var', 'STARS_MODE:all',
   ],
   { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
@@ -81,7 +81,8 @@ const pm = (from, text) => send({ message: { message_id: uid, chat: { id: from, 
 const gm = (from, text) => send({ message: { message_id: uid, chat: { id: GROUP, type: 'supergroup', title: 'E2E' }, from: user(from), text } });
 const cb = (from, data, group = false) =>
   send({ callback_query: { id: String(uid), from: user(from), data, message: { message_id: 1, chat: group ? { id: GROUP, type: 'supergroup' } : { id: from, type: 'private' } } } });
-const force = () => fetch(`${base}/__test/force?chat=${GROUP}`, { method: 'POST' });
+const setupSecret = createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex');
+const force = () => fetch(`${base}/__test/force?chat=${GROUP}`, { method: 'POST', headers: { 'x-setup-key': setupSecret } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const texts = (chat) => calls.filter((c) => c.method === 'sendMessage' && c.params.chat_id === chat).map((c) => c.params.text);
 const buttons = (chat) =>
@@ -101,6 +102,15 @@ try {
   await waitReady();
   check((await (await fetch(`${base}/health`)).json()).status === 'ok', '/health');
   check((await send({}, { 'x-telegram-bot-api-secret-token': 'wrong' })).status === 403, 'noto‘g‘ri secret token rad etiladi');
+
+  check((await fetch(`${base}/telegram/diag`, { method: 'POST' })).status === 403, 'diag requires secret');
+  check((await fetch(`${base}/telegram/setup`, { method: 'POST' })).status === 403, 'setup requires secret');
+  check((await fetch(`${base}/__test/force?chat=${GROUP}`, { method: 'POST' })).status === 403, 'test hook requires secret');
+  const authHeaders = { 'x-telegram-bot-api-secret-token': secret, 'content-type': 'application/json' };
+  const raw = (body) => fetch(`${base}/telegram/webhook`, { method: 'POST', headers: authHeaders, body });
+  check((await raw('null')).status === 400, 'invalid update rejected');
+  check((await raw(JSON.stringify({ update_id: 10, message: { chat: null } }))).status === 400, 'malformed message rejected');
+  check((await raw(JSON.stringify({ update_id: 11, pad: 'x'.repeat(300_000) }))).status === 413, 'oversized update rejected');
 
   const players = [1, 2, 3, 4, 5];
   for (const p of players) await pm(p, '/start');
@@ -152,28 +162,38 @@ try {
   await sleep(200);
   check((calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.params.text ?? '').includes('allaqachon'), 'kunlik mukofot ikkinchi marta berilmaydi');
 
-  // ───── Telegram Stars: invoice → pre_checkout → successful_payment ─────
-  await sleep(3100); // tugma tezligi chegarasi
-  await cb(1, 'e:star:VIP_30');
-  await sleep(300);
-  const inv = calls.filter((c) => c.method === 'sendInvoice').at(-1);
-  check(inv && inv.params.currency === 'XTR' && inv.params.prices[0].amount === 99, 'VIP invoice (XTR, 99 ⭐)');
-  const payload = inv?.params.payload;
-  await send({ pre_checkout_query: { id: 'pc1', from: user(1), currency: 'XTR', total_amount: 99, invoice_payload: payload } });
-  const pre = calls.filter((c) => c.method === 'answerPreCheckoutQuery').at(-1);
-  check(pre?.params.ok === true, 'pre_checkout tasdiqlandi');
-  const pay = { message: { message_id: uid, chat: { id: 1, type: 'private' }, from: user(1), successful_payment: { currency: 'XTR', total_amount: 99, invoice_payload: payload, telegram_payment_charge_id: 'e2e-charge-1' } } };
-  await send(pay);
-  await send(pay);
-  await sleep(300);
-  check(texts(1).filter((t) => t.includes('To‘lov qabul qilindi')).length === 1, 'to‘lov bir marta qabul qilindi (takroriy update e’tiborsiz)');
+  // Owner access and real checkout are independent scenarios.
   await sleep(3100);
+  await pm(6, '/start');
+  await pm(6, '/profile');
+  check(texts(6).some((t) => t.includes('doimiy') && t.includes('1000000000')), 'second owner permanent VIP and allowance');
   await cb(1, 'm:vip');
-  await sleep(300);
-  check((edits(1).at(-1) ?? '').includes('gacha'), 'VIP faol (muddati ko‘rsatildi)');
+  check((edits(1).at(-1) ?? '').includes('doimiy'), 'first owner permanent VIP');
+  const beforeOwnerInvoice = calls.filter((c) => c.method === 'sendInvoice').length;
+  await cb(1, 'e:star:VIP_30');
+  check(calls.filter((c) => c.method === 'sendInvoice').length === beforeOwnerInvoice, 'owner not charged for VIP');
+  await cb(6, 'e:buyok:SHIELD');
+  check((calls.filter((c) => c.method === 'answerCallbackQuery').at(-1)?.params.text ?? '').includes('1000000000'), 'owner purchase allowance does not decrease');
+  await cb(2, 'e:star:VIP_30');
+  const inv = calls.filter((c) => c.method === 'sendInvoice').at(-1);
+  check(inv && inv.params.chat_id === 2 && inv.params.currency === 'XTR' && inv.params.prices[0].amount === 99, 'normal user VIP invoice (XTR, 99 Stars)');
+  if (!inv?.params.payload) throw new Error('missing invoice payload');
+  const payload = inv.params.payload;
+  await send({ pre_checkout_query: { id: 'pc-wrong-user', from: user(3), currency: 'XTR', total_amount: 99, invoice_payload: payload } });
+  check(calls.filter((c) => c.method === 'answerPreCheckoutQuery').at(-1)?.params.ok === false, 'other user cannot pay this order');
+  await send({ pre_checkout_query: { id: 'pc1', from: user(2), currency: 'XTR', total_amount: 99, invoice_payload: payload } });
+  check(calls.filter((c) => c.method === 'answerPreCheckoutQuery').at(-1)?.params.ok === true, 'pre_checkout approved');
+  const pay = { message: { message_id: uid, chat: { id: 2, type: 'private' }, from: user(2), successful_payment: { currency: 'XTR', total_amount: 99, invoice_payload: payload, telegram_payment_charge_id: 'e2e-charge-1' } } };
+  await send(pay);
+  await send(pay);
+  check(texts(2).filter((t) => t.includes('To‘lov qabul qilindi')).length === 1, 'payment delivered once');
+  await sleep(3100);
+  await cb(2, 'm:vip');
+  check((edits(2).at(-1) ?? '').includes('gacha'), 'normal user paid VIP expiry');
+  await pm(2, '/refund e2e-charge-1');
+  check(!calls.some((c) => c.method === 'refundStarPayment'), 'normal user cannot refund');
   await pm(1, '/refund e2e-charge-1');
-  await sleep(300);
-  check(calls.some((c) => c.method === 'refundStarPayment' && c.params.telegram_payment_charge_id === 'e2e-charge-1'), '/refund → refundStarPayment');
+  check(calls.some((c) => c.method === 'refundStarPayment' && c.params.telegram_payment_charge_id === 'e2e-charge-1' && c.params.user_id === 2), 'owner refund targets actual payer');
 
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');

@@ -515,6 +515,8 @@ export class Router {
     const from = cb.from;
     const data = cb.data ? decode(cb.data) : null;
     if (!data || from.is_bot) return this.answer(cb, t('cb.stale'));
+    // Private menus, economy and deletion must never be invoked from a group or another user's message.
+    if (['menu', 'eco', 'delme'].includes(data.t) && (cb.message?.chat.type !== 'private' || cb.message.chat.id !== from.id)) return this.answer(cb, t('cb.stale'));
     if (!this.clicks.allow(`cb:${from.id}`, this.d.now())) return this.answer(cb, t('common.rate_limited'));
     try {
       await this.callback(cb, data);

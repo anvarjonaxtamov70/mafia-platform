@@ -387,3 +387,43 @@ describe('Hypernova v2 — Telegram-first', () => {
     expect(w.tg.texts(1).join(' ')).toContain('BIRINCHI O‘YININGIZ');
   });
 });
+
+
+describe('Stability regression', () => {
+  it('ten independent group rooms finish without cross-room state or stuck players', async () => {
+    const w = new World();
+    const groups = Array.from({ length: 10 }, (_, i) => ({ chat: GROUP - i - 1, ids: Array.from({ length: 4 }, (_, j) => 100 + i * 4 + j) }));
+    for (const group of groups) {
+      for (const id of group.ids) await w.send(privateText(id, '/start'));
+      const host = group.ids[0]!;
+      w.tg.admins.add(host);
+      await w.send(groupText(host, '/game', group.chat));
+      const n = (await w.loaded(group.chat)).data.game!.number;
+      for (const id of group.ids.slice(1)) await w.send(callback(id, 'l:j:' + n, group.chat));
+    }
+    await Promise.all(groups.map((group, i) => w.router.handle({ update_id: 10000 + i, ...groupText(group.ids[0]!, '/gstart', group.chat) })));
+    await w.runAlarms();
+    for (const group of groups) {
+      expect((await w.loaded(group.chat)).data.game?.state?.players.map((p) => Number(p.id)).sort((a, b) => a - b)).toEqual(group.ids);
+      w.restart(group.chat);
+    }
+    for (let step = 0; step < 150; step++) {
+      if (groups.every((group) => !w.stores.get(group.chat)?.data?.game)) break;
+      await w.advance(200_000);
+    }
+    for (const group of groups) {
+      expect((await w.loaded(group.chat)).data.game).toBeNull();
+      for (const id of group.ids) expect(w.registryCore.activeOf(id)).toBeNull();
+    }
+  }, 60_000);
+
+  it('two concurrent start requests cannot start the same lobby twice', async () => {
+    const w = new World();
+    const number = await lobby(w, [1, 2, 3, 4]);
+    const core = await w.loaded(GROUP);
+    const results = await Promise.all([core.start({ by: 1, isAdmin: true }, number), core.start({ by: 1, isAdmin: true }, number)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    await w.runAlarms();
+    for (const id of [1, 2, 3, 4]) expect(w.tg.texts(id).filter((text) => text.includes('SIZNING ROLINGIZ'))).toHaveLength(1);
+  });
+});

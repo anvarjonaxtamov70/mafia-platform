@@ -25,3 +25,9 @@ Har bosqichda lint, typecheck, unit, integration, Cloudflare E2E; production mer
 - Pichoq va XCoin katalogga kiritilmaydi. Olmos hozir alohida valyuta emas; keyinchalik joriy qilinsa owner imtiyozi alohida tatbiq etiladi. Real Stars hech qachon sun’iy ko‘paytirilmaydi.
 - Ranked rejimdagi o‘yin qoidalari hamma uchun bir xil. Arcade buyumlari faqat mavjud reytingsiz Arcade rejimida ishlaydi.
 - Amaldagi Cloudflare iqtisodiyoti uchun; VPS iqtisodiyoti hali alohida ish.
+
+## Security/stability gate
+- E2E real runtime: independent normal-user checkout/refund, two owners, unauthorized endpoints, malformed and oversized webhook, private callback scope.
+- API timeout 8 seconds; bounded webhook body and shape; strict callback parser; duplicate paid order cannot grant twice; concurrent lobby start guard.
+- Additional 486 games (324 random + 162 fully inactive), all 6 modes and player counts 4–30; 10 independent rooms with restart; simultaneous start test.
+- Remaining: durable update inbox and reconciliation, cross-isolate/global rate limiting, alerting and recovery drills, externally measured production-like load/soak, dependency and secret review, privacy retention. No claim of absolute security. Do not merge before CI green.

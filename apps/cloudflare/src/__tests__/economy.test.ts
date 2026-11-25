@@ -481,3 +481,29 @@ describe('Superadmin owner benefits', () => {
     expect(w.registryCore.eco.tierInfo(1).tier).toBe('VIP_PRO');
   });
 });
+
+
+describe('Security regression', () => {
+  it('a new charge for an already-paid order is recorded but does not grant VIP twice', async () => {
+    const w = new World({ starsMode: 'all' });
+    await w.send(privateText(2, '/start'));
+    const payload = await buyStars(w, 2, 'VIP_30', 'first-charge');
+    const until = w.registryCore.eco.tierInfo(2).vipUntil;
+    await w.send(paymentUpdate(2, payload, 99, 'second-charge'));
+    expect(w.registryCore.eco.tierInfo(2).vipUntil).toBe(until);
+    expect(w.registryCore.eco.paymentInfo('second-charge')?.status).toBe('UNMATCHED');
+  });
+  it('rejects malformed callback payloads and unsafe numeric IDs', () => {
+    for (const value of ['l:j:1:extra', 'm:vip:extra', 'dm:y:extra', 'a:1:2:SKIP:3', 'v:1:2:3:4', 'my:9007199254740993', 'gs:min+:1-2', 'gs:min+:0', 'm:' + '💎'.repeat(20)]) {
+      expect(decode(value)).toBeNull();
+    }
+  });
+  it('group callbacks cannot alter private wallets or profiles', async () => {
+    const w = new World({ ownerBenefits: true });
+    await w.send(privateText(1, '/start'));
+    await w.send(callback(1, 'e:buyok:SHIELD', GROUP));
+    await w.send(callback(1, 'dm:y', GROUP));
+    expect(w.registryCore.eco.inventory(1).items).toHaveLength(0);
+    expect(w.registryCore.userInfo(1)?.name).toBe('U1');
+  });
+});

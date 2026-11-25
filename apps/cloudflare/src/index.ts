@@ -16,8 +16,9 @@ import type { PaymentInput } from './economy-core';
 import { RegistryCore, type Sql, type TgUserInput } from './registry-core';
 import { reentrantTx } from './sql';
 import { RoomCore, type RoomData, type RoomDeps } from './room-core';
-import { Router, RouterCaches, type RoomApi, type RegistryApi, type TgUpdate } from './router';
+import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
+import { readTelegramUpdate } from './webhook-input';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<GameRoom>;
@@ -288,7 +289,7 @@ export class GameRoom extends DurableObject<Env> {
   /** Worker yagona kirish nuqtasi: chatId + ruxsat etilgan metod nomi. */
   async invoke(chatId: number, method: RoomMethod, args: unknown[]): Promise<unknown> {
     if (!ROOM_METHODS.includes(method)) throw new Error('unknown method');
-    if (method === 'forceDeadline' && this.env.TEST_HOOKS !== 'true') throw new Error('forbidden');
+    if (method === 'forceDeadline' && (this.env.TEST_HOOKS !== 'true' || !this.env.TELEGRAM_API)) throw new Error('forbidden');
     if (!cachedUsername) await botUsername(this.env);
     const core = await this.ensure(chatId);
     const fn = core[method] as (...a: unknown[]) => Promise<unknown> | unknown;
@@ -466,12 +467,9 @@ export default {
       if (request.headers.get('x-telegram-bot-api-secret-token') !== (await webhookSecret(env.BOT_TOKEN))) {
         return new Response('forbidden', { status: 403 });
       }
-      let update: TgUpdate;
-      try {
-        update = (await request.json()) as TgUpdate;
-      } catch {
-        return new Response('bad request', { status: 400 });
-      }
+      const parsed = await readTelegramUpdate(request);
+      if (!parsed.ok) return new Response('bad request', { status: parsed.status });
+      const update = parsed.update;
       try {
         await getRouter(env).handle(update);
       } catch (e) {
@@ -485,8 +483,10 @@ export default {
       return new Response('ok');
     }
 
-    if (env.TEST_HOOKS === 'true' && request.method === 'POST' && url.pathname === '/__test/force') {
+    if (env.TEST_HOOKS === 'true' && env.TELEGRAM_API && request.method === 'POST' && url.pathname === '/__test/force') {
+      if (request.headers.get('x-setup-key') !== (await setupKey(env.BOT_TOKEN))) return new Response('forbidden', { status: 403 });
       const chatId = Number(url.searchParams.get('chat'));
+      if (!Number.isSafeInteger(chatId) || chatId === 0) return new Response('bad request', { status: 400 });
       await (roomApi(env, chatId) as RoomApi & { forceDeadline(): Promise<void> }).forceDeadline();
       return new Response('ok');
     }

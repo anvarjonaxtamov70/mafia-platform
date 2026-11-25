@@ -173,6 +173,7 @@ export class RoomCore {
   data!: RoomData;
   /** Joriy chaqiruvdagi tashqi (Telegram) so'rovlar soni — 50 subrequest limitidan oshmaslik uchun */
   private externalCalls = 0;
+  private starting = false;
 
   constructor(
     private readonly chatId: number,
@@ -314,7 +315,7 @@ export class RoomCore {
   async join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>> {
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
-    if (g.status !== 'LOBBY') return { ok: false, error: 'NOT_LOBBY' };
+    if (g.status !== 'LOBBY' || this.starting) return { ok: false, error: 'NOT_LOBBY' };
     if (!user.dmAvailable) return { ok: false, error: 'NEED_DM' };
     if (user.banned) return { ok: false, error: 'BANNED' };
     if (g.players.some((p) => p.id === user.id)) return { ok: false, error: 'ALREADY_JOINED' };
@@ -322,8 +323,9 @@ export class RoomCore {
     const c = await this.deps.registry.claim(user.id, this.chatId, g.number);
     if (c === 'BUSY') return { ok: false, error: 'IN_OTHER_GAME' };
     // await dan keyin qayta tekshirish
-    if (this.data.game !== g || g.status !== 'LOBBY') {
-      await this.deps.registry.release(user.id, g.number);
+    if (this.data.game !== g || g.status !== 'LOBBY' || this.starting) {
+      // ALREADY may belong to another concurrent join; only release our own fresh claim.
+      if (c === 'OK') await this.deps.registry.release(user.id, g.number);
       return { ok: false, error: 'NOT_LOBBY' };
     }
     if (g.players.some((p) => p.id === user.id)) return { ok: false, error: 'ALREADY_JOINED' };
@@ -343,6 +345,7 @@ export class RoomCore {
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (!g.players.some((p) => p.id === tgId)) return { ok: false, error: 'NOT_JOINED' };
     if (g.status === 'LOBBY') {
+      if (this.starting) return { ok: false, error: 'NOT_LOBBY' };
       g.players = g.players.filter((p) => p.id !== tgId);
       g.version++;
       this.addOp({ type: 'release', tgId, number: g.number });
@@ -361,7 +364,7 @@ export class RoomCore {
   async devFill(count: number): Promise<RoomResult<{ added: number }>> {
     const g = this.data.game;
     if (!this.deps.devFakePlayers) return { ok: false, error: 'NO_PERMISSION' };
-    if (!g || g.status !== 'LOBBY') return { ok: false, error: 'NOT_FOUND' };
+    if (!g || g.status !== 'LOBBY' || this.starting) return { ok: false, error: 'NOT_FOUND' };
     const toAdd = Math.max(0, Math.min(count, g.config.maxPlayers - g.players.length));
     for (let i = 0; i < toAdd; i++) {
       const n = g.players.length + 1;
@@ -395,6 +398,16 @@ export class RoomCore {
   }
 
   async start(trigger: { by: number; isAdmin: boolean } | 'auto', number?: number): Promise<RoomResult> {
+    if (this.starting) return { ok: false, error: 'NOT_LOBBY' };
+    this.starting = true;
+    try {
+      return await this.startOnce(trigger, number);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private async startOnce(trigger: { by: number; isAdmin: boolean } | 'auto', number?: number): Promise<RoomResult> {
     if (trigger !== 'auto') this.externalCalls = 0;
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
@@ -483,6 +496,11 @@ export class RoomCore {
   private async lobbyTimeout(): Promise<void> {
     const g = this.data.game;
     if (!g || g.status !== 'LOBBY' || !g.deadline || g.deadline > this.now + 500) return;
+    if (this.starting) {
+      g.deadline = this.now + 1000;
+      await this.commit();
+      return;
+    }
     if (g.players.length >= g.config.minPlayers) {
       if (!g.config.lobby.autostart) {
         g.deadline = null;

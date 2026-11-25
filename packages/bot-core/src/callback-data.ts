@@ -48,7 +48,7 @@ export type CallbackData =
   /** Iqtisodiyot: do'kon, inventar, kunlik mukofot, VIP. op — kichik harflar, arg — katalog kodi */
   | { t: 'eco'; op: string; arg: string };
 
-const int = (s: string | undefined): number | null => (s !== undefined && /^\d+$/.test(s) ? Number(s) : null);
+const int = (s: string | undefined): number | null => (s !== undefined && /^\d+$/.test(s) && Number.isSafeInteger(Number(s)) ? Number(s) : null);
 
 export function encode(d: CallbackData): string {
   let out: string;
@@ -93,14 +93,14 @@ export function encode(d: CallbackData): string {
 }
 
 export function decode(raw: string): CallbackData | null {
-  if (raw.length > 64) return null;
+  if (Buffer.byteLength(raw, 'utf8') > 64) return null;
   const p = raw.split(':');
   switch (p[0]) {
     case 'a': {
       const game = int(p[1]);
       const seq = int(p[2]);
-      if (game === null || seq === null || !p[3]) return null;
-      if (p[3] === 'SKIP') return { t: 'skip', game, seq };
+      if (p.length < 4 || p.length > 5 || game === null || seq === null || !p[3]) return null;
+      if (p[3] === 'SKIP') return p.length === 4 ? { t: 'skip', game, seq } : null;
       const kind = CODE_TO_ACTION.get(p[3]);
       if (!kind) return null;
       const seats = p[4] ? p[4].split('.').map((x) => int(x)) : [];
@@ -112,32 +112,32 @@ export function decode(raw: string): CallbackData | null {
       const game = int(p[1]);
       const seq = int(p[2]);
       const seat = int(p[3]);
-      if (game === null || seq === null || seat === null) return null;
+      if (p.length !== 4 || game === null || seq === null || seat === null) return null;
       return { t: p[0] === 'mv' ? 'mafia' : 'vote', game, seq, seat };
     }
     case 'my': {
       const game = int(p[1]);
-      return game === null ? null : { t: 'mayor', game };
+      return p.length !== 2 || game === null ? null : { t: 'mayor', game };
     }
     case 'jv': {
       const game = int(p[1]);
       const seq = int(p[2]);
-      return game === null || seq === null ? null : { t: 'veto', game, seq };
+      return p.length !== 3 || game === null || seq === null ? null : { t: 'veto', game, seq };
     }
     case 'l': {
       const game = int(p[2]);
-      if (game === null || !['j', 'l', 's', 'c'].includes(p[1] ?? '')) return null;
+      if (p.length !== 3 || game === null || !['j', 'l', 's', 'c'].includes(p[1] ?? '')) return null;
       return { t: 'lobby', op: p[1] as 'j' | 'l' | 's' | 'c', game };
     }
     case 'm':
-      return p[1] && /^[a-z_]{1,20}$/.test(p[1]) ? { t: 'menu', section: p[1] } : null;
+      return p.length === 2 && p[1] && /^[a-z_]{1,20}$/.test(p[1]) ? { t: 'menu', section: p[1] } : null;
     case 'gs': {
-      const chat = int(p[2]?.replace('-', ''));
-      if (!p[1] || chat === null) return null;
+      const chat = int(p[2]?.replace(/^-/, ''));
+      if (p.length !== 3 || !p[1] || !/^-?\d+$/.test(p[2] ?? '') || chat === null || chat === 0) return null;
       return { t: 'gs', op: p[1], chat: p[2]!.startsWith('-') ? -chat : chat };
     }
     case 'dm':
-      return p[1] === 'y' || p[1] === 'n' ? { t: 'delme', op: p[1] } : null;
+      return p.length === 2 && (p[1] === 'y' || p[1] === 'n') ? { t: 'delme', op: p[1] } : null;
     case 'e': {
       const op = p[1] ?? '';
       const arg = p[2] ?? '';

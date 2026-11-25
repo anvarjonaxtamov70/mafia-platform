@@ -30,6 +30,7 @@ export class TelegramClient implements Telegram {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(params),
+        signal: AbortSignal.timeout(8_000),
       });
     } catch (e) {
       // Tarmoq xatosi — token URL ichida, xabarga qo'shilmaydi

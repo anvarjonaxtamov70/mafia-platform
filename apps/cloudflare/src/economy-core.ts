@@ -493,7 +493,7 @@ export class EconomyCore {
       const now = this.clock();
       const o = this.orderOf(p.payload);
       const product = o ? starsProduct(o.product) : undefined;
-      const matches = !!o && !!product && o.telegram_id === p.tgId && p.currency === 'XTR' && p.amount === o.amount;
+      const matches = !!o && !!product && o.status === 'CREATED' && o.telegram_id === p.tgId && o.currency === 'XTR' && p.currency === 'XTR' && p.amount === o.amount;
       this.sql.exec(
         `INSERT INTO payments (charge_id, telegram_id, order_id, product, amount, currency, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         p.chargeId,
