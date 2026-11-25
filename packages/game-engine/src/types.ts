@@ -62,7 +62,7 @@ export type PlayerStatus = 'ALIVE' | 'DEAD' | 'LEFT' | 'PERSONAL_WIN_EXIT';
 
 export type AttackKind = 'MAFIA' | 'SERIAL_KILLER' | 'HUNTER' | 'AVENGER';
 
-export type DeathCause = AttackKind | 'HEARTBREAK' | 'VOTE';
+export type DeathCause = AttackKind | 'HEARTBREAK' | 'VOTE' | 'HERO';
 
 export type ActionKind =
   | 'COMMISSAR_CHECK'
@@ -122,6 +122,8 @@ export interface ArcadeItems {
   fakeDocument: boolean;
   /** Optional for snapshots from before v8. One actual execution only. */
   voteShield?: boolean;
+  heroShot?: boolean;
+  heroShield?: boolean;
 }
 
 export interface PlayerDeath {
@@ -307,6 +309,7 @@ export type EventBody =
     }
   | { type: 'VERDICT_STARTED'; candidateId: string }
   | { type: 'JUDGE_VETO'; candidateId: string }
+  | { type: 'HERO_PROTECTED'; playerId: string }
   | { type: 'VOTE_PROTECTED'; playerId: string }
   | { type: 'PLAYER_EXECUTED'; playerId: string; role: RoleCode | null }
   | { type: 'DAY_DEATHS'; deaths: DeathInfo[] }

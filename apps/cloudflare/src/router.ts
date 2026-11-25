@@ -12,13 +12,11 @@ import {
   encode,
   engineErrorText,
   formatDate,
-  inventoryView,
   inviteView,
   itemName,
   lobbyErrorText,
   mainMenu,
   plainAlert,
-  profileKeyboard,
   refCode,
   REFERRAL,
   roleStatsView,
@@ -26,7 +24,6 @@ import {
   learningView,
   SELECTABLE_MODES,
   settingsView,
-  shopCategoryView,
   shopHomeView,
   splitLong,
   starsProduct,
@@ -35,7 +32,6 @@ import {
   type DailyInfo,
   type GroupSettingsData,
   type InventoryInfo,
-  type ItemKind,
   type Keyboard,
   type LobbyError,
   type ReferralInfo,
@@ -50,7 +46,7 @@ import type { TgUserInput, UserInfo } from './registry-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
-import type { HeroAccount, HeroCore, HeroSelect } from './hero-core';
+import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
@@ -129,8 +125,9 @@ export interface RegistryApi {
   getSettings(chatId: number): Promise<GroupSettingsData>;
   saveSettings(chatId: number, data: GroupSettingsData, by: string): Promise<GroupSettingsData>;
   profileText(tgId: number): Promise<string>;
-  heroAccount(tgId: number): Promise<HeroAccount>;
-  selectHero(tgId: number, code: string): Promise<HeroSelect>;
+  singleHero(tgId: number): Promise<ReturnType<HeroCore['single']>>;
+  setOwnHeroLevel(tgId: number, level: number): Promise<boolean>;
+  buyHero(tgId: number, idem: string): Promise<BuyResult>;
   heroTop(): Promise<ReturnType<HeroCore['top']>>;
   globalRating(tgId: number | null): Promise<string>;
   gameHistory(tgId: number): Promise<string>;
@@ -153,6 +150,7 @@ export interface RoomApi {
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
   mafiaVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>>;
+  heroAttack(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>>;
   dayVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<{ targetName: string | null }>>;
   revealMayor(input: { tgId: number; number: number }): Promise<RoomResult<ViewResult>>;
   judgeVeto(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
@@ -401,6 +399,12 @@ export class Router {
       case 'roles':
         for (const part of splitLong(rolesText())) await this.reply(chatId, part);
         return;
+      case 'admin_hero_level': {
+        if (!this.isSuperadmin(from.id)) return this.reply(chatId,t('admin.no_access'));
+        const level = /^\d{1,7}$/.test(c.args.trim()) ? Number(c.args.trim()) : 0;
+        const ok=await this.d.registry.setOwnHeroLevel(from.id,level);
+        return this.reply(chatId,ok?t('hero.level_saved',{level}):t('hero.owner_level_help'));
+      }
       case 'hero':
       case 'heroes':
       case 'herotop': {
@@ -567,7 +571,7 @@ export class Router {
     const data = cb.data ? decode(cb.data) : null;
     if (!data || from.is_bot) return this.answer(cb, t('cb.stale'));
     // Private menus, economy and deletion must never be invoked from a group or another user's message.
-    if (['menu', 'eco', 'delme'].includes(data.t) && (cb.message?.chat.type !== 'private' || cb.message.chat.id !== from.id)) return this.answer(cb, t('cb.stale'));
+    if (['menu', 'eco', 'delme', 'hero'].includes(data.t) && (cb.message?.chat.type !== 'private' || cb.message.chat.id !== from.id)) return this.answer(cb, t('cb.stale'));
     if (!this.clicks.allow(`cb:${from.id}`, this.d.now())) return this.answer(cb, t('common.rate_limited'));
     try {
       await this.callback(cb, data);
@@ -631,6 +635,11 @@ export class Router {
         await this.edit(cb, view.text, view.keyboard);
         return this.answer(cb, t('gsettings.saved'));
       }
+      case 'hero': {
+        const room=await this.roomOfGame(data.game);
+        if (!room) return this.answer(cb,t('cb.stale'));
+        return this.viewResult(cb,await room.heroAttack({tgId:from.id,number:data.game,seq:data.seq,seat:data.seat}));
+      }
       case 'vote': {
         const room = chat ? this.d.room(chat.id) : await this.roomOfGame(data.game);
         if (!room) return this.answer(cb, t('cb.stale'));
@@ -670,12 +679,8 @@ export class Router {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
     if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
-    if (section.startsWith('pick_')) {
-      const code = section.slice(5);
-      const result = await this.d.registry.selectHero(from.id, code);
-      const v = await this.heroSection(from.id, 'hero_' + code);
-      return this.edit(cb, t('hero.select_' + result) + '\n\n' + v.text, v.keyboard);
-    }
+    if (section.startsWith('pick_')) { const v=await this.heroSection(from.id,'hero'); return this.edit(cb,v.text,v.keyboard); }
+    if (section === 'buy_dollars' || section === 'buy_diamonds') return this.edit(cb,t('currency.packs_pending'),[backRow()]);
     if (section === 'hero' || section === 'heroes' || section === 'herotop' || section.startsWith('hero_')) {
       const v = await this.heroSection(from.id, section);
       return this.edit(cb, v.text, v.keyboard);
@@ -734,7 +739,7 @@ export class Router {
 
   private async heroSection(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
     if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
-    return heroView(await this.d.registry.heroAccount(id), section, !!this.d.visuals);
+    return heroView(await this.d.registry.singleHero(id));
   }
 
   private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
@@ -755,16 +760,18 @@ export class Router {
   private async section(from: TgUser, section: string, dmOpened: boolean): Promise<{ text: string; keyboard: Keyboard } | null> {
     const id = from.id;
     switch (section) {
+      case 'inventory':
       case 'profile': {
         await this.d.registry.upsertUser(from, dmOpened);
-        return { text: await this.d.registry.profileText(id), keyboard: [[{ text: t('hero.menu'), callback_data: encode({ t: 'menu', section: 'hero' }) }], ...profileKeyboard()] };
+        const inv=await this.d.registry.inventory(id);
+        const menu=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
+        const arm=(code:string,label:string)=>({text:label+' · '+(inv.items.find(i=>i.code===code)?.armed?'ON':'OFF'),callback_data:encode({t:'eco',op:'arm',arg:code})});
+        return {text:await this.d.registry.profileText(id),keyboard:[[arm('SHIELD','🛡'),arm('FAKE_DOC','📁')],[arm('VOTE_SHIELD','⚖️'),arm('HERO_SHIELD','Geroy himoyasi')],[menu('Do‘kon','shop')],[menu('Xarid qilish 💎','buy_diamonds'),menu('Xarid qilish 💵','buy_dollars')],[menu('Mening geroyim','hero')],backRow()]};
       }
       case 'shop': {
         const w = await this.d.registry.wallet(id);
         return shopHomeView(w.coins, w.diamonds ?? 0);
       }
-      case 'inventory':
-        return inventoryView(await this.d.registry.inventory(id));
       case 'vip':
         return vipView(await this.d.registry.wallet(id), { starsAllowed: this.starsAllowed(id), isAdmin: this.isSuperadmin(id) });
       case 'daily':
@@ -790,14 +797,12 @@ export class Router {
         return this.answer(cb);
       }
       case 'cat': {
-        if (arg !== 'FRAME' && arg !== 'TITLE' && arg !== 'ARCADE') return this.answer(cb, t('cb.stale'));
-        const v = shopCategoryView(arg as ItemKind, await reg.inventory(id));
-        await this.edit(cb, v.text, v.keyboard);
-        return this.answer(cb);
+        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
+        await this.edit(cb,v.text,v.keyboard); return this.answer(cb);
       }
       case 'buy': {
         const item = catalogItem(arg);
-        if (!item || item.price === null) return this.answer(cb, t('shop.unknown'));
+        if (!item || item.kind !== 'ARCADE' || item.price === null) return this.answer(cb, t('shop.unknown'));
         const w = await reg.wallet(id);
         const v = buyConfirmView(item, w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
@@ -818,22 +823,26 @@ export class Router {
                   : t('shop.unknown');
           return this.answer(cb, msg, true);
         }
-        const v = shopCategoryView(item!.kind, await reg.inventory(id));
+        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb, t(item!.currency === 'DIAMOND' ? 'shop.diamond_bought' : 'shop.bought', { name: itemName(arg), coins: r.balance }), true);
       }
-      case 'arm':
-      case 'ef':
-      case 'et':
-      case 'uf':
-      case 'ut': {
-        const ok =
-          op === 'arm'
-            ? await reg.toggleArm(id, arg)
-            : await reg.equip(id, op === 'ef' || op === 'uf' ? 'FRAME' : 'TITLE', op === 'uf' || op === 'ut' ? null : arg);
-        const v = inventoryView(await reg.inventory(id));
-        await this.edit(cb, v.text, v.keyboard);
-        return this.answer(cb, ok ? t('inv.saved') : t('inv.not_owned'));
+      case 'arm': {
+        const ok=await reg.toggleArm(id,arg);
+        const v=await this.section(cb.from,'profile',true);
+        await this.edit(cb,v!.text,v!.keyboard);
+        return this.answer(cb,ok?t('inv.saved'):t('inv.not_owned'));
+      }
+      case 'herobuy': {
+        if(arg) return this.answer(cb,t('cb.stale'));
+        await this.edit(cb,t('hero.confirm'),[[{text:t('common.yes'),callback_data:encode({t:'eco',op:'herook',arg:''})},{text:t('common.no'),callback_data:encode({t:'menu',section:'hero'})}]]);
+        return this.answer(cb);
+      }
+      case 'herook': {
+        if(arg) return this.answer(cb,t('cb.stale'));
+        const result=await reg.buyHero(id,'hero:'+cb.id);
+        const v=await this.heroSection(id,'hero'); await this.edit(cb,v.text,v.keyboard);
+        return this.answer(cb,result.ok?t('hero.purchased'):t('shop.diamond_insufficient',{price:100,coins:result.balance}),true);
       }
       case 'daily': {
         const r = await reg.claimDaily(id);

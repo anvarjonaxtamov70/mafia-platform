@@ -40,12 +40,9 @@ export function shopHomeView(coins: number, diamonds = 0): View {
   return {
     text: t('shop.title', { coins, diamonds }),
     keyboard: [
-      [eb('Himoya · 300 💵', 'buy', 'SHIELD'), eb('Hujjat · 200 💵', 'buy', 'FAKE_DOC')],
-      [eb('Ovozdan himoya · 1 💎', 'buy', 'VOTE_SHIELD')],
-      [menuBtn(t('shop.cat.VIP'), 'vip')],
-      [eb(t('shop.cat.FRAME'), 'cat', 'FRAME'), eb(t('shop.cat.TITLE'), 'cat', 'TITLE')],
-      [eb(t('shop.cat.ARCADE'), 'cat', 'ARCADE')],
-      [menuBtn(t('menu.inventory'), 'inventory')],
+      [eb('🛡 Himoya', 'buy', 'SHIELD'), eb('📁 Hujjat', 'buy', 'FAKE_DOC')],
+      [eb('⚖️ Ovozdan himoya', 'buy', 'VOTE_SHIELD'), eb('Geroydan himoya', 'buy', 'HERO_SHIELD')],
+      [menuBtn('Geroy', 'hero'), menuBtn('⭐ VIP', 'vip')],
       backRow(),
     ],
   };
@@ -80,7 +77,7 @@ export function shopCategoryView(kind: ItemKind, inv: InventoryInfo): View {
 export function buyConfirmView(item: CatalogItem, coins: number, diamonds = 0): View {
   return {
     text: t('shop.confirm_currency', { emoji: item.emoji, name: itemName(item.code), price: item.price ?? 0, coins: item.currency === 'DIAMOND' ? diamonds : coins, currency: item.currency === 'DIAMOND' ? '💎' : '💵' }),
-    keyboard: [[eb(t('common.yes'), 'buyok', item.code), eb(t('common.no'), 'cat', item.kind)]],
+    keyboard: [[eb(t('common.yes'), 'buyok', item.code), eb(t('common.no'), 'shop')]],
   };
 }
 

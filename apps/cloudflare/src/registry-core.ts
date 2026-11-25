@@ -6,7 +6,6 @@
  * SQL qatlami interfeys orqali: Workers'da ctx.storage.sql, testlarda node:sqlite.
  */
 import {
-  catalogItem,
   clampMinPlayers,
   DEFAULT_MIN_PLAYERS_KEY,
   displayName,
@@ -506,6 +505,8 @@ export class RegistryCore {
 
   // ───────────────────────────── Ko'rinishlar ─────────────────────────────
 
+  singleHero(tgId: number) { return this.heroes.single(tgId, this.eco.hasHero(tgId)); }
+  setOwnHeroLevel(tgId: number, level: number) { return this.heroes.setOwnLevel(tgId, level); }
   heroAccount(tgId: number) { return this.heroes.view(tgId); }
   selectHero(tgId: number, code: string) { return this.heroes.select(tgId, code); }
   heroTop() { return this.heroes.top(); }
@@ -517,18 +518,19 @@ export class RegistryCore {
     const p = this.one<Record<string, number>>(`SELECT * FROM profiles WHERE telegram_id = ?`, tgId)!;
     const w = this.eco.wallet(tgId);
     const inv = this.eco.inventory(tgId);
-    const frame = w.frame ? catalogItem(w.frame) : undefined;
     const until = w.tier === 'VIP_PRO' ? w.proUntil : w.vipUntil;
     const tier = w.permanentOwner ? t('owner.tier') : w.tier === 'FREE' ? '' : t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' });
     const name = escapeHtml(displayName({ firstName: u.first_name, lastName: u.last_name, username: u.username }));
-    return (frame ? t('profile.frame_top', { emoji: frame.emoji }) + '\n' : '') + t('profile.v7', {
+    return t('profile.v7', {
       name, tier: tier ? '\n' + tier : '', dollars: w.permanentOwner ? '1000000000 (∞)' : w.coins,
       diamonds: w.permanentOwner ? '∞' : (w.diamonds ?? 0), points: this.points(tgId),
       shield: inv.items.find((i) => i.code === 'SHIELD')?.qty ?? 0,
       document: inv.items.find((i) => i.code === 'FAKE_DOC')?.qty ?? 0,
       voteShield: inv.items.find((i) => i.code === 'VOTE_SHIELD')?.qty ?? 0,
+      heroShield: inv.items.find((i) => i.code === 'HERO_SHIELD')?.qty ?? 0,
+      hero: this.eco.hasHero(tgId) ? t('hero.yes') : t('hero.no'),
       wins: p['games_won']!, played: p['games_played']!,
-    }) + (frame ? '\n' + t('profile.frame_top', { emoji: frame.emoji }) : '');
+    });
   }
 
   /** Last ten completed games of the requester only; never expose other players' hidden roles. */

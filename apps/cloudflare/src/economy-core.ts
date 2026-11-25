@@ -13,10 +13,10 @@ import {
   catalogItem,
   DAILY_QUESTS,
   DIAMOND_VIP_PRICE,
+  HERO_PRICE,
   dailyAmount,
   DAY_MS,
   gameCoins,
-  isAvailable,
   prevDay,
   REFERRAL,
   starsProduct,
@@ -251,14 +251,9 @@ export class EconomyCore {
   }
 
   wallet(tgId: number): WalletInfo {
-    const w = this.one<{ coins: number; frame: string | null; title: string | null }>(`SELECT coins, frame, title FROM wallets WHERE telegram_id = ?`, tgId);
+    const w = this.one<{ coins: number }>(`SELECT coins FROM wallets WHERE telegram_id = ?`, tgId);
     const tiers = this.tierInfo(tgId);
-    const items = this.items(tgId);
-    const ok = (code: string | null | undefined) => {
-      const it = code ? catalogItem(code) : undefined;
-      return it && isAvailable(it, { tier: tiers.tier, items }) ? code! : null;
-    };
-    return { coins: this.isOwner(tgId) ? this.spendableCoins(tgId) : w?.coins ?? 0, diamonds: this.isOwner(tgId) ? 1_000_000_000 : this.diamonds(tgId), frame: ok(w?.frame), title: ok(w?.title), ...tiers, ...(this.isOwner(tgId) ? { permanentOwner: true } : {}) };
+    return { coins: this.isOwner(tgId) ? this.spendableCoins(tgId) : w?.coins ?? 0, diamonds: this.isOwner(tgId) ? 1_000_000_000 : this.diamonds(tgId), frame: null, title: null, ...tiers, ...(this.isOwner(tgId) ? { permanentOwner: true } : {}) };
   }
 
   private items(tgId: number): InventoryInfo['items'] {
@@ -293,9 +288,20 @@ export class EconomyCore {
     });
   }
 
+  hasHero(tgId: number): boolean {
+    return this.isOwner(tgId) || (this.one<{ qty: number }>(`SELECT qty FROM inventory WHERE telegram_id = ? AND item = 'PERSONAL_HERO'`, tgId)?.qty ?? 0) > 0;
+  }
+  buyHero(tgId: number, idem: string): BuyResult {
+    return this.sql.tx(() => {
+      if (this.hasHero(tgId)) return { ok: true, balance: this.spendableDiamonds(tgId), code: 'PERSONAL_HERO' };
+      return this.diamondPurchase(tgId, 'PERSONAL_HERO', HERO_PRICE, idem, () => {
+        this.sql.exec(`INSERT INTO inventory (telegram_id, item, qty) VALUES (?, 'PERSONAL_HERO', 1)`, tgId);
+      });
+    });
+  }
   buy(tgId: number, code: string, idem: string): BuyResult {
     const item = catalogItem(code);
-    if (!item) return { ok: false, error: 'UNKNOWN', balance: this.spendableCoins(tgId) };
+    if (!item || item.kind !== 'ARCADE') return { ok: false, error: 'UNKNOWN', balance: this.spendableCoins(tgId) };
     if (item.price === null) return { ok: false, error: 'TIER_ONLY', balance: this.spendableCoins(tgId) };
     const price = item.price;
     if (item.currency === 'DIAMOND') return this.diamondPurchase(tgId, code, price, idem, () => {
@@ -303,8 +309,7 @@ export class EconomyCore {
     });
     return this.sql.tx((): BuyResult => {
       if (this.one(`SELECT 1 AS x FROM wallet_tx WHERE idem = ?`, idem)) return { ok: true, balance: this.spendableCoins(tgId), code };
-      const owned = this.one<{ qty: number }>(`SELECT qty FROM inventory WHERE telegram_id = ? AND item = ?`, tgId, code)?.qty ?? 0;
-      if (item.kind !== 'ARCADE' && owned > 0) return { ok: false, error: 'OWNED', balance: this.spendableCoins(tgId) };
+
       let balance: number;
       try {
         this.credit(tgId, this.isOwner(tgId) ? 0 : -price, this.isOwner(tgId) ? 'OWNER_PURCHASE' : 'PURCHASE', code, idem);
@@ -329,16 +334,8 @@ export class EconomyCore {
   }
 
   equip(tgId: number, kind: Extract<ItemKind, 'FRAME' | 'TITLE'>, code: string | null): boolean {
-    const column = kind === 'FRAME' ? 'frame' : 'title';
-    if (code !== null) {
-      const item = catalogItem(code);
-      if (!item || item.kind !== kind) return false;
-      const inv = this.inventory(tgId);
-      if (!isAvailable(item, inv)) return false;
-    }
-    this.sql.exec(`INSERT OR IGNORE INTO wallets (telegram_id) VALUES (?)`, tgId);
-    this.sql.exec(`UPDATE wallets SET ${column} = ? WHERE telegram_id = ?`, code, tgId);
-    return true;
+    void tgId; void kind; void code;
+    return false;
   }
 
   // ───────────────────────────── Kunlik mukofot ─────────────────────────────
@@ -445,11 +442,11 @@ export class EconomyCore {
   // ───────────────────────────── Arcade buyumlari ─────────────────────────────
 
   /** O'yin boshlanishida yoqilgan (armed) buyumlarni band qilish: har turdan bittadan. Idempotent. */
-  reserveArcade(number: number, tgIds: number[]): Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> {
+  reserveArcade(number: number, tgIds: number[]): Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }> {
     return this.sql.tx(() => {
-      const out: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> = {};
+      const out: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }> = {};
       for (const tgId of tgIds) {
-        const got: { shield: boolean; fakeDocument: boolean; voteShield?: boolean } = { shield: false, fakeDocument: false };
+        const got: { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean } = { shield: false, fakeDocument: false };
         for (const [code, field] of Object.entries(ARCADE_FIELD)) {
           const already = this.one(`SELECT 1 AS x FROM item_reservations WHERE game_number = ? AND telegram_id = ? AND item = ?`, number, tgId, code);
           if (already) {
@@ -465,7 +462,8 @@ export class EconomyCore {
           this.sql.exec(`INSERT INTO item_reservations (game_number, telegram_id, item, created_at) VALUES (?, ?, ?, ?)`, number, tgId, code, this.clock());
           got[field] = true;
         }
-        if (got.shield || got.fakeDocument || got.voteShield) out[String(tgId)] = got;
+        if (this.hasHero(tgId)) got.heroShot = true;
+        if (got.shield || got.fakeDocument || got.voteShield || got.heroShield || got.heroShot) out[String(tgId)] = got;
       }
       return out;
     });

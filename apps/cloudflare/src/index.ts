@@ -213,6 +213,9 @@ export class Registry extends DurableObject<Env> {
   profileText(tgId: number) {
     return this.core.profileText(tgId);
   }
+  singleHero(tgId: number) { return this.core.singleHero(tgId); }
+  setOwnHeroLevel(tgId: number, level: number) { return this.core.setOwnHeroLevel(tgId, level); }
+  buyHero(tgId: number, idem: string) { return this.core.eco.buyHero(tgId, idem); }
   heroAccount(tgId: number) { return this.core.heroAccount(tgId); }
   selectHero(tgId: number, code: string) { return this.core.selectHero(tgId, code); }
   heroTop() { return this.core.heroTop(); }
@@ -288,6 +291,7 @@ const ROOM_METHODS = [
   'skip',
   'mafiaVote',
   'dayVote',
+  'heroAttack',
   'revealMayor',
   'judgeVeto',
   'relayMafia',
@@ -430,7 +434,6 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
       { command: 'hero', description: 'Mening shaxsiy geroyim' },
-      { command: 'heroes', description: 'Geroylar kolleksiyasi' },
       { command: 'herotop', description: 'Geroylar TOP 10' },
       { command: 'history', description: 'Oxirgi 10 o‘yin' },
       { command: 'rating', description: 'Umumiy reyting' },
@@ -438,7 +441,6 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'monthly', description: 'Oylik TOP 10' },
       { command: 'daily', description: 'Kunlik mukofot va vazifalar' },
       { command: 'shop', description: 'Do‘kon' },
-      { command: 'inventory', description: 'Inventar' },
       { command: 'vip', description: 'VIP obuna' },
       { command: 'invite', description: 'Do‘stlarni taklif qilish' },
       { command: 'rules', description: 'Qoidalar' },

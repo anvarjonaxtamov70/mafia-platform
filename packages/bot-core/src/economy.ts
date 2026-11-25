@@ -46,6 +46,7 @@ export const CATALOG: readonly CatalogItem[] = [
   { code: 'SHIELD', kind: 'ARCADE', emoji: '🛡', price: 300 },
   { code: 'FAKE_DOC', kind: 'ARCADE', emoji: '📁', price: 200 },
   { code: 'VOTE_SHIELD', kind: 'ARCADE', emoji: '⚖️', price: 1, currency: 'DIAMOND' },
+  { code: 'HERO_SHIELD', kind: 'ARCADE', emoji: '🛡', price: 2, currency: 'DIAMOND' },
 ];
 
 export function catalogItem(code: string): CatalogItem | undefined {
@@ -53,7 +54,8 @@ export function catalogItem(code: string): CatalogItem | undefined {
 }
 
 /** Arcade buyumi → engine dagi maydon */
-export const ARCADE_FIELD: Record<string, 'shield' | 'fakeDocument' | 'voteShield'> = { SHIELD: 'shield', FAKE_DOC: 'fakeDocument', VOTE_SHIELD: 'voteShield' };
+export const ARCADE_FIELD: Record<string, 'shield' | 'fakeDocument' | 'voteShield' | 'heroShield'> = { SHIELD: 'shield', FAKE_DOC: 'fakeDocument', VOTE_SHIELD: 'voteShield', HERO_SHIELD: 'heroShield' };
+export const HERO_PRICE = 100;
 export const DIAMOND_VIP_PRICE = 30;
 
 // ───────────────────────────── Telegram Stars ─────────────────────────────

@@ -194,6 +194,9 @@ export function present(input: PresentInput): OutboxDraft[] {
         } else if (e.phase === 'DAY_DISCUSSION') {
           group(t('game.day', { day: e.dayNumber, seconds }));
           if (isCurrent) {
+            for (const p of state.players.filter(x => x.status === 'ALIVE' && x.items.heroShot)) {
+              dm(p.id, t('hero.attack_prompt'), state.players.filter(x => x.status === 'ALIVE' && x.id !== p.id).map(x => [{ text: x.name.slice(0,32), callback_data: encode({ t: 'hero', game: game.number, seq: state.phaseSeq, seat: x.seat }) }]));
+            }
             for (const p of state.players.filter((x) => x.status === 'ALIVE' && getRole(x.role).day.mayorReveal && !x.ability.flags['mayorRevealed'])) {
               dm(p.id, t('dm.mayor_prompt'), [[{ text: t('dm.mayor_button'), callback_data: encode({ t: 'mayor', game: game.number }) }]]);
             }
@@ -317,6 +320,10 @@ export function present(input: PresentInput): OutboxDraft[] {
         break;
       case 'JUDGE_VETO':
         group(t('game.judge_veto'));
+        break;
+      case 'HERO_PROTECTED':
+        group(t('hero.protected', { name: nameOf(state, e.playerId) }));
+        dm(e.playerId, t('hero.protected_dm'));
         break;
       case 'VOTE_PROTECTED':
         group(t('game.vote_protected', { name: nameOf(state, e.playerId) }));

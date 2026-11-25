@@ -147,17 +147,15 @@ try {
   check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === 4 && c.params.png), 'role card is valid multipart PNG');
   await pm(5, '/intro');
   check(calls.some((c) => c.method === 'sendAnimation' && c.params.chat_id === 5 && c.params.gif), 'intro is valid multipart GIF');
-  // Separate users keep hero checks independent of game click limits.
   await pm(7, '/hero');
-  check(texts(7).some((t) => t.includes('HYPERNOVA HERO') && t.includes('1/100')), 'new user has starter hero');
-  await cb(7, 'm:pick_don');
-  check((edits(7).at(-1) ?? '').includes('hali ochilmagan'), 'locked hero cannot be selected');
-  await pm(6, '/heroes');
-  check(texts(6).some((t) => t.includes('10/10')), 'second configured owner unlocks all heroes');
-  await cb(6, 'm:pick_don');
-  check((edits(6).at(-1) ?? '').includes('Geroy tanlandi'), 'owner can select legendary hero');
+  check(texts(7).some(t=>t.includes('100 💎')), 'one locked hero costs 100 diamonds');
+  await pm(6, '/hero');
+  check(texts(6).some(t=>t.includes('Daraja:')), 'owner has single hero');
+  await pm(6, '/admin_hero_level 1000');
+  await pm(6, '/hero');
+  check(texts(6).some(t=>t.includes('Daraja: 1000')), 'owner display level');
   await pm(7, '/herotop');
-  check(texts(7).some((t) => t.includes('GEROYLAR TOP 10')), 'hero leaderboard available');
+  check(texts(7).some(t=>t.includes('Geroylar TOP 10')), 'hero top');
   await gm(1, '/game');
   await sleep(1500);
   const lobbyMsg = calls.find((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA'));
