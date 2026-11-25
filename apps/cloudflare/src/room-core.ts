@@ -277,8 +277,8 @@ export class RoomCore {
   async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>> {
     if (this.data.game) return { ok: false, error: 'GROUP_ACTIVE_GAME' };
     if (input.host.banned) return { ok: false, error: 'BANNED' };
+    if (!input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
     const settings = await this.deps.registry.getSettings(this.chatId);
-    if (settings.adminOnlyCreate && !input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
     const number = await this.deps.registry.allocateGame(this.chatId);
     // await davomida boshqa /game kelgan bo'lishi mumkin
     if (this.data.game) {
@@ -427,7 +427,7 @@ export class RoomCore {
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (g.status !== 'LOBBY') return { ok: false, error: 'NOT_LOBBY' };
-    if (trigger !== 'auto' && trigger.by !== g.hostId && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
+    if (trigger !== 'auto' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.players.length < g.config.minPlayers) return { ok: false, error: 'NOT_ENOUGH', details: { min: g.config.minPlayers, count: g.players.length } };
 
     const failing = await this.probeDms(g.players.filter((p) => !p.fake).map((p) => p.id));
@@ -499,7 +499,7 @@ export class RoomCore {
   async cancel(trigger: { by: number; isAdmin: boolean } | 'timeout', text?: string, number?: number): Promise<RoomResult> {
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
-    if (trigger !== 'timeout' && trigger.by !== g.hostId && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
+    if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'LOBBY') this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'CLEAR_KEYBOARD', refKey: lobbyRef(g.id) }, dedupeKey: '' }]);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));

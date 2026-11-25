@@ -565,10 +565,14 @@ export default {
       // Payments retain their charge-level idempotency and must never be dropped by spam limits.
       const payment = Boolean(update.message?.successful_payment || update.message?.refunded_payment);
       const actor = update.callback_query?.from ?? (update.message?.text?.startsWith('/') ? update.message.from : undefined);
-      const guarded = !payment && !update.pre_checkout_query && !!actor && !actor.is_bot;
-      if (guarded && actor) {
+      const msg = update.message;
+      const anonymousGroup = msg?.text?.startsWith('/') && (msg.chat.type === 'group' || msg.chat.type === 'supergroup') && msg.sender_chat?.id === msg.chat.id && (msg.sender_chat.type === 'group' || msg.sender_chat.type === 'supergroup');
+      // Negative chat IDs form a separate rate-limit namespace for anonymous administrators.
+      const actorId = anonymousGroup ? msg.chat.id : actor && !actor.is_bot ? actor.id : null;
+      const guarded = !payment && !update.pre_checkout_query && actorId !== null;
+      if (guarded && actorId !== null) {
         try {
-          const admission = await registryStub(env).beginUpdate(update.update_id, actor.id);
+          const admission = await registryStub(env).beginUpdate(update.update_id, actorId);
           if (admission === 'BUSY') return new Response('retry', { status: 503 });
           if (admission === 'RATE_LIMITED') {
             // Do not amplify a flood with a Telegram API request per rejected click.

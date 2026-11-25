@@ -97,7 +97,7 @@ export class LobbyService {
   async createLobby(input: { chatId: number; title: string; host: TgUser; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<LobbyResult<{ gameId: string; number: number; hostJoined: boolean }>> {
     const group = await this.ensureGroup(input.chatId, input.title);
     const settings = await loadGroupSettings(this.db, group.id);
-    if (settings.adminOnlyCreate && !input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
+    if (!input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
     const host = await this.users.upsert(input.host);
     if (await this.users.isBanned(host.id)) return { ok: false, error: 'BANNED' };
     const mode = input.mode ?? settings.mode;
@@ -257,7 +257,7 @@ export class LobbyService {
     if (found.status !== 'LOBBY') return { ok: false, error: 'NOT_LOBBY' };
     const game0 = await this.db.game.findUnique({ where: { id: found.id }, include: { host: true, players: { include: { user: true }, orderBy: { joinedAt: 'asc' } } } });
     if (!game0) return { ok: false, error: 'NOT_FOUND' };
-    if (trigger !== 'auto' && game0.host.telegramId !== trigger.telegramId && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
+    if (trigger !== 'auto' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     const cfg = game0.configSnapshot as unknown as ConfigSnapshot;
     if (game0.players.length < cfg.minPlayers) return { ok: false, error: 'NOT_ENOUGH', details: { min: cfg.minPlayers, count: game0.players.length } };
 
@@ -331,7 +331,7 @@ export class LobbyService {
   async cancel(where: { number: number } | { chatId: number | bigint } | { id: string }, trigger: { telegramId: bigint; isAdmin: boolean } | 'timeout', text?: string): Promise<LobbyResult> {
     const found = 'id' in where ? await this.db.game.findUnique({ where: { id: where.id }, include: { host: true } }) : await this.findLobbyWithHost(where);
     if (!found) return { ok: false, error: 'NOT_FOUND' };
-    if (trigger !== 'timeout' && found.host.telegramId !== trigger.telegramId && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
+    if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (found.status === 'RUNNING') {
       if (trigger === 'timeout' || !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
       const ok = await this.games.cancelRunning(found.id, 'ADMIN', t('game.cancelled_admin'));

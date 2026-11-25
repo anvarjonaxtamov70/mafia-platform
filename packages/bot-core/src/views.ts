@@ -104,11 +104,11 @@ export interface LobbyViewInput {
 
 export function renderLobby(game: LobbyViewInput, names: string[], opts: { now: number; botUsername: string }): { text: string; keyboard: Keyboard } {
   const min = game.config.minPlayers;
-  const list = names.length ? names.map((n, i) => `${i + 1}. ${escapeHtml(n)} ✅`).join('\n') : t('lobby.empty_list');
+  const list = names.length ? names.map((n, i) => `${i + 1}. ${escapeHtml(n)}`).join('\n') : t('lobby.empty_list');
   const secondsLeft = game.deadline ? Math.max(0, Math.round((game.deadline - opts.now) / 1000)) : 0;
   const hint =
     names.length < min
-      ? t('lobby.need_more', { min })
+      ? t('lobby.need_more', { min, seconds: secondsLeft })
       : game.config.lobby.autostart
         ? t('lobby.ready', { seconds: secondsLeft })
         : t('lobby.ready_manual');
@@ -121,14 +121,8 @@ export function renderLobby(game: LobbyViewInput, names: string[], opts: { now: 
     hint,
   });
   const keyboard: Keyboard = [
-    [
-      { text: t('lobby.join'), callback_data: encode({ t: 'lobby', op: 'j', game: game.number }) },
-      { text: t('lobby.leave'), callback_data: encode({ t: 'lobby', op: 'l', game: game.number }) },
-    ],
-    [
-      { text: t('lobby.start'), callback_data: encode({ t: 'lobby', op: 's', game: game.number }) },
-      { text: t('lobby.cancel'), callback_data: encode({ t: 'lobby', op: 'c', game: game.number }) },
-    ],
+    [{ text: t('lobby.join'), callback_data: encode({ t: 'lobby', op: 'j', game: game.number }) }],
+    [{ text: t('lobby.cancel'), callback_data: encode({ t: 'lobby', op: 'c', game: game.number }) }],
   ];
   if (opts.botUsername) {
     keyboard.push([{ text: t('lobby.open_bot'), url: `https://t.me/${opts.botUsername}?start=join_${game.number}` }]);
