@@ -135,6 +135,7 @@ export interface RegistryApi {
   gameHistory(tgId: number): Promise<string>;
   periodRating(period: 'weekly' | 'monthly'): Promise<string>;
   groupLeaderboard(chatId: number): Promise<string>;
+  pointsTop(chatId: number | null, days: 0 | 1 | 7 | 30, actor: number): Promise<string>;
   adminStats(): Promise<string>;
   setGlobalMinPlayers(value: number, by: string): Promise<number>;
   anonymize(tgId: number): Promise<'OK' | 'IN_GAME'>;
@@ -482,7 +483,21 @@ export class Router {
       case 'help':
         return this.reply(chatId, t('help.text'), undefined, replyTo);
       case 'leaderboard':
-        return this.reply(chatId, await this.d.registry.groupLeaderboard(chatId), undefined, replyTo);
+      case 'top':
+      case 'top1':
+      case 'top7':
+      case 'top30': {
+        if (!(await isAdmin())) return this.reply(chatId, t('top.admin_only'), undefined, replyTo);
+        const days = c.cmd === 'top1' ? 1 : c.cmd === 'top7' ? 7 : c.cmd === 'top30' ? 30 : 0;
+        return this.reply(chatId, await this.d.registry.pointsTop(chatId, days, from.id), undefined, replyTo);
+      }
+      case 'fulltop':
+      case 'fulltop7':
+      case 'fulltop30': {
+        if (m.sender_chat || !this.isSuperadmin(from.id)) return this.reply(chatId, t('admin.no_access'), undefined, replyTo);
+        const days = c.cmd === 'fulltop7' ? 7 : c.cmd === 'fulltop30' ? 30 : 0;
+        return this.reply(chatId, await this.d.registry.pointsTop(null, days, from.id), undefined, replyTo);
+      }
       case 'mystats':
         await this.d.registry.upsertUser(from, false);
         return this.reply(chatId, await this.d.registry.profileText(from.id), undefined, replyTo);
@@ -723,8 +738,8 @@ export class Router {
 
   private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
     const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
-    const text = section === 'history' ? await this.d.registry.gameHistory(id) : section === 'weekly' || section === 'monthly' ? await this.d.registry.periodRating(section) : await this.d.registry.globalRating(id);
-    return { text, keyboard: [[b('menu.rating', 'rating'), b('menu.weekly', 'weekly')], [b('menu.monthly', 'monthly'), b('menu.history', 'history')], backRow()] };
+    const text = section === 'history' ? await this.d.registry.gameHistory(id) : t('top.group_info');
+    return { text, keyboard: [[b('menu.rating', 'rating'), b('menu.history', 'history')], backRow()] };
   }
 
   // ───────────────────────────── Iqtisodiyot ─────────────────────────────

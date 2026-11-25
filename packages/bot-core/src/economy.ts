@@ -42,7 +42,7 @@ export const CATALOG: readonly CatalogItem[] = [
   { code: 'DETECTIVE_MASTER', kind: 'TITLE', emoji: '🕵️', price: 2500 },
   { code: 'MAFIA_BOSS', kind: 'TITLE', emoji: '🎩', price: 2500 },
   { code: 'LEGENDARY_PLAYER', kind: 'TITLE', emoji: '🌟', price: null, tier: 'VIP_PRO' },
-  { code: 'SHIELD', kind: 'ARCADE', emoji: '🛡', price: 150 },
+  { code: 'SHIELD', kind: 'ARCADE', emoji: '🛡', price: 300 },
   { code: 'FAKE_DOC', kind: 'ARCADE', emoji: '📜', price: 200 },
 ];
 
@@ -161,6 +161,8 @@ export function parseRefPayload(payload: string): number | null {
 export interface WalletInfo {
   /** Effective display balance; owner allowance is not part of the earned ledger. */
   coins: number;
+  /** Separate in-game premium currency, not real money. */
+  diamonds?: number;
   permanentOwner?: boolean;
   frame: string | null;
   title: string | null;

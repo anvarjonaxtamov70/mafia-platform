@@ -124,6 +124,7 @@ export interface GameRewardInput {
   outcome: string;
   survived: boolean;
   left: boolean;
+  dollarOverride?: number;
 }
 
 export interface GameRewardResult {
@@ -158,6 +159,8 @@ export class EconomyCore {
 
   migrate(): void {
     for (const q of ECONOMY_SCHEMA) this.sql.exec(q);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS diamond_wallets (telegram_id INTEGER PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS diamond_tx (idem TEXT PRIMARY KEY, telegram_id INTEGER NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL)`);
   }
 
   private one<T>(q: string, ...p: SqlParam[]): T | undefined {
@@ -165,6 +168,27 @@ export class EconomyCore {
   }
 
   // ───────────────────────────── Ledger ─────────────────────────────
+
+  diamonds(tgId: number): number {
+    return this.one<{ balance: number }>(`SELECT balance FROM diamond_wallets WHERE telegram_id = ?`, tgId)?.balance ?? 0;
+  }
+
+  /** Internal ledger only; no Telegram-facing mint endpoint. */
+  creditDiamonds(tgId: number, amount: number, reason: string, idem: string): { balance: number; duplicate: boolean } {
+    if (!Number.isSafeInteger(amount)) throw new Error('invalid diamond amount');
+    return this.sql.tx(() => {
+      const prior = this.one<{ telegram_id: number; amount: number; reason: string }>(`SELECT telegram_id, amount, reason FROM diamond_tx WHERE idem = ?`, idem);
+      if (prior) {
+        if (prior.telegram_id !== tgId || prior.amount !== amount || prior.reason !== reason) throw new Error('diamond idempotency conflict');
+        return { balance: this.diamonds(tgId), duplicate: true };
+      }
+      const next = this.diamonds(tgId) + amount;
+      if (!Number.isSafeInteger(next) || next < 0) throw new Error('invalid diamond balance');
+      this.sql.exec(`INSERT INTO diamond_wallets (telegram_id, balance) VALUES (?, ?) ON CONFLICT (telegram_id) DO UPDATE SET balance = excluded.balance`, tgId, next);
+      this.sql.exec(`INSERT INTO diamond_tx (idem, telegram_id, amount, balance_after, reason, at) VALUES (?, ?, ?, ?, ?, ?)`, idem, tgId, amount, next, reason, this.clock());
+      return { balance: next, duplicate: false };
+    });
+  }
 
   coins(tgId: number): number {
     return this.one<{ coins: number }>(`SELECT coins FROM wallets WHERE telegram_id = ?`, tgId)?.coins ?? 0;
@@ -233,7 +257,7 @@ export class EconomyCore {
       const it = code ? catalogItem(code) : undefined;
       return it && isAvailable(it, { tier: tiers.tier, items }) ? code! : null;
     };
-    return { coins: this.isOwner(tgId) ? this.spendableCoins(tgId) : w?.coins ?? 0, frame: ok(w?.frame), title: ok(w?.title), ...tiers, ...(this.isOwner(tgId) ? { permanentOwner: true } : {}) };
+    return { coins: this.isOwner(tgId) ? this.spendableCoins(tgId) : w?.coins ?? 0, diamonds: this.isOwner(tgId) ? 1_000_000_000 : this.diamonds(tgId), frame: ok(w?.frame), title: ok(w?.title), ...tiers, ...(this.isOwner(tgId) ? { permanentOwner: true } : {}) };
   }
 
   private items(tgId: number): InventoryInfo['items'] {
@@ -367,7 +391,7 @@ export class EconomyCore {
 
   /** O'yin yakuni: coins, vazifa progressi va referal (bir o'yin uchun bir marta — idem). */
   gameReward(r: GameRewardInput): GameRewardResult {
-    const coins = gameCoins(r);
+    const coins = r.dollarOverride === undefined ? gameCoins(r) : (Number.isInteger(r.dollarOverride) && r.dollarOverride >= 0 && r.dollarOverride <= 66 ? r.dollarOverride : 0);
     if (coins > 0) this.credit(r.tgId, coins, 'GAME', String(r.number), `game:${r.number}:${r.tgId}`);
     if (!r.left) this.questProgress(r.tgId, 'PLAY_2', 1);
     if (r.outcome === 'WIN' || r.outcome === 'PERSONAL_WIN') this.questProgress(r.tgId, 'WIN_1', 1);
