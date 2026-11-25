@@ -20,7 +20,7 @@ export function mainMenu(competition = false, visuals = false, heroes = false): 
     [b('menu.play', 'play')],
     [b('menu.profile', 'profile'), b('menu.rating', 'rating')],
     ...(heroes ? [[b('hero.menu', 'hero'), b('hero.collection', 'heroes')]] : []),
-    ...(competition ? [[b('menu.history', 'history'), b('menu.weekly', 'weekly')]] : []),
+    ...(competition ? [[b('menu.history', 'history')]] : []),
     [b('menu.shop', 'shop'), b('menu.inventory', 'inventory')],
     [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
     [b('menu.invite', 'invite')],

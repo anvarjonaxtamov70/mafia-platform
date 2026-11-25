@@ -83,3 +83,33 @@ describe('V7 ledger and TOP', () => {
     expect(eco.diamonds(2)).toBe(5);
   });
 });
+
+
+describe('TOP 20 limits and authorization', () => {
+  it('lists only the twenty highest scores with stable ties, all seven commands and no unauthorized global access', async () => {
+    const w = new World({ ownerBenefits: true });
+    w.admins.add(6);
+    w.tg.admins.add(2);
+    const ids = Array.from({length:25},(_,i)=>100+i);
+    for (const id of [...ids,1,2,6,9]) w.registryCore.upsertUser({id,first_name:'Player'+id},true);
+    const number = w.registryCore.allocateGame(GROUP);
+    const players: RecordPlayer[] = ids.map(tgId=>({tgId,name:'Player'+tgId,role:'CITIZEN',faction:'CITY',outcome:'WIN',survived:true,left:false,active:true,fake:false}));
+    w.registryCore.recordGame({gameId:'twenty',number,chatId:GROUP,ranked:true,outcome:'CITY',days:8,durationMs:1_800_000,completedAt:w.now,rewardVersion:1,players});
+    const text = w.registryCore.pointsTop(GROUP,0,2);
+    expect(text.split('\n').filter(x=>/^\d+\. /.test(x))).toHaveLength(20);
+    expect(text).toContain('Player119');
+    expect(text).not.toContain('Player120');
+    for (const cmd of ['/top','/top1','/top7','/top30']) {
+      await w.send(groupText(2,cmd));
+      expect(w.tg.texts(GROUP).at(-1)).toContain('Guruh TOP 20');
+    }
+    for (const cmd of ['/fulltop','/fulltop7','/fulltop30']) {
+      await w.send(groupText(6,cmd));
+      expect(w.tg.texts(GROUP).at(-1)).toContain('Umumiy TOP 20');
+      await w.send(groupText(2,cmd));
+      expect(w.tg.texts(GROUP).at(-1)).not.toContain('Umumiy TOP 20');
+    }
+    await w.send(groupText(9,'/top'));
+    expect(w.tg.texts(GROUP).at(-1)).toContain('administratorlari');
+  });
+});

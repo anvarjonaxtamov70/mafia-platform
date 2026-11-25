@@ -532,14 +532,15 @@ export class RegistryCore {
 
   /** Last ten completed games of the requester only; never expose other players' hidden roles. */
   gameHistory(tgId: number): string {
-    const rows = this.sql.exec<{ game_number: number; role: string; result: string; xp: number; rating_change: number; created_at: number; afk: number | null; left_game: number | null }>(
-      `SELECT r.game_number, r.role, r.result, r.xp, r.rating_change, r.created_at, p.afk, p.left_game
+    const rows = this.sql.exec<{ game_number: number; role: string; result: string; xp: number; rating_change: number; created_at: number; afk: number | null; left_game: number | null; points: number | null; dollars: number | null }>(
+      `SELECT r.game_number, r.role, r.result, r.xp, r.rating_change, r.created_at, p.afk, p.left_game, m.points, m.dollars
        FROM game_results r LEFT JOIN game_participation p ON p.game_number = r.game_number AND p.telegram_id = r.telegram_id
+       LEFT JOIN match_points m ON m.game_number = r.game_number AND m.telegram_id = r.telegram_id
        WHERE r.telegram_id = ? ORDER BY r.created_at DESC, r.game_number DESC LIMIT 10`, tgId);
     if (!rows.length) return t('history.title') + '\n\n' + t('history.empty');
-    return t('history.title') + '\n\n' + rows.map((x) => t('history.line', {
+    return t('history.title') + '\n\n' + rows.map((x) => t(x.points === null ? 'history.legacy_v7' : 'history.line_v7', {
       number: x.game_number, role: t('role.' + x.role + '.name'), outcome: t('dm.outcome.' + x.result),
-      date: formatDate(x.created_at), xp: x.xp, rp: (x.rating_change > 0 ? '+' : '') + x.rating_change,
+      date: formatDate(x.created_at), dollars: x.dollars ?? 0, points: (x.points !== null && x.points > 0 ? '+' : '') + (x.points ?? 0),
       note: x.afk ? ' · AFK' : x.left_game ? ' · ' + t('history.left') : '',
     })).join('\n\n');
   }

@@ -143,7 +143,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     expect(w.registryCore.activeOf(2)).toBeNull();
     // Statistikalar
     const played = [1, 2, 3, 4, 5, 6].map((id) => w.registryCore.profileText(id));
-    for (const p of played) expect(p).toContain('O‘yinlar: 1');
+    for (const p of played) expect(p).toContain('Barcha o‘yinlar: 1');
     expect(w.registryCore.groupLeaderboard(GROUP)).toContain('g‘alaba');
   });
 
@@ -284,7 +284,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     }
     expect(w.rooms.get(GROUP)!.data.game).toBeNull();
     expect(w.tg.sent().every((c) => Number(c.params['chat_id']) < 9_000_000_000_000)).toBe(true);
-    expect(w.registryCore.profileText(1)).toContain('O‘yinlar: 0');
+    expect(w.registryCore.profileText(1)).toContain('Barcha o‘yinlar: 0');
     expect(w.tg.texts(1).some((t) => t.includes('Mashq o‘yini tugadi'))).toBe(true);
   });
 
@@ -513,7 +513,7 @@ describe('v4 competition and AFK', () => {
     await w.send(privateText(9, '/history'));
     expect(w.tg.texts(9).at(-1)).toContain('OXIRGI 10');
     await w.send(callback(9, 'm:monthly'));
-    expect(String(w.tg.calls.filter((c) => c.method === 'editMessageText').at(-1)?.params['text'])).toContain('OYLIK TOP');
+    expect(String(w.tg.calls.filter((c) => c.method === 'editMessageText').at(-1)?.params['text'])).toContain('Guruh reytingi');
     w.now += 40 * 24 * 60 * 60_000;
     expect(w.registryCore.periodRating('weekly')).not.toContain('U9');
     expect(w.registryCore.periodRating('monthly')).not.toContain('U9');

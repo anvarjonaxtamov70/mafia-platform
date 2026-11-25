@@ -739,7 +739,7 @@ export class Router {
   private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
     const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
     const text = section === 'history' ? await this.d.registry.gameHistory(id) : t('top.group_info');
-    return { text, keyboard: [[b('menu.rating', 'rating'), b('menu.weekly', 'weekly')], [b('menu.monthly', 'monthly'), b('menu.history', 'history')], backRow()] };
+    return { text, keyboard: [[b('menu.rating', 'rating'), b('menu.history', 'history')], backRow()] };
   }
 
   // ───────────────────────────── Iqtisodiyot ─────────────────────────────

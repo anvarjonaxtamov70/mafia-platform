@@ -426,7 +426,7 @@ describe('Menyu bo‘limlari', () => {
       ['vip', 'VIP OBUNA'],
       ['daily', 'KUNLIK MUKOFOT'],
       ['invite', 'TAKLIF QILISH'],
-      ['profile', 'Tangalar'],
+      ['profile', 'Dollar'],
     ] as const) {
       await w.send(callback(9, `m:${section}`));
       expect(lastEdit(w)).toContain(expected);

@@ -192,8 +192,12 @@ try {
 
   await pm(2, '/profile');
   await sleep(300);
-  check(texts(2).some((t) => t.includes('O‘yinlar: 1')), 'profil statistikasi saqlandi');
+  check(texts(2).some((t) => t.includes('Barcha o‘yinlar: 1')), 'profil statistikasi saqlandi');
 
+  await gm(1, '/top');
+  check(texts(GROUP).some((t) => t.includes('Guruh TOP 20') && t.includes('ball')), 'group points TOP uses persisted results');
+  await gm(1, '/fulltop7');
+  check(texts(GROUP).some((t) => t.includes('Umumiy TOP 20') && t.includes('7 kun')), 'owner global 7-day TOP');
   // ───── Iqtisodiyot (Durable Object SQLite transactionSync bilan) ─────
   check(texts(2).some((t) => t.includes('💵 +')), 'o‘yin tugaganda Coins berildi');
   await cb(2, 'e:daily:');

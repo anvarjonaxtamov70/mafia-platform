@@ -488,7 +488,9 @@
   "hero.top_empty": "Hozircha reytingda hech kim yo‘q.",
   "hero.top_info": "Reyting faqat haqiqiy o‘yinlarda yig‘ilgan jami Hero XP bo‘yicha hisoblanadi. Superadminlarga sun’iy XP berilmaydi.",
   "profile.v7": "<b>{name}</b>{tier}\n\n💵 Dollar: {dollars}\n💎 Olmos: {diamonds}\n🏁 Ball: {points}\n\n🛡 Himoya: {shield}\n📁 Hujjat: {document}\n\nG‘alabalar: {wins}\nBarcha o‘yinlar: {played}",
-  "reward.v7": "<b>{outcome}</b>\n💵 +{dollars} · 🏁 {points} ball",
+  "reward.v7": "🏁 <b>O‘yin tugadi.</b> {outcome}\n💵 +{dollars} · 🏁 {points} ball",
   "top.admin_only": "Bu buyruq guruh administratorlari uchun.",
-  "top.group_info": "<b>Guruh reytingi</b>\n\nAdministrator guruhda quyidagi buyruqlarni yozadi:\n/top1 — 24 soat\n/top7 — 7 kun\n/top30 — 30 kun\n/top — barcha vaqt\n\nHar bir ro‘yxatda yig‘ilgan ball bo‘yicha 20 ta o‘yinchi."
+  "top.group_info": "<b>Guruh reytingi</b>\n\nAdministrator guruhda quyidagi buyruqlarni yozadi:\n/top1 — 24 soat\n/top7 — 7 kun\n/top30 — 30 kun\n/top — barcha vaqt\n\nHar bir ro‘yxatda yig‘ilgan ball bo‘yicha 20 ta o‘yinchi.",
+  "history.line_v7": "<b>#{number} · {role}</b> — {outcome}{note}\n{date} · {dollars} $ · {points} ball",
+  "history.legacy_v7": "<b>#{number} · {role}</b> — {outcome}{note}\n{date} · eski tizim"
 }
