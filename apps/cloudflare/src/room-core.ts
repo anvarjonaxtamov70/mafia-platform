@@ -207,7 +207,7 @@ export class RoomCore {
     const g = this.data.game;
     const candidates: number[] = [];
     if (this.data.ops.length > 0) candidates.push(this.now);
-    if (this.data.outbox.length > 0) candidates.push(Math.max(this.now, Math.min(...this.data.outbox.map((o) => o.notBefore))));
+    if (this.data.outbox.length > 0) candidates.push(Math.max(this.now, this.data.outbox[0]!.notBefore));
     if (g?.status === 'LOBBY' && g.deadline) candidates.push(g.deadline);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
     const next = candidates.length ? Math.min(...candidates) : null;
@@ -266,7 +266,7 @@ export class RoomCore {
 
   // ───────────────────────────── Lobby ─────────────────────────────
 
-  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode }): Promise<RoomResult<{ number: number; hostJoined: boolean }>> {
+  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>> {
     if (this.data.game) return { ok: false, error: 'GROUP_ACTIVE_GAME' };
     if (input.host.banned) return { ok: false, error: 'BANNED' };
     const settings = await this.deps.registry.getSettings(this.chatId);
@@ -278,7 +278,7 @@ export class RoomCore {
       return { ok: false, error: 'GROUP_ACTIVE_GAME' };
     }
     const mode = input.mode ?? settings.mode;
-    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart } };
+    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart, ...(input.quick ? { quick: true } : {}) } };
     const g: RoomGame = {
       id: `${this.chatId}-${number}`,
       number,
@@ -338,9 +338,9 @@ export class RoomCore {
     return { ok: true, title: this.data.title };
   }
 
-  async leave(tgId: number): Promise<RoomResult> {
+  async leave(tgId: number, number?: number): Promise<RoomResult> {
     const g = this.data.game;
-    if (!g) return { ok: false, error: 'NOT_FOUND' };
+    if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (!g.players.some((p) => p.id === tgId)) return { ok: false, error: 'NOT_JOINED' };
     if (g.status === 'LOBBY') {
       g.players = g.players.filter((p) => p.id !== tgId);
@@ -467,9 +467,9 @@ export class RoomCore {
     return { ok: true };
   }
 
-  async cancel(trigger: { by: number; isAdmin: boolean } | 'timeout', text?: string): Promise<RoomResult> {
+  async cancel(trigger: { by: number; isAdmin: boolean } | 'timeout', text?: string, number?: number): Promise<RoomResult> {
     const g = this.data.game;
-    if (!g) return { ok: false, error: 'NOT_FOUND' };
+    if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (trigger !== 'timeout' && trigger.by !== g.hostId && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'LOBBY') this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'CLEAR_KEYBOARD', refKey: lobbyRef(g.id) }, dedupeKey: '' }]);

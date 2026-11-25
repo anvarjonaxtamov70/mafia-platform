@@ -375,6 +375,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'invite', description: 'Do‘stlarni taklif qilish' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
+      { command: 'characters', description: 'Personajlar katalogi' },
+      { command: 'guide', description: 'Boshlovchilar qo‘llanmasi' },
       { command: 'help', description: 'Yordam' },
       { command: 'support', description: 'Yordam so‘rash' },
       { command: 'paysupport', description: 'To‘lov bo‘yicha yordam' },
@@ -385,6 +387,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
     scope: { type: 'all_group_chats' },
     commands: [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
+      { command: 'quick', description: 'Tezkor, reytingsiz o‘yin' },
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },
       { command: 'players', description: 'Ishtirokchilar' },
@@ -472,6 +475,8 @@ export default {
         const message = (e as Error).message ?? String(e);
         console.error('update failed', update.update_id, message);
         await registryStub(env).logError('webhook', message).catch(() => undefined);
+        // To‘lovlar charge_id bo‘yicha idempotent: vaqtinchalik xatoda Telegram qayta yuborsin.
+        if (update.message?.successful_payment) return new Response('retry payment', { status: 503 });
       }
       return new Response('ok');
     }

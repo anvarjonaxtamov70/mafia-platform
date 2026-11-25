@@ -75,14 +75,15 @@ export function normalizeSettings(raw: unknown, globalMin = MIN_PLAYERS_FLOOR): 
   };
 }
 
-export function settingsToConfig(s: GroupSettingsData, mode: GameMode = s.mode): GameConfig {
+export function settingsToConfig(s: GroupSettingsData, mode: GameMode = s.mode, quick = false): GameConfig {
   return buildConfig(mode, {
     minPlayers: s.minPlayers,
     maxPlayers: s.maxPlayers,
-    nightDurationSec: s.nightSec,
-    discussionDurationSec: s.discussionSec,
-    votingDurationSec: s.votingSec,
-    verdictDurationSec: s.verdictSec,
+    nightDurationSec: quick ? 45 : s.nightSec,
+    discussionDurationSec: quick ? 60 : s.discussionSec,
+    votingDurationSec: quick ? 30 : s.votingSec,
+    verdictDurationSec: quick ? 10 : s.verdictSec,
+    ...(quick ? { ranked: false, allowArcadeItems: false } : {}),
     revealRolesOnDeath: s.revealRoles,
   });
 }

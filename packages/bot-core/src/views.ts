@@ -22,12 +22,45 @@ export function mainMenu(): Keyboard {
     [b('menu.shop', 'shop'), b('menu.inventory', 'inventory')],
     [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
     [b('menu.invite', 'invite')],
+    [b('menu.characters', 'characters'), b('menu.guide', 'guide')],
     [b('menu.rules', 'rules'), b('menu.settings', 'settings')],
     [b('menu.help', 'help')],
   ];
 }
 
 export const backRow = () => [{ text: t('common.back'), callback_data: encode({ t: 'menu', section: 'home' }) }];
+
+/** Interaktiv katalog va qo‘llanma: Telegram xabarlari, Mini App talab qilinmaydi. */
+export function learningView(section: string): { text: string; keyboard: Keyboard } | null {
+  const button = (text: string, section: string) => ({ text, callback_data: encode({ t: 'menu', section }) });
+  const categories = ['CITY', 'MAFIA', 'NEUTRAL', 'SPECIAL'] as const;
+  if (section === 'guide') {
+    return { text: t('guide.text'), keyboard: [[button(t('menu.characters'), 'characters')], [button(t('menu.rules'), 'rules')], backRow()] };
+  }
+  if (section === 'characters') {
+    return {
+      text: t('characters.home', { count: ALL_ROLES.length }),
+      keyboard: [...categories.map((c) => [button(t('rules.' + c.toLowerCase()).replace(/<[^>]+>/g, '') + ' · ' + ALL_ROLES.filter((r) => r.category === c).length, 'roles_' + c.toLowerCase())]), backRow()],
+    };
+  }
+  const category = categories.find((c) => section === 'roles_' + c.toLowerCase());
+  if (category) {
+    const roles = ALL_ROLES.filter((r) => r.category === category);
+    return {
+      text: t('rules.' + category.toLowerCase()) + '\n\n' + t('characters.select'),
+      keyboard: [...roles.map((r) => [button(r.emoji + ' ' + t('role.' + r.code + '.name'), 'role_' + r.code.toLowerCase())]), [button(t('common.back'), 'characters')]],
+    };
+  }
+  if (section.startsWith('role_')) {
+    const role = ALL_ROLES.find((r) => section === 'role_' + r.code.toLowerCase());
+    if (!role) return null;
+    return {
+      text: role.emoji + ' <b>' + t('role.' + role.code + '.name') + '</b>\n\n' + t('role.' + role.code + '.desc') + '\n\n' + t('characters.minimum', { count: Math.max(MIN_PLAYERS_FLOOR, role.minPlayers) }) + '\n' + t('characters.modes', { modes: role.modes.map((m) => t('mode.' + m)).join(', ') }),
+      keyboard: [[button(t('common.back'), 'roles_' + role.category.toLowerCase())], backRow()],
+    };
+  }
+  return null;
+}
 
 export function rolesText(): string {
   const section = (title: string, cat: string) =>
@@ -57,6 +90,7 @@ export const SOON_SECTIONS = ['shop', 'inventory', 'vip', 'daily', 'invite'] as 
 export interface LobbySnapshot {
   lobbySec: number;
   autostart: boolean;
+  quick?: boolean;
 }
 
 export type ConfigSnapshot = GameConfig & { lobby: LobbySnapshot };
@@ -79,7 +113,7 @@ export function renderLobby(game: LobbyViewInput, names: string[], opts: { now: 
       : game.config.lobby.autostart
         ? t('lobby.ready', { seconds: secondsLeft })
         : t('lobby.ready_manual');
-  const text = t('lobby.title', {
+  const text = (game.config.lobby.quick ? t('quick.banner') + '\n\n' : '') + t('lobby.title', {
     host: escapeHtml(game.hostName),
     mode: t(`mode.${game.mode}`),
     count: names.length,
