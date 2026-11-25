@@ -47,6 +47,11 @@ async function playUntilEnd(s: TestServices, gameId: string, number: number): Pr
 }
 
 describe('Lobby (§3.4–3.5)', () => {
+  it('non-admin creation is rejected regardless of group settings', async () => {
+    const s=makeServices(db);
+    const r=await s.lobby.createLobby({chatId:CHAT_ID,title:'G',host:tgUser(1),isAdmin:false});
+    expect(r).toMatchObject({ok:false,error:'CREATE_FORBIDDEN'});
+  });
   it('lobby yaratiladi, outbox ga lobby xabari yoziladi, taymer rejalashtiriladi', async () => {
     const s = makeServices(db);
     await s.users.upsert(tgUser(1), { dmOpened: true });
