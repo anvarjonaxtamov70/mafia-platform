@@ -461,14 +461,19 @@ export class Router {
     const anonymous = m.sender_chat?.id === chatId && (m.sender_chat.type === 'group' || m.sender_chat.type === 'supergroup');
     const from = m.from ?? (anonymous ? { id: chatId, first_name: m.chat.title ?? 'Guruh administratori', is_bot: true } : undefined);
     const c = await this.parseCommand(m.text);
-    // Commands must not be a loophole for dead/night silence. Authorized commands still run.
-    const alreadyDeleted=await this.silenceCheck(m, !!c);
-    if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous)) return;
-    // Anonymous group admins may manage this group only; never create fake user accounts or access owner commands.
-    if (anonymous && !['game','quick','startgame','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) return;
+    // Handled commands use response-linked cleanup, not immediate night/dead deletion.
+    // Unsupported commands still follow ordinary moderation.
+    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','cancelgame','settings','devfill'].includes(c.cmd);
+    if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous) || !handled ||
+        (anonymous && !['game','quick','startgame','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) ||
+        (c.cmd === 'devfill' && (!this.d.devFake || !this.isSuperadmin(from.id)))) {
+      await this.silenceCheck(m, !!c);
+      return;
+    }
+    this.silence.delete(chatId);
     const room = this.d.room(chatId);
     const isAdmin = async () => anonymous || await this.isChatAdmin(chatId, from.id);
-    const replyTo = alreadyDeleted ? undefined : m.message_id;
+    const replyTo = m.message_id;
     switch (c.cmd) {
       case 'quick':
       case 'game': {

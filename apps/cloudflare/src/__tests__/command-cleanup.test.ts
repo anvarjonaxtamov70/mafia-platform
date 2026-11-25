@@ -54,9 +54,40 @@ describe('group command cleanup',()=>{
     const sent=w.tg.calls.findIndex(c=>c.method==='sendMessage'&&c.params['chat_id']===GROUP&&/O‘YIN BOSHLANDI|TUN BOSHLANDI/.test(String(c.params['text'])));
     expect(sent).toBeGreaterThanOrEqual(0);
     expect(deletion(w,start.message!.message_id)).toBeGreaterThan(sent);
+    const beforeCancel=w.tg.calls.length;
     const cancel=groupText(1,'/cancelgame');await w.send(cancel);
-    expect((await w.loaded(GROUP)).data.game).toBeNull();
-    expect(deletion(w,cancel.message!.message_id)).toBeGreaterThan(lastIndex(w.tg.calls, c=>c.method==='sendMessage'&&c.params['chat_id']===GROUP));
+    expect((await w.loaded(GROUP)).data.game?.status).toBeNull();
+    const cancelReply=w.tg.calls.findIndex((c,i)=>i>=beforeCancel&&c.method==='sendMessage'&&c.params['chat_id']===GROUP&&String(c.params['text']).includes('administrator tomonidan bekor qilindi'));
+    expect(cancelReply).toBeGreaterThanOrEqual(beforeCancel);
+    expect(deletion(w,cancel.message!.message_id)).toBeGreaterThan(cancelReply);
+    expect(w.tg.calls.filter(c=>c.method==='deleteMessage'&&c.params['chat_id']===GROUP&&c.params['message_id']===cancel.message!.message_id)).toHaveLength(1);
+  });
+  it('night and dead moderation preserve response ordering, while ordinary chat stays moderated',async()=>{
+    const w=new World();await lobby(w,[1,2,3,4]);await w.send(groupText(1,'/startgame'));
+    const g=(await w.loaded(GROUP)).data.game!;
+    expect(g.state?.phase).toBe('NIGHT');
+    g.silenceNight=true;g.silenceDead=true;
+    const check=async(id:number)=>{
+      const before=w.tg.calls.length;
+      const cmd=groupText(id,'/status');await w.send(cmd);
+      const reply=w.tg.calls.findIndex((c,i)=>i>=before&&c.method==='sendMessage'&&c.params['chat_id']===GROUP);
+      expect(reply).toBeGreaterThanOrEqual(before);
+      expect(deletion(w,cmd.message!.message_id)).toBeGreaterThan(reply);
+      expect(w.tg.calls.filter(c=>c.method==='deleteMessage'&&c.params['chat_id']===GROUP&&c.params['message_id']===cmd.message!.message_id)).toHaveLength(1);
+    };
+    await check(2);
+    const normal=groupText(2,'night chat');await w.send(normal);expect(deletion(w,normal.message!.message_id)).toBeGreaterThanOrEqual(0);
+    const unknown=groupText(2,'/unknown_command');await w.send(unknown);expect(deletion(w,unknown.message!.message_id)).toBeGreaterThanOrEqual(0);
+    g.state!.phase='DAY_DISCUSSION';
+    g.state!.players.find(p=>p.id==='3')!.status='DEAD';
+    await check(3);
+    const dead=groupText(3,'dead chat');await w.send(dead);expect(deletion(w,dead.message!.message_id)).toBeGreaterThanOrEqual(0);
+    const original=w.tg.call.bind(w.tg);
+    w.tg.call=async <T=unknown>(method:string,params:Record<string,unknown>={})=>{
+      if(method==='sendMessage'&&params['chat_id']===GROUP)throw new TgError(403,'cannot send');
+      return original<T>(method,params);
+    };
+    const failed=groupText(3,'/status');await w.send(failed);expect(deletion(w,failed.message!.message_id)).toBe(-1);
   });
   it('no deletion on failed response; 429 deletion retries, 403 does not break game',async()=>{
     const w=new World();const original=w.tg.call.bind(w.tg);
