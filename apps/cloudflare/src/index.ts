@@ -472,7 +472,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'top7', description: 'Guruh TOP 20 — 7 kun' },
       { command: 'top30', description: 'Guruh TOP 20 — 30 kun' },
       { command: 'cancelgame', description: 'O‘yinni bekor qilish' },
-      { command: 'settings', description: 'Guruh sozlamalari' },
+      { command: 'settings', description: 'Guruh sozlamalari (admin)' },
+      { command: 'autostart', description: 'Avtostart boshqaruvi (admin)' },
     ],
   });
   const info = await tg.call<{ url: string; pending_update_count: number }>('getWebhookInfo');

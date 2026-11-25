@@ -628,8 +628,10 @@ export class Router {
           if (!r.ok && r.error === 'NEED_DM') {
             const username=await this.d.botUsername();
             if(username) {
-              await this.d.tg.call('answerCallbackQuery',{callback_query_id:cb.id,url:`https://t.me/${username}?start=join_${data.game}`}).catch(()=>undefined);
-              return;
+              try {
+                await this.d.tg.call('answerCallbackQuery',{callback_query_id:cb.id,url:`https://t.me/${username}?start=join_${data.game}`});
+                return;
+              } catch { /* fallback to a normal alert below */ }
             }
           }
           return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && r.error === 'NEED_DM');
