@@ -286,7 +286,6 @@ const ROOM_METHODS = [
   'leave',
   'leaveLobbyForTransfer',
   'start',
-  'syncLobbyTimer',
   'cancel',
   'devFill',
   'nightAction',
@@ -464,7 +463,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },
       { command: 'players', description: 'Ishtirokchilar' },
-      { command: 'gstart', description: 'O‘yinni boshlash' },
+      { command: 'startgame', description: 'O‘yinni boshlash (admin)' },
       { command: 'status', description: 'O‘yin holati' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'mystats', description: 'Mening statistikam' },
@@ -474,7 +473,6 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'top30', description: 'Guruh TOP 20 — 30 kun' },
       { command: 'cancelgame', description: 'O‘yinni bekor qilish' },
       { command: 'settings', description: 'Guruh sozlamalari (admin)' },
-      { command: 'autostart', description: 'Avtostart boshqaruvi (admin)' },
     ],
   });
   const info = await tg.call<{ url: string; pending_update_count: number }>('getWebhookInfo');

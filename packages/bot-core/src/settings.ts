@@ -35,7 +35,7 @@ export function defaultGroupSettings(minPlayers = MIN_PLAYERS_FLOOR): GroupSetti
     verdictSec: 15,
     lobbySec: 180,
     revealRoles: true,
-    autostart: true,
+    autostart: false,
     adminOnlyCreate: false,
     silenceDead: true,
     silenceNight: true,
@@ -68,7 +68,7 @@ export function normalizeSettings(raw: unknown, globalMin = MIN_PLAYERS_FLOOR): 
     verdictSec: clamp(r['verdictSec'], 5, 120, d.verdictSec),
     lobbySec: clamp(r['lobbySec'], 30, 1800, d.lobbySec),
     revealRoles: bool(r['revealRoles'], d.revealRoles),
-    autostart: bool(r['autostart'], d.autostart),
+    autostart: false,
     adminOnlyCreate: false,
     silenceDead: bool(r['silenceDead'], d.silenceDead),
     silenceNight: bool(r['silenceNight'], d.silenceNight),
@@ -93,7 +93,6 @@ export function settingsToConfig(s: GroupSettingsData, mode: GameMode = s.mode, 
 const NIGHT_STEPS = [30, 45, 60, 90, 120, 180];
 const DISCUSSION_STEPS = [30, 60, 90, 120, 180, 300];
 const VOTING_STEPS = [30, 45, 60, 90, 120];
-const LOBBY_STEPS = [30, 60, 90, 120, 180, 240, 300, 600];
 const VERDICT_STEPS = [5, 10, 15, 20, 30, 60];
 
 function nextStep(steps: number[], cur: number): number {
@@ -128,8 +127,7 @@ export function settingsView(s: GroupSettingsData, chatId: number): { text: stri
       [b('gsettings.btn_min_minus', 'min-'), b('gsettings.btn_min_plus', 'min+')],
       [b('gsettings.btn_max_minus', 'max-'), b('gsettings.btn_max_plus', 'max+')],
       [b('gsettings.btn_night', 'night'), b('gsettings.btn_discussion', 'disc'), b('gsettings.btn_voting', 'vote')],
-      [b('gsettings.btn_reveal', 'reveal'), b('gsettings.btn_autostart', 'auto')],
-      [b('gsettings.btn_lobby', 'lobby'), b('gsettings.btn_verdict', 'verdict')],
+      [b('gsettings.btn_reveal', 'reveal'), b('gsettings.btn_verdict', 'verdict')],
       [b('gsettings.btn_silence_dead', 'sdead')],
       [b('gsettings.btn_silence_night', 'snight')],
       [b('gsettings.btn_close', 'close')],
@@ -138,7 +136,7 @@ export function settingsView(s: GroupSettingsData, chatId: number): { text: stri
 }
 
 export function applySettingsOp(s: GroupSettingsData, op: string): GroupSettingsData {
-  const n = { ...s, adminOnlyCreate: false };
+  const n = { ...s, adminOnlyCreate: false, autostart: false };
   switch (op) {
     case 'mode':
       n.mode = SELECTABLE_MODES[(SELECTABLE_MODES.indexOf(s.mode) + 1) % SELECTABLE_MODES.length]!;
@@ -168,13 +166,11 @@ export function applySettingsOp(s: GroupSettingsData, op: string): GroupSettings
       n.revealRoles = !s.revealRoles;
       break;
     case 'auto':
-      n.autostart = !s.autostart;
       break;
     case 'admin':
       n.adminOnlyCreate = false;
       break;
     case 'lobby':
-      n.lobbySec = nextStep(LOBBY_STEPS, s.lobbySec);
       break;
     case 'verdict':
       n.verdictSec = nextStep(VERDICT_STEPS, s.verdictSec);
