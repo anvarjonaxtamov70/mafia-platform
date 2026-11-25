@@ -1,7 +1,14 @@
 import {describe,expect,it} from 'vitest';
 import {World,privateText,callback,GROUP} from './harness';
 import {createGame,heroAttack,seededRng} from '@mafia/game-engine';
+import {shopHomeView,mainMenu} from '@mafia/bot-core';
 describe('single hero and shop',()=>{
+  it('shop has only supported products and no cosmetic or inventory entry',()=>{
+    const data=JSON.stringify(shopHomeView(100,20).keyboard);
+    for(const code of ['SHIELD','FAKE_DOC','VOTE_SHIELD','HERO_SHIELD','m:hero','m:vip'])expect(data).toContain(code);
+    for(const code of ['FRAME','TITLE','inventory','KNIFE','MARKET'])expect(data).not.toContain(code);
+    expect(JSON.stringify(mainMenu(true,true,true))).not.toContain('m:heroes');
+  });
   it('100 diamonds once, owner level isolated, 2 diamond defense, retired cosmetic sales blocked',async()=>{
     const w=new World({ownerBenefits:true});w.admins.add(6);
     for(const id of [1,2,6])await w.send(privateText(id,'/start'));

@@ -40,11 +40,9 @@ export function shopHomeView(coins: number, diamonds = 0): View {
   return {
     text: t('shop.title', { coins, diamonds }),
     keyboard: [
-      [eb('Himoya · 300 💵', 'buy', 'SHIELD'), eb('Hujjat · 200 💵', 'buy', 'FAKE_DOC')],
-      [eb('Ovozdan himoya · 1 💎', 'buy', 'VOTE_SHIELD')],
-      [menuBtn(t('shop.cat.VIP'), 'vip')],
-      [eb('Geroydan himoya · 2 💎', 'buy', 'HERO_SHIELD')],
-      [menuBtn('Geroy · 100 💎', 'hero')],
+      [eb('🛡 Himoya', 'buy', 'SHIELD'), eb('📁 Hujjat', 'buy', 'FAKE_DOC')],
+      [eb('⚖️ Ovozdan himoya', 'buy', 'VOTE_SHIELD'), eb('Geroydan himoya', 'buy', 'HERO_SHIELD')],
+      [menuBtn('Geroy', 'hero'), menuBtn('⭐ VIP', 'vip')],
       backRow(),
     ],
   };

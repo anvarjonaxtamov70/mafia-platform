@@ -394,7 +394,7 @@ describe('Menyu bo‘limlari', () => {
     const w = new World();
     await w.send(privateText(9, '/start'));
     for (const [section, expected] of [
-      ['shop', 'DO‘KONI'],
+      ['shop', 'Do‘kon'],
       ['inventory', 'Dollar'],
       ['vip', 'VIP OBUNA'],
       ['daily', 'KUNLIK MUKOFOT'],

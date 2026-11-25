@@ -65,12 +65,13 @@ describe('Hero v6', () => {
     for (const p of players()) r.claim(p.tgId, GROUP, n);
     expect(r.selectHero(2, 'citizen')).toBe('IN_GAME');
     const result = r.recordGame({ gameId: 'snapshot', number: n, chatId: GROUP, ranked: true, outcome: 'CITY', days: 2, players: players() });
-    expect(result.players.find((p) => p.tgId === 2)?.hero?.code).toBe('doctor');
+    expect(result.players.find((p) => p.tgId === 2)?.hero?.code).toBe('citizen');
     for (let i = 0; i < 8; i++) record(w);
     const a = r.heroAccount(2);
     expect(a.totalXp).toBe(HERO_DAILY_CAP);
     expect(a.todayXp).toBe(HERO_DAILY_CAP);
-    expect(a.heroes.find((h) => h.code === 'doctor')?.xp).toBe(200);
+    expect(a.heroes.find((h) => h.code === 'citizen')?.xp).toBe(300);
+    expect(r.singleHero(2).totalXp).toBe(300);
     w.now += 24 * 60 * 60_000;
     expect(r.heroAccount(2).todayXp).toBe(0);
     record(w);
