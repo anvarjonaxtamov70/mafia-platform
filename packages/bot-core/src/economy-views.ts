@@ -120,6 +120,9 @@ export function inventoryView(inv: InventoryInfo): View {
 // ───────────────────────────── VIP ─────────────────────────────
 
 export function vipView(w: WalletInfo, o: { starsAllowed: boolean; isAdmin: boolean }): View {
+  if (w.permanentOwner) {
+    return { text: t('owner.vip'), keyboard: [...(o.starsAllowed && o.isAdmin ? [[eb(t('vip.btn_test'), 'star', 'TEST_1')]] : []), [menuBtn(t('menu.shop'), 'shop')], backRow()] };
+  }
   const until = w.tier === 'VIP_PRO' ? w.proUntil : w.tier === 'VIP' ? w.vipUntil : null;
   const vip = starsProduct('VIP_30')!;
   const pro = starsProduct('VIP_PRO_30')!;

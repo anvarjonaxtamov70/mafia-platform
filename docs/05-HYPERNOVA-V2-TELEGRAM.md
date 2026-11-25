@@ -19,3 +19,9 @@ Mini App va web admin rejalashtirilmagan. Mavjud GameEngine, iqtisodiyot va stor
 4. Telegram admin panel, turnir/mavsum, klan/do‘stlar, VIP sovg‘alar. Real Stars testdan oldin STARS_MODE=all qilinmasin.
 
 Har bosqichda lint, typecheck, unit, integration, Cloudflare E2E; production merge alohida qaror.
+
+## Owner benefits policy
+- Faqat serverdagi ADMIN_IDS ro‘yxatidagi superadminlar: doimiy VIP PRO va cheksiz xarid huquqi (1 milliard virtual Coins ko‘rinadi, xaridda kamaymaydi). Real ledgerga virtual pul kiritilmaydi. Oddiy guruh adminlari bunday imtiyoz olmaydi. Stars to‘lovlari va refund yozuvlari o‘zgarmaydi.
+- Pichoq va XCoin katalogga kiritilmaydi. Olmos hozir alohida valyuta emas; keyinchalik joriy qilinsa owner imtiyozi alohida tatbiq etiladi. Real Stars hech qachon sun’iy ko‘paytirilmaydi.
+- Ranked rejimdagi o‘yin qoidalari hamma uchun bir xil. Arcade buyumlari faqat mavjud reytingsiz Arcade rejimida ishlaydi.
+- Amaldagi Cloudflare iqtisodiyoti uchun; VPS iqtisodiyoti hali alohida ish.

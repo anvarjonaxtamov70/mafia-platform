@@ -773,6 +773,7 @@ export class Router {
     if (!product) return this.answer(cb, t('cb.stale'));
     if (!this.starsAllowed(id)) return this.answer(cb, t('pay.disabled'), true);
     if (product.adminOnly && !this.isSuperadmin(id)) return this.answer(cb, t('pay.admin_only'), true);
+    if (!product.adminOnly && (await this.d.registry.wallet(id)).permanentOwner) return this.answer(cb, t('owner.already_vip'), true);
     const order = await this.d.registry.createOrder(id, code);
     if (!order.ok) return this.answer(cb, t('common.error'));
     const title = t(`invoice.${code}.title`);
@@ -796,6 +797,7 @@ export class Router {
     const r = await this.d.registry.checkOrder(q.invoice_payload, q.from.id, q.total_amount, q.currency);
     if (!r.ok) return void (await deny(t('pay.precheck_failed')));
     if (r.product.adminOnly && !this.isSuperadmin(q.from.id)) return void (await deny(t('pay.admin_only')));
+    if (!r.product.adminOnly && (await this.d.registry.wallet(q.from.id)).permanentOwner) return void (await deny(t('owner.already_vip')));
     await this.d.tg.call('answerPreCheckoutQuery', { pre_checkout_query_id: q.id, ok: true });
   }
 

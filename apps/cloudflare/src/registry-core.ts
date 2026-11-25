@@ -170,8 +170,9 @@ export class RegistryCore {
   constructor(
     private readonly sql: Sql,
     private readonly clock: () => number = Date.now,
+    owners: ReadonlySet<number> = new Set<number>(),
   ) {
-    this.eco = new EconomyCore(sql, clock);
+    this.eco = new EconomyCore(sql, clock, undefined, owners);
   }
 
   migrate(): void {
@@ -469,7 +470,7 @@ export class RegistryCore {
     const until = w.tier === 'VIP_PRO' ? w.proUntil : w.vipUntil;
     const extra = t('profile.extra', {
       coins: w.coins,
-      tier: t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' }),
+      tier: w.permanentOwner ? t('owner.tier') : t(`profile.tier_line.${w.tier}`, { date: until ? formatDate(until) : '' }),
       title: title ? t('profile.title_line', { emoji: title.emoji, name: t(`item.${title.code}`) }) : '',
     });
     const header = frame ? `${t('profile.frame_top', { emoji: frame.emoji })}\n` : '';

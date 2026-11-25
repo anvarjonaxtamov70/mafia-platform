@@ -144,7 +144,17 @@ export class EconomyCore {
     private readonly sql: Sql,
     private readonly clock: () => number = Date.now,
     private readonly randomId: () => string = defaultRandomId,
+    private readonly owners: ReadonlySet<number> = new Set<number>(),
   ) {}
+
+  isOwner(tgId: number): boolean {
+    return this.owners.has(tgId);
+  }
+
+  /** Virtual owner allowance; never minted into the transferable/earned ledger. */
+  spendableCoins(tgId: number): number {
+    return this.isOwner(tgId) ? 1_000_000_000 : this.coins(tgId);
+  }
 
   migrate(): void {
     for (const q of ECONOMY_SCHEMA) this.sql.exec(q);
@@ -212,7 +222,7 @@ export class EconomyCore {
         if (r.active) tier = 'VIP_PRO';
       }
     }
-    return { tier, vipUntil, proUntil };
+    return { tier: this.isOwner(tgId) ? 'VIP_PRO' : tier, vipUntil, proUntil };
   }
 
   wallet(tgId: number): WalletInfo {
@@ -223,7 +233,7 @@ export class EconomyCore {
       const it = code ? catalogItem(code) : undefined;
       return it && isAvailable(it, { tier: tiers.tier, items }) ? code! : null;
     };
-    return { coins: w?.coins ?? 0, frame: ok(w?.frame), title: ok(w?.title), ...tiers };
+    return { coins: this.isOwner(tgId) ? this.spendableCoins(tgId) : w?.coins ?? 0, frame: ok(w?.frame), title: ok(w?.title), ...tiers, ...(this.isOwner(tgId) ? { permanentOwner: true } : {}) };
   }
 
   private items(tgId: number): InventoryInfo['items'] {
@@ -240,18 +250,19 @@ export class EconomyCore {
 
   buy(tgId: number, code: string, idem: string): BuyResult {
     const item = catalogItem(code);
-    if (!item) return { ok: false, error: 'UNKNOWN', balance: this.coins(tgId) };
-    if (item.price === null) return { ok: false, error: 'TIER_ONLY', balance: this.coins(tgId) };
+    if (!item) return { ok: false, error: 'UNKNOWN', balance: this.spendableCoins(tgId) };
+    if (item.price === null) return { ok: false, error: 'TIER_ONLY', balance: this.spendableCoins(tgId) };
     const price = item.price;
     return this.sql.tx((): BuyResult => {
-      if (this.one(`SELECT 1 AS x FROM wallet_tx WHERE idem = ?`, idem)) return { ok: true, balance: this.coins(tgId), code };
+      if (this.one(`SELECT 1 AS x FROM wallet_tx WHERE idem = ?`, idem)) return { ok: true, balance: this.spendableCoins(tgId), code };
       const owned = this.one<{ qty: number }>(`SELECT qty FROM inventory WHERE telegram_id = ? AND item = ?`, tgId, code)?.qty ?? 0;
-      if (item.kind !== 'ARCADE' && owned > 0) return { ok: false, error: 'OWNED', balance: this.coins(tgId) };
+      if (item.kind !== 'ARCADE' && owned > 0) return { ok: false, error: 'OWNED', balance: this.spendableCoins(tgId) };
       let balance: number;
       try {
-        balance = this.credit(tgId, -price, 'PURCHASE', code, idem).balance;
+        this.credit(tgId, this.isOwner(tgId) ? 0 : -price, this.isOwner(tgId) ? 'OWNER_PURCHASE' : 'PURCHASE', code, idem);
+        balance = this.spendableCoins(tgId);
       } catch (e) {
-        if (e instanceof InsufficientFunds) return { ok: false, error: 'INSUFFICIENT', balance: this.coins(tgId), price };
+        if (e instanceof InsufficientFunds) return { ok: false, error: 'INSUFFICIENT', balance: this.spendableCoins(tgId), price };
         throw e;
       }
       this.sql.exec(
@@ -299,7 +310,7 @@ export class EconomyCore {
       );
       return { ...q, progress: r?.progress ?? 0, claimed: r?.claimed_at != null };
     });
-    return { coins: this.coins(tgId), claimedToday, nextAmount: dailyAmount(nextStreak), nextStreak, quests };
+    return { coins: this.spendableCoins(tgId), claimedToday, nextAmount: dailyAmount(nextStreak), nextStreak, quests };
   }
 
   claimDaily(tgId: number): ClaimDailyResult {
@@ -310,8 +321,8 @@ export class EconomyCore {
       const streak = last && last.day === prevDay(today) ? last.streak + 1 : 1;
       const amount = dailyAmount(streak);
       this.sql.exec(`INSERT INTO daily_claims (telegram_id, day, streak, amount, created_at) VALUES (?, ?, ?, ?, ?)`, tgId, today, streak, amount, this.clock());
-      const { balance } = this.credit(tgId, amount, 'DAILY', today, `daily:${tgId}:${today}`);
-      return { ok: true, amount, streak, balance };
+      this.credit(tgId, amount, 'DAILY', today, `daily:${tgId}:${today}`);
+      return { ok: true, amount, streak, balance: this.spendableCoins(tgId) };
     });
   }
 
@@ -347,8 +358,8 @@ export class EconomyCore {
         def.target,
       );
       if (claimed.length === 0) return { ok: false as const };
-      const { balance } = this.credit(tgId, def.reward, 'QUEST', code, `quest:${tgId}:${day}:${code}`);
-      return { ok: true as const, reward: def.reward, balance };
+      this.credit(tgId, def.reward, 'QUEST', code, `quest:${tgId}:${day}:${code}`);
+      return { ok: true as const, reward: def.reward, balance: this.spendableCoins(tgId) };
     });
   }
 

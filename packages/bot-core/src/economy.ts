@@ -159,7 +159,9 @@ export function parseRefPayload(payload: string): number | null {
 // ───────────────────────────── Ko'rinishlar uchun ma'lumot ─────────────────────────────
 
 export interface WalletInfo {
+  /** Effective display balance; owner allowance is not part of the earned ledger. */
   coins: number;
+  permanentOwner?: boolean;
   frame: string | null;
   title: string | null;
   tier: Tier;

@@ -38,6 +38,10 @@ function telegram(env: Env): Telegram {
   return new TelegramClient(env.BOT_TOKEN, env.TELEGRAM_API || 'https://api.telegram.org');
 }
 
+function ownerIds(env: Env): ReadonlySet<number> {
+  return new Set((env.ADMIN_IDS ?? '').split(',').map((x) => Number(x.trim())).filter((x) => Number.isSafeInteger(x) && x > 0));
+}
+
 function registryStub(env: Env) {
   return env.REGISTRY.get(env.REGISTRY.idFromName('global'));
 }
@@ -67,7 +71,7 @@ export class Registry extends DurableObject<Env> {
       // transactionSync: xato bo'lsa hamma o'zgarishlar bekor qilinadi
       tx: reentrantTx((fn) => ctx.storage.transactionSync(fn)),
     };
-    this.core = new RegistryCore(sql);
+    this.core = new RegistryCore(sql, Date.now, ownerIds(env));
     void ctx.blockConcurrencyWhile(async () => this.core.migrate());
   }
 
@@ -330,7 +334,7 @@ function getRouter(env: Env): Router {
       tg: telegram(env),
       registry: registryStub(env) as unknown as RegistryApi,
       room: (chatId) => roomApi(env, chatId),
-      admins: new Set((env.ADMIN_IDS ?? '').split(',').map((x) => Number(x.trim())).filter((x) => Number.isInteger(x) && x > 0)),
+      admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
