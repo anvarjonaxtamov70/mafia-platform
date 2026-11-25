@@ -28,6 +28,7 @@ export interface Env {
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
+  VISUAL_MEDIA?: string;
   /** Telegram Stars: off | admins | all (standart: admins) */
   STARS_MODE?: string;
   /** Faqat testlar: soxta Telegram API manzili */
@@ -321,6 +322,7 @@ export class GameRoom extends DurableObject<Env> {
       rng: cryptoRng,
       botUsername: () => cachedUsername ?? env.BOT_USERNAME ?? '',
       devFakePlayers: env.DEV_FAKE_PLAYERS === 'true',
+      visuals: env.VISUAL_MEDIA !== 'false',
       reportRegistryFailure: () => this.ctx.waitUntil(reportFailure(env, 'registry')),
     };
   }
@@ -385,6 +387,7 @@ function getRouter(env: Env): Router {
       room: (chatId) => roomApi(env, chatId),
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
+      visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
       now: Date.now,
@@ -433,6 +436,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
       { command: 'characters', description: 'Personajlar katalogi' },
+      { command: 'intro', description: 'Hypernova animatsiyasi' },
       { command: 'guide', description: 'Boshlovchilar qo‘llanmasi' },
       { command: 'help', description: 'Yordam' },
       { command: 'support', description: 'Yordam so‘rash' },

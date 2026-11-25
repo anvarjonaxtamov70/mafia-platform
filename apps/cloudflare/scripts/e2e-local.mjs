@@ -22,19 +22,35 @@ const secret = createHash('sha256').update(`mafia-webhook|${TOKEN}`).digest('hex
 const calls = [];
 let nextId = 1;
 const tg = createServer((req, res) => {
-  let body = '';
-  req.on('data', (c) => (body += c));
-  req.on('end', () => {
+  const parts = [];
+  req.on('data', (c) => parts.push(c));
+  req.on('end', async () => {
+    try {
     const method = req.url.split('/').pop();
-    const params = body ? JSON.parse(body) : {};
+    const raw = Buffer.concat(parts);
+    const multipart = String(req.headers['content-type']).includes('multipart/form-data');
+    let params;
+    if (multipart) {
+      const form = await new Response(raw, { headers: { 'content-type': req.headers['content-type'] } }).formData();
+      const media = form.get(method === 'sendAnimation' ? 'animation' : 'photo');
+      const bytes = media instanceof Blob ? Buffer.from(await media.arrayBuffer()) : Buffer.alloc(0);
+      params = { chat_id: Number(form.get('chat_id')), png: bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), gif: bytes.subarray(0, 6).equals(Buffer.from('GIF89a')) };
+    } else {
+      params = raw.length ? JSON.parse(raw.toString('utf8')) : {};
+    }
     calls.push({ method, params });
     let result = true;
-    if (method === 'sendMessage' || method === 'sendInvoice') result = { message_id: nextId++ };
+    if (method === 'sendMessage' || method === 'sendInvoice' || method === 'sendPhoto' || method === 'sendAnimation') result = { message_id: nextId++ };
     if (method === 'getMe') result = { id: 1, is_bot: true, first_name: 'Mafia', username: 'e2e_mafia_bot' };
     if (method === 'getChatMember') result = { status: params.user_id === 1 ? 'creator' : 'member' };
     if (method === 'getWebhookInfo') result = { url: 'x', pending_update_count: 0 };
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ ok: true, result }));
+    } catch (e) {
+      console.error('Fake Telegram request parse failed:', e.name);
+      res.statusCode = 400;
+      res.end(JSON.stringify({ ok: false, error_code: 400, description: 'test request parse failure' }));
+    }
   });
 });
 await new Promise((r) => tg.listen(TG_PORT, '127.0.0.1', r));
@@ -112,8 +128,13 @@ try {
   check((await raw(JSON.stringify({ update_id: 10, message: { chat: null } }))).status === 400, 'malformed message rejected');
   check((await raw(JSON.stringify({ update_id: 11, pad: 'x'.repeat(300_000) }))).status === 413, 'oversized update rejected');
 
+  // Diagnose the common outbound transport before cascading into unrelated scenarios.
+  const probe = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': setupSecret } });
+  const probeData = await probe.json();
+  if (!calls.some((c) => c.method === 'getWebhookInfo')) throw new Error('outbound Telegram probe failed: ' + JSON.stringify({ registry: probeData.registry?.ok, room: probeData.room?.ok, webhook: probeData.webhook }));
   const players = [1, 2, 3, 4, 5];
   for (const p of players) await pm(p, '/start');
+  if (!texts(1).some((t) => t.includes('MAFIA GAME'))) throw new Error('start menu missing: methods=' + calls.map((c) => c.method).join(','));
   check(texts(1).some((t) => t.includes('MAFIA GAME')), '/start bosh menyu');
   const replay = { update_id: 900001, message: { message_id: 900001, chat: { id: 5, type: 'private' }, from: user(5), text: '/profile' } };
   const beforeReplay = texts(5).length;
@@ -121,6 +142,10 @@ try {
   await send(replay);
   check(texts(5).length === beforeReplay + 1, 'identical update ID processed once');
 
+  await cb(4, 'm:art_don');
+  check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === 4 && c.params.png), 'role card is valid multipart PNG');
+  await pm(5, '/intro');
+  check(calls.some((c) => c.method === 'sendAnimation' && c.params.chat_id === 5 && c.params.gif), 'intro is valid multipart GIF');
   await gm(1, '/game');
   await sleep(1500);
   const lobbyMsg = calls.find((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA'));
@@ -132,6 +157,7 @@ try {
   for (const p of players) check(texts(p).some((t) => t.includes('SIZNING ROLINGIZ')), `o‘yinchi ${p} ga rol yuborildi`);
   check(!texts(GROUP).some((t) => t.includes('SIZNING ROLINGIZ')), 'guruhga rol oshkor qilinmadi');
   check(texts(GROUP).some((t) => t.includes('TUN BOSHLANDI')), 'tun boshlandi');
+  check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === GROUP && c.params.png), 'public game start card');
 
   // O'yin: hamma tunda o'tkazadi, bosqichlar test hook bilan tezlashtiriladi
   for (let round = 0; round < 80; round++) {
@@ -211,7 +237,7 @@ try {
 } catch (e) {
   failures++;
   console.error('E2E error:', e.message);
-  console.error(log.slice(-3000));
+  console.error(log.slice(-12000));
 } finally {
   wrangler.kill('SIGTERM');
   tg.close();

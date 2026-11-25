@@ -27,6 +27,9 @@ new_sqlite_classes = ["GameRoom", "Registry"]
 "@mafia/localization" = "../../packages/localization/src/index.ts"
 "@mafia/bot-core" = "../../packages/bot-core/src/index.ts"
 
+[build]
+command = "node scripts/generate-visuals.mjs"
+
 [observability]
 enabled = true
 
@@ -41,6 +44,7 @@ crons = ["*/15 * * * *"]
 [vars]
 ADMIN_IDS = "5105291033,7184608742"
 DEV_FAKE_PLAYERS = "false"
+VISUAL_MEDIA = "true"
 STARS_MODE = "admins"
 
 # Sir (GitHub Actions orqali shifrlangan holda yoziladi): BOT_TOKEN

@@ -461,5 +461,8 @@
   "history.left": "Chiqib ketgan",
   "period.weekly": "🏆 <b>HAFTALIK TOP 10</b>",
   "period.monthly": "🏆 <b>OYLIK TOP 10</b>",
-  "period.info": "G‘alabalar bo‘yicha. Toshkent vaqti, hafta dushanbadan boshlanadi. Mashq, AFK va tark etilgan o‘yinlar hisoblanmaydi."
+  "period.info": "G‘alabalar bo‘yicha. Toshkent vaqti, hafta dushanbadan boshlanadi. Mashq, AFK va tark etilgan o‘yinlar hisoblanmaydi.",
+  "visual.card_button": "🎨 Personaj kartasi",
+  "visual.intro_button": "✦ Hypernova animatsiyasi",
+  "visual.unavailable": "🎨 Vizual vaqtincha yuklanmadi. O‘yin va matnli menyular ishlashda davom etadi."
 }

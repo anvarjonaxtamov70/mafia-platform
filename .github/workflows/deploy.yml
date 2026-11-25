@@ -30,6 +30,7 @@ jobs:
       ADMIN_IDS: ${{ vars.ADMIN_IDS }}
       DEV_FAKE_PLAYERS: ${{ vars.DEV_FAKE_PLAYERS }}
       STARS_MODE: ${{ vars.STARS_MODE }}
+      VISUAL_MEDIA: ${{ vars.VISUAL_MEDIA }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
@@ -54,7 +55,7 @@ jobs:
         working-directory: apps/cloudflare
         run: |
           args=()
-          for k in ADMIN_IDS DEV_FAKE_PLAYERS STARS_MODE; do
+          for k in ADMIN_IDS DEV_FAKE_PLAYERS STARS_MODE VISUAL_MEDIA; do
             v="${!k}"
             if [ -n "$v" ]; then args+=(--var "$k:$v"); fi
           done

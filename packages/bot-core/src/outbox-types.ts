@@ -3,7 +3,7 @@ export type Button = { text: string; callback_data: string } | { text: string; u
 export type Keyboard = Button[][];
 
 export type OutboxPayload =
-  | { kind: 'SEND'; text: string; keyboard?: Keyboard }
+  | { kind: 'SEND'; text: string; keyboard?: Keyboard; visual?: string }
   /** refKey — oldin yuborilgan xabar (message_refs) */
   | { kind: 'EDIT'; refKey: string; text: string; keyboard?: Keyboard }
   | { kind: 'CLEAR_KEYBOARD'; refKey: string }

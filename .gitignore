@@ -10,3 +10,5 @@ packages/database/src/generated/
 .DS_Store
 .wrangler/
 .dev.vars
+
+apps/cloudflare/src/generated/
