@@ -897,7 +897,7 @@ export class RoomCore {
     }
     await this.processOps();
     await this.processLobbyTasks(4);
-    await this.flush(Math.max(0, SEND_BUDGET - this.externalCalls - 4));
+    await this.flush(Math.max(0, SEND_BUDGET - this.externalCalls - 8));
     await this.processLobbyTasks(4);
     await this.commit();
   }
