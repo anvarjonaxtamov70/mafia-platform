@@ -56,7 +56,7 @@ describe('group command cleanup',()=>{
     expect(deletion(w,start.message!.message_id)).toBeGreaterThan(sent);
     const beforeCancel=w.tg.calls.length;
     const cancel=groupText(1,'/cancelgame');await w.send(cancel);
-    expect((await w.loaded(GROUP)).data.game?.status).toBeNull();
+    expect((await w.loaded(GROUP)).data.game).toBeNull();
     const cancelReply=w.tg.calls.findIndex((c,i)=>i>=beforeCancel&&c.method==='sendMessage'&&c.params['chat_id']===GROUP&&String(c.params['text']).includes('administrator tomonidan bekor qilindi'));
     expect(cancelReply).toBeGreaterThanOrEqual(beforeCancel);
     expect(deletion(w,cancel.message!.message_id)).toBeGreaterThan(cancelReply);
