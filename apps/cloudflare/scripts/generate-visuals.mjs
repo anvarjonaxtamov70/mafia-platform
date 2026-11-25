@@ -74,7 +74,7 @@ function art(title,category,number,paths){
  b.text(category==='BRAND'?'HYPERNOVA SERIES':category,256,286,2,c);
  return b.data;
 }
-let crcTable=Array.from({length:256},(_,i)=>{let v=i;for(let k=0;k<8;k++)v=(v>>>1)^((v&1)?0xedb88320:0);return v>>>0;});
+const crcTable=Array.from({length:256},(_,i)=>{let v=i;for(let k=0;k<8;k++)v=(v>>>1)^((v&1)?0xedb88320:0);return v>>>0;});
 function chunk(name,data){
  const n=Buffer.from(name),head=Buffer.alloc(4),tail=Buffer.alloc(4);head.writeUInt32BE(data.length);let crc=0xffffffff;
  for(const v of Buffer.concat([n,data]))crc=(crc>>>8)^crcTable[(crc^v)&255];tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([head,n,data,tail]);

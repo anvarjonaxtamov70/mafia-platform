@@ -11,9 +11,9 @@ export function visualBlob(key: string): Blob | null {
 
 /** Decorative only: never retry or prevent text/game delivery on media failure. */
 export async function sendVisual(tg: Telegram, chatId: number, key: string, caption?: string): Promise<boolean> {
-  const file = visualBlob(key);
-  if (!file) return false;
   try {
+    const file = visualBlob(key);
+    if (!file) return false;
     const animation = key === 'intro';
     await tg.call(animation ? 'sendAnimation' : 'sendPhoto', {
       chat_id: chatId,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { inflateSync } from 'node:zlib';
 import { ROLE_CODES } from '@mafia/game-engine';
 import { learningView } from '@mafia/bot-core';
 import { sendVisual, visualBlob } from '../visuals';
@@ -13,6 +14,16 @@ describe('Visual v5', () => {
       expect(blob.type).toBe('image/png');
       const data = new Uint8Array(await blob.arrayBuffer());
       expect([...data.slice(0,8)]).toEqual([137,80,78,71,13,10,26,10]);
+      const png = Buffer.from(data);
+      expect(png.readUInt32BE(16)).toBe(512);
+      expect(png.readUInt32BE(20)).toBe(320);
+      const compressed: Buffer[] = [];
+      for (let at = 8; at + 12 <= png.length;) {
+        const length = png.readUInt32BE(at);
+        if (png.toString('ascii', at + 4, at + 8) === 'IDAT') compressed.push(png.subarray(at + 8, at + 8 + length));
+        at += length + 12;
+      }
+      expect(inflateSync(Buffer.concat(compressed)).length).toBe((512 * 3 + 1) * 320);
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
       hashes.add(Buffer.from(digest).toString('hex'));
       expect(learningView('role_' + role.toLowerCase(), true)?.keyboard.flat().some((b) => 'callback_data' in b && b.callback_data === 'm:art_' + role.toLowerCase())).toBe(true);
@@ -23,6 +34,47 @@ describe('Visual v5', () => {
     const gif = new Uint8Array(await visualBlob('intro')!.arrayBuffer());
     expect(Buffer.from(gif.slice(0,6)).toString()).toBe('GIF89a');
     expect(gif.at(-1)).toBe(0x3b);
+    // Parse frames and verify the actual pixel-code count, not only the file header.
+    const raw = Buffer.from(gif);
+    const width = raw.readUInt16LE(6), height = raw.readUInt16LE(8);
+    expect([width, height]).toEqual([256, 144]);
+    let offset = 13 + 3 * (2 ** ((raw[10]! & 7) + 1));
+    let frames = 0;
+    while (raw[offset] !== 0x3b && offset < raw.length) {
+      const tag = raw[offset++]!;
+      if (tag === 0x21) {
+        offset++;
+        while (raw[offset]) offset += 1 + raw[offset]!;
+        offset++;
+        continue;
+      }
+      expect(tag).toBe(0x2c);
+      const flags = raw[offset + 8]!;
+      offset += 9;
+      if (flags & 0x80) offset += 3 * (2 ** ((flags & 7) + 1));
+      expect(raw[offset++]).toBe(4);
+      const blocks: Buffer[] = [];
+      while (raw[offset]) {
+        const n = raw[offset++]!;
+        blocks.push(raw.subarray(offset, offset + n));
+        offset += n;
+      }
+      offset++;
+      const codes = Buffer.concat(blocks);
+      let pixels = 0, ended = false;
+      for (let bit = 0; bit + 5 <= codes.length * 8; bit += 5) {
+        const at = bit >> 3;
+        const code = (((codes[at] ?? 0) | ((codes[at + 1] ?? 0) << 8)) >> (bit & 7)) & 31;
+        if (code === 17) { ended = true; break; }
+        if (code === 16) continue;
+        expect(code).toBeLessThan(16);
+        pixels++;
+      }
+      expect(ended).toBe(true);
+      expect(pixels).toBe(width * height);
+      frames++;
+    }
+    expect(frames).toBe(8);
   });
   it('uses actual multipart uploads without adding JSON content type', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
