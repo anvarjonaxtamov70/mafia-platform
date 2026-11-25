@@ -3,6 +3,22 @@ import {World,privateText,callback,GROUP} from './harness';
 import {createGame,heroAttack,seededRng} from '@mafia/game-engine';
 import {shopHomeView,mainMenu} from '@mafia/bot-core';
 describe('single hero and shop',()=>{
+  it('currency purchase placeholders render a valid keyboard and do not charge',async()=>{
+    const w=new World();
+    await w.send(privateText(2,'/start'));
+    for(const section of ['buy_dollars','buy_diamonds']){
+      await w.send(callback(2,'m:'+section));
+      const edit=w.tg.calls.filter(c=>c.method==='editMessageText').at(-1);
+      expect(edit?.params['text']).toContain('hali tasdiqlanmagan');
+      const markup=edit?.params['reply_markup'] as {inline_keyboard: unknown[][]};
+      expect(markup.inline_keyboard).toHaveLength(1);
+      expect(Array.isArray(markup.inline_keyboard[0])).toBe(true);
+      expect(markup.inline_keyboard[0]).toEqual([expect.objectContaining({callback_data:'m:home'})]);
+    }
+    expect(w.registryCore.eco.coins(2)).toBe(0);
+    expect(w.registryCore.eco.diamonds(2)).toBe(0);
+    expect(w.tg.calls.some(c=>c.method==='sendInvoice')).toBe(false);
+  });
   it('shop has only supported products and no cosmetic or inventory entry',()=>{
     const data=JSON.stringify(shopHomeView(100,20).keyboard);
     for(const code of ['SHIELD','FAKE_DOC','VOTE_SHIELD','HERO_SHIELD','m:hero','m:vip'])expect(data).toContain(code);

@@ -680,7 +680,7 @@ export class Router {
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
     if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
     if (section.startsWith('pick_')) { const v=await this.heroSection(from.id,'hero'); return this.edit(cb,v.text,v.keyboard); }
-    if (section === 'buy_dollars' || section === 'buy_diamonds') return this.edit(cb,t('currency.packs_pending'),backRow());
+    if (section === 'buy_dollars' || section === 'buy_diamonds') return this.edit(cb,t('currency.packs_pending'),[backRow()]);
     if (section === 'hero' || section === 'heroes' || section === 'herotop' || section.startsWith('hero_')) {
       const v = await this.heroSection(from.id, section);
       return this.edit(cb, v.text, v.keyboard);
