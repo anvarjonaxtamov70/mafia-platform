@@ -240,7 +240,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
     if (!r.ok && r.error !== 'DM_FAILED') await replyHtml(ctx, lobbyErrorText(r.error, r.details));
   });
 
-  grp.command('cancelgame', async (ctx) => {
+  grp.command(['stop', 'cancelgame'], async (ctx) => {
     if (!ctx.from) return;
     const r = await lobby.cancel({ chatId: ctx.chat.id }, { telegramId: BigInt(ctx.from.id), isAdmin: await isAdminCtx(ctx) });
     if (!r.ok) await replyHtml(ctx, lobbyErrorText(r.error));
@@ -540,7 +540,7 @@ export async function registerCommands(bot: Bot): Promise<void> {
       { command: 'rules', description: 'Qoidalar' },
       { command: 'mystats', description: 'Mening statistikam' },
       { command: 'leaderboard', description: 'Guruh reytingi' },
-      { command: 'cancelgame', description: 'O‘yinni bekor qilish' },
+      { command: 'stop', description: 'O‘yinni to‘xtatish (admin)' },
       { command: 'settings', description: 'Guruh sozlamalari' },
     ],
     { scope: { type: 'all_group_chats' } },

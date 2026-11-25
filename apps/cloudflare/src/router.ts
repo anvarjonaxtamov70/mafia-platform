@@ -463,9 +463,9 @@ export class Router {
     const c = await this.parseCommand(m.text);
     // Handled commands use response-linked cleanup, not immediate night/dead deletion.
     // Unsupported commands still follow ordinary moderation.
-    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','cancelgame','settings','devfill'].includes(c.cmd);
+    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill'].includes(c.cmd);
     if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous) || !handled ||
-        (anonymous && !['game','quick','startgame','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) ||
+        (anonymous && !['game','quick','startgame','stop','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) ||
         (c.cmd === 'devfill' && (!this.d.devFake || !this.isSuperadmin(from.id)))) {
       await this.silenceCheck(m, !!c);
       return;
@@ -528,6 +528,7 @@ export class Router {
         if (!r.ok && r.error !== 'DM_FAILED') return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
+      case 'stop':
       case 'cancelgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
         const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true, ...(replyTo ? {commandMessageId:replyTo}:{}) });
