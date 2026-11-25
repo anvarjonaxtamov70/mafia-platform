@@ -54,7 +54,7 @@ describe('Lobby (§3.4–3.5)', () => {
     expect(await s.lobby.start({number:r.number},{telegramId:1n,isAdmin:false})).toMatchObject({ok:false,error:'NO_PERMISSION'});
     expect(await s.lobby.cancel({number:r.number},{telegramId:1n,isAdmin:false})).toMatchObject({ok:false,error:'NO_PERMISSION'});
   });
-  it('lobby yaratiladi, outbox ga lobby xabari yoziladi, taymer rejalashtiriladi', async () => {
+  it('manual lobby writes registration outbox without scheduling a timer', async () => {
     const s = makeServices(db);
     await s.users.upsert(tgUser(1), { dmOpened: true });
     const r = await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(1), isAdmin: true });
@@ -64,7 +64,10 @@ describe('Lobby (§3.4–3.5)', () => {
     const out = await db.outboxMessage.findMany();
     expect(out).toHaveLength(1);
     expect(out[0]!.storeRefAs).toBe(`lobby:${r.gameId}`);
-    expect(s.timers.jobs[0]!.phaseSeq).toBe(0);
+    expect(s.timers.jobs).toHaveLength(0);
+    const game = await db.game.findUniqueOrThrow({ where: { id: r.gameId } });
+    expect(game.status).toBe('LOBBY');
+    expect(game.phaseDeadlineAt).toBeNull();
   });
 
   it('guruhda bir vaqtda faqat bitta faol o‘yin', async () => {
@@ -152,6 +155,11 @@ describe('Lobby (§3.4–3.5)', () => {
     expect(g.status).toBe('LOBBY');
     expect(await s.lobby.start({number},'auto')).toMatchObject({ok:false,error:'NO_PERMISSION'});
     expect((await s.lobby.start({number},{telegramId:1000n,isAdmin:true})).ok).toBe(true);
+    const running = await stateOf(db, gameId);
+    expect(running.status).toBe('RUNNING');
+    expect(running.phaseEndsAt).not.toBeNull();
+    expect(s.timers.jobs).toHaveLength(1);
+    expect(s.timers.jobs[0]!.phaseSeq).toBe(running.phaseSeq);
   });
 });
 
