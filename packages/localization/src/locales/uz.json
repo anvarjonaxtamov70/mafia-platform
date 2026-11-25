@@ -9,7 +9,7 @@
   "common.only_private": "Bu buyruq faqat bot bilan shaxsiy chatda ishlaydi.",
   "common.only_group": "Bu buyruq faqat guruhda ishlaydi.",
   "common.banned": "⛔ Siz bot o‘yinlaridan cheklangansiz.",
-  "menu.welcome": "🎭 <b>MAFIA GAME</b>\n\nMafia olamiga xush kelibsiz, {name}!\n\nBu yerda siz:\n• Mafia o‘yinlarida qatnashasiz\n• Maxsus rollarni bajarasiz\n• Darajangizni oshirasiz\n• Mukofotlar olasiz\n• Do‘stlaringiz bilan bellashasiz\n\n━━━━━━━━━━━━━━━━",
+  "menu.welcome": "<b>HYPERNOVA MAFIA GAME</b>\n\nXush kelibsiz, {name}!\nO‘yinga tayyormisiz?",
   "menu.play": "🎮 O‘yin boshlash",
   "menu.profile": "👤 Mening profilim",
   "menu.rating": "🏆 Reyting",

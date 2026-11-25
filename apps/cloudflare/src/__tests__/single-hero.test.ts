@@ -73,3 +73,24 @@ describe('single hero and shop',()=>{
     expect(heroAttack(make('CLASSIC'),'1','2',2,rng,seq).ok).toBe(false);
   });
 });
+
+
+describe('Compact home menu v10', () => {
+  it('shows only nine requested home buttons in six rows', () => {
+    const expected = [['m:play'], ['m:profile', 'm:hero'], ['m:shop', 'm:vip'], ['m:invite'], ['m:characters', 'm:settings'], ['m:help']];
+    for (const competition of [false, true]) for (const visuals of [false, true]) {
+      expect(mainMenu(competition, visuals, true).map(row => row.map(b => 'callback_data' in b ? b.callback_data : null))).toEqual(expected);
+    }
+  });
+  it('start and back return the compact home without obsolete account level text', async () => {
+    const w = new World();
+    await w.send(privateText(2, '/start'));
+    const message = w.tg.calls.filter(c => c.method === 'sendMessage' && c.params['chat_id'] === 2).at(-1);
+    const markup = message?.params['reply_markup'] as { inline_keyboard: { callback_data: string }[][] };
+    expect(markup.inline_keyboard.flat().map(b => b.callback_data)).toEqual(['m:play','m:profile','m:hero','m:shop','m:vip','m:invite','m:characters','m:settings','m:help']);
+    expect(message?.params['text']).not.toContain('Darajangizni');
+    await w.send(callback(2, 'm:home'));
+    const edit = w.tg.calls.filter(c => c.method === 'editMessageText').at(-1);
+    expect(edit?.params['reply_markup']).toEqual(message?.params['reply_markup']);
+  });
+});
