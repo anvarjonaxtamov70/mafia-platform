@@ -462,20 +462,20 @@ export class Router {
     const from = m.from ?? (anonymous ? { id: chatId, first_name: m.chat.title ?? 'Guruh administratori', is_bot: true } : undefined);
     const c = await this.parseCommand(m.text);
     // Commands must not be a loophole for dead/night silence. Authorized commands still run.
-    await this.silenceCheck(m, !!c);
+    const alreadyDeleted=await this.silenceCheck(m, !!c);
     if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous)) return;
     // Anonymous group admins may manage this group only; never create fake user accounts or access owner commands.
     if (anonymous && !['game','quick','startgame','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) return;
     const room = this.d.room(chatId);
     const isAdmin = async () => anonymous || await this.isChatAdmin(chatId, from.id);
-    const replyTo = m.message_id;
+    const replyTo = alreadyDeleted ? undefined : m.message_id;
     switch (c.cmd) {
       case 'quick':
       case 'game': {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = anonymous ? { id: chatId, name: m.chat.title ?? 'Guruh administratori', dmAvailable: false, banned: false, badge: '' } : await this.d.registry.upsertUser(from, false);
         const arg = c.args.toUpperCase() as GameMode;
-        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, commandMessageId: replyTo, ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
+        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(replyTo ? {commandMessageId:replyTo}:{}), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
         if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
@@ -519,13 +519,13 @@ export class Router {
         return this.reply(chatId, await this.d.registry.profileText(from.id), undefined, replyTo);
       case 'startgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
-        const r = await room.start({ by: anonymous ? chatId : from.id, isAdmin: true, commandMessageId: replyTo });
+        const r = await room.start({ by: anonymous ? chatId : from.id, isAdmin: true, ...(replyTo ? {commandMessageId:replyTo}:{}) });
         if (!r.ok && r.error !== 'DM_FAILED') return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
       case 'cancelgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
-        const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true, commandMessageId: replyTo });
+        const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true, ...(replyTo ? {commandMessageId:replyTo}:{}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
@@ -553,9 +553,9 @@ export class Router {
   }
 
   /** O'lganlar va tungi jimlik: bot admin bo'lsa xabar o'chiriladi. */
-  private async silenceCheck(m: TgMessage, fresh = false): Promise<void> {
+  private async silenceCheck(m: TgMessage, fresh = false): Promise<boolean> {
     const from = m.from;
-    if (!from || from.is_bot) return;
+    if (!from || from.is_bot) return false;
     const now = this.d.now();
     let snap = fresh ? undefined : this.silence.get(m.chat.id);
     if (!snap || snap.until <= now) {
@@ -566,15 +566,17 @@ export class Router {
         if (this.silence.size > 5000) this.silence.clear();
       }
     }
-    if (!snap.running || !snap.players.includes(from.id)) return;
+    if (!snap.running || !snap.players.includes(from.id)) return false;
     const alive = snap.alive.includes(from.id);
     const del = (!alive && snap.silenceDead) || (alive && snap.phase === 'NIGHT' && snap.silenceNight);
-    if (!del) return;
+    if (!del) return false;
     try {
       await this.d.tg.call('deleteMessage', { chat_id: m.chat.id, message_id: m.message_id });
+      return true;
     } catch (e) {
       if (e instanceof TgError && (e.code === 400 || e.code === 403)) await this.d.registry.setBotAdmin(m.chat.id, false).catch(() => undefined);
     }
+    return false;
   }
 
   // ───── tugmalar ─────
