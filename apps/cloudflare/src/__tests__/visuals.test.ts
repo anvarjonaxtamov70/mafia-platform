@@ -113,3 +113,24 @@ describe('Visual v5', () => {
     expect(w.tg.texts(GROUP).some((v) => v.includes('SIZNING ROLINGIZ'))).toBe(false);
   });
 });
+
+
+describe('Telegram transport compatibility', () => {
+  it('keeps ordinary JSON calls on v4 options in local runtime; uses manual redirect on real provider', async () => {
+    const calls: RequestInit[] = [];
+    const fake: typeof fetch = async (_url, init) => {
+      calls.push(init!);
+      return Response.json({ ok: true, result: true });
+    };
+    const local = new TelegramClient('test', 'http://127.0.0.1:18081', fake);
+    await local.call('sendMessage', { chat_id: 1, text: 'hello' });
+    expect(calls[0]!.headers).toEqual({ 'content-type': 'application/json' });
+    expect(JSON.parse(String(calls[0]!.body))).toEqual({ chat_id: 1, text: 'hello' });
+    expect(calls[0]!.redirect).toBeUndefined();
+    const real = new TelegramClient('test', 'https://api.telegram.org', fake);
+    await real.call('getMe');
+    expect(calls[1]!.redirect).toBe('manual');
+    const redirected = new TelegramClient('test', 'https://api.telegram.org', async () => new Response(null, { status: 302 }));
+    await expect(redirected.call('getMe')).rejects.toMatchObject({ code: 302, description: 'unexpected redirect' });
+  });
+});
