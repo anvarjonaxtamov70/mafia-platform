@@ -419,7 +419,7 @@ export class Router {
     const chatId = m.chat.id;
     const c = await this.parseCommand(m.text);
     // Commands must not be a loophole for dead/night silence. Authorized commands still run.
-    await this.silenceCheck(m);
+    await this.silenceCheck(m, !!c);
     if (!c || !from || from.is_bot) return;
     const room = this.d.room(chatId);
     const isAdmin = async () => (m.sender_chat && m.sender_chat.id === chatId) || (await this.isChatAdmin(chatId, from.id));
@@ -492,15 +492,18 @@ export class Router {
   }
 
   /** O'lganlar va tungi jimlik: bot admin bo'lsa xabar o'chiriladi. */
-  private async silenceCheck(m: TgMessage): Promise<void> {
+  private async silenceCheck(m: TgMessage, fresh = false): Promise<void> {
     const from = m.from;
     if (!from || from.is_bot) return;
     const now = this.d.now();
-    let snap = this.silence.get(m.chat.id);
-    if (!snap || snap.until < now) {
+    let snap = fresh ? undefined : this.silence.get(m.chat.id);
+    if (!snap || snap.until <= now) {
       snap = await this.d.room(m.chat.id).silenceSnapshot();
-      this.silence.set(m.chat.id, snap);
-      if (this.silence.size > 5000) this.silence.clear();
+      if (fresh) this.silence.delete(m.chat.id);
+      else {
+        this.silence.set(m.chat.id, snap);
+        if (this.silence.size > 5000) this.silence.clear();
+      }
     }
     if (!snap.running || !snap.players.includes(from.id)) return;
     const alive = snap.alive.includes(from.id);
@@ -569,6 +572,7 @@ export class Router {
         }
         const isAdmin = await this.isChatAdmin(chat.id, from.id);
         const r = data.op === 's' ? await room.start({ by: from.id, isAdmin }, data.game) : await room.cancel({ by: from.id, isAdmin }, undefined, data.game);
+        this.silence.delete(chat.id);
         return this.answer(cb, r.ok ? undefined : this.errText(r), !r.ok);
       }
       case 'gs': {

@@ -325,9 +325,11 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     await w.send(groupText(Number(victim.id), 'salom'));
     const deletes = () => w.tg.calls.filter((c) => c.method === 'deleteMessage').length;
     expect(deletes()).toBe(1);
+    await w.send(groupText(Number(victim.id), '/status'));
+    expect(deletes()).toBe(2);
     w.now += 20_000; // kesh yangilanishi
     await w.send(groupText(Number(alive.id), 'men tirikman'));
-    expect(deletes()).toBe(1);
+    expect(deletes()).toBe(2);
   });
 
   it('tunda Mafia chati jamoadoshlarga yetkaziladi', async () => {

@@ -806,43 +806,43 @@ export class RoomCore {
       const op = this.data.ops[0]!;
       this.externalCalls++;
       try {
-      switch (op.type) {
-        case 'record': {
-          const recorded = await this.deps.registry.recordGame(op.input);
-          if (op.input.practice) {
-            for (const p of op.input.players) if (!p.fake) this.send(p.tgId, t('dm.practice_over'));
-          } else {
-            const proWinners = op.input.players.filter((p) => p.badge === '💎' && (p.outcome === 'WIN' || p.outcome === 'PERSONAL_WIN'));
-            if (proWinners.length > 0) this.send(this.chatId, t('game.vip_pro_winner', { names: proWinners.map((p) => escapeHtml(p.name)).join(', ') }));
+        switch (op.type) {
+          case 'record': {
+            const recorded = await this.deps.registry.recordGame(op.input);
+            if (op.input.practice) {
+              for (const p of op.input.players) if (!p.fake) this.send(p.tgId, t('dm.practice_over'));
+            } else {
+              const proWinners = op.input.players.filter((p) => p.badge === '💎' && (p.outcome === 'WIN' || p.outcome === 'PERSONAL_WIN'));
+              if (proWinners.length > 0) this.send(this.chatId, t('game.vip_pro_winner', { names: proWinners.map((p) => escapeHtml(p.name)).join(', ') }));
+            }
+            for (const r of recorded.players) {
+              const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
+              this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }));
+            }
+            for (const ref of recorded.referrals) {
+              this.send(ref.referrerId, t('invite.reward_dm', { name: escapeHtml(ref.referredName), games: REFERRAL.gamesRequired, reward: ref.reward }));
+            }
+            break;
           }
-          for (const r of recorded.players) {
-            const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
-            this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }));
-          }
-          for (const ref of recorded.referrals) {
-            this.send(ref.referrerId, t('invite.reward_dm', { name: escapeHtml(ref.referredName), games: REFERRAL.gamesRequired, reward: ref.reward }));
-          }
-          break;
+          case 'releaseGame':
+            await this.deps.registry.releaseGame(op.number, op.status);
+            break;
+          case 'release':
+            await this.deps.registry.release(op.tgId, op.number);
+            break;
+          case 'dmBlocked':
+            await this.deps.registry.markDmBlocked(op.tgIds);
+            break;
+          case 'running':
+            await this.deps.registry.markRunning(op.number, op.players);
+            break;
+          case 'settleItems':
+            await this.deps.registry.settleArcade(op.number, op.used);
+            break;
+          case 'releaseItems':
+            await this.deps.registry.releaseArcade(op.number);
+            break;
         }
-        case 'releaseGame':
-          await this.deps.registry.releaseGame(op.number, op.status);
-          break;
-        case 'release':
-          await this.deps.registry.release(op.tgId, op.number);
-          break;
-        case 'dmBlocked':
-          await this.deps.registry.markDmBlocked(op.tgIds);
-          break;
-        case 'running':
-          await this.deps.registry.markRunning(op.number, op.players);
-          break;
-        case 'settleItems':
-          await this.deps.registry.settleArcade(op.number, op.used);
-          break;
-        case 'releaseItems':
-          await this.deps.registry.releaseArcade(op.number);
-          break;
-      }
       } catch {
         const failures = Math.min(6, (this.data.opsFailures ?? 0) + 1);
         this.data.opsFailures = failures;
