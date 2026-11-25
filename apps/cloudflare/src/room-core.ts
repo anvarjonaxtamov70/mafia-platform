@@ -48,6 +48,7 @@ import { escapeHtml, t } from '@mafia/localization';
 import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
+import { heroDefinition } from './hero-core';
 
 export type { ConfigSnapshot };
 
@@ -829,7 +830,8 @@ export class RoomCore {
             }
             for (const r of recorded.players) {
               const rating = r.ratingChange !== 0 ? ` · 🏅 ${r.ratingChange > 0 ? '+' : ''}${r.ratingChange} RP` : '';
-              this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }));
+              const hero = r.hero ? '\n' + t('hero.reward', { name: escapeHtml(heroDefinition(r.hero.code)?.name ?? r.hero.code), xp: r.hero.xp, level: r.hero.level }) + (r.hero.leveled ? ' 🎉' : '') : '';
+              this.send(r.tgId, t('dm.game_over_coins', { outcome: t(`dm.outcome.${r.outcome}`), xp: r.xp, coins: r.coins, rating }) + hero);
             }
             for (const ref of recorded.referrals) {
               this.send(ref.referrerId, t('invite.reward_dm', { name: escapeHtml(ref.referredName), games: REFERRAL.gamesRequired, reward: ref.reward }));

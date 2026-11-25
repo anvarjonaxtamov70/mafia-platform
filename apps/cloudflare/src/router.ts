@@ -50,6 +50,8 @@ import type { TgUserInput, UserInfo } from './registry-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
+import type { HeroAccount, HeroCore, HeroSelect } from './hero-core';
+import { heroView, heroTopView } from './hero-views';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
 
@@ -126,6 +128,9 @@ export interface RegistryApi {
   getSettings(chatId: number): Promise<GroupSettingsData>;
   saveSettings(chatId: number, data: GroupSettingsData, by: string): Promise<GroupSettingsData>;
   profileText(tgId: number): Promise<string>;
+  heroAccount(tgId: number): Promise<HeroAccount>;
+  selectHero(tgId: number, code: string): Promise<HeroSelect>;
+  heroTop(): Promise<ReturnType<HeroCore['top']>>;
   globalRating(tgId: number | null): Promise<string>;
   gameHistory(tgId: number): Promise<string>;
   periodRating(period: 'weekly' | 'monthly'): Promise<string>;
@@ -358,7 +363,7 @@ export class Router {
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
         }
-        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals));
+        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
       }
       case 'help':
         return this.reply(chatId, t('help.text'));
@@ -394,6 +399,13 @@ export class Router {
       case 'roles':
         for (const part of splitLong(rolesText())) await this.reply(chatId, part);
         return;
+      case 'hero':
+      case 'heroes':
+      case 'herotop': {
+        await this.d.registry.upsertUser(from, true);
+        const v = await this.heroSection(from.id, c.cmd);
+        return this.reply(chatId, v.text, v.keyboard);
+      }
       case 'history':
       case 'weekly':
       case 'monthly':
@@ -566,7 +578,7 @@ export class Router {
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
-          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals));
+          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
           return this.answer(cb);
         }
         const r = await this.d.registry.anonymize(from.id);
@@ -642,12 +654,22 @@ export class Router {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
     if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
+    if (section.startsWith('pick_')) {
+      const code = section.slice(5);
+      const result = await this.d.registry.selectHero(from.id, code);
+      const v = await this.heroSection(from.id, 'hero_' + code);
+      return this.edit(cb, t('hero.select_' + result) + '\n\n' + v.text, v.keyboard);
+    }
+    if (section === 'hero' || section === 'heroes' || section === 'herotop' || section.startsWith('hero_')) {
+      const v = await this.heroSection(from.id, section);
+      return this.edit(cb, v.text, v.keyboard);
+    }
     const learning = learningView(section, !!this.d.visuals);
     if (learning) return this.edit(cb, learning.text, learning.keyboard);
     const username = await this.d.botUsername();
     switch (section) {
       case 'home':
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals));
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
       case 'play':
         return this.edit(cb, t('play.text'), [
           ...(username ? [[{ text: t('play.add_to_group'), url: `https://t.me/${username}?startgroup=true` }]] : []),
@@ -679,7 +701,7 @@ export class Router {
       default: {
         const v = await this.section(from, section, cb.message?.chat.type === 'private');
         if (v) return this.edit(cb, v.text, v.keyboard);
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals));
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
       }
     }
   }
@@ -692,6 +714,11 @@ export class Router {
     if (!this.media.allow(String(id), this.d.now())) return this.reply(id, t('common.rate_limited'));
     const caption = section === 'intro' ? 'HYPERNOVA MAFIA' : t('role.' + key.slice(5).toUpperCase() + '.name');
     if (!(await sendVisual(this.d.tg, id, key, caption))) await this.reply(id, t('visual.unavailable'));
+  }
+
+  private async heroSection(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
+    if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
+    return heroView(await this.d.registry.heroAccount(id), section, !!this.d.visuals);
   }
 
   private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
@@ -714,7 +741,7 @@ export class Router {
     switch (section) {
       case 'profile': {
         await this.d.registry.upsertUser(from, dmOpened);
-        return { text: await this.d.registry.profileText(id), keyboard: profileKeyboard() };
+        return { text: await this.d.registry.profileText(id), keyboard: [[{ text: t('hero.menu'), callback_data: encode({ t: 'menu', section: 'hero' }) }], ...profileKeyboard()] };
       }
       case 'shop':
         return shopHomeView((await this.d.registry.wallet(id)).coins);

@@ -212,6 +212,9 @@ export class Registry extends DurableObject<Env> {
   profileText(tgId: number) {
     return this.core.profileText(tgId);
   }
+  heroAccount(tgId: number) { return this.core.heroAccount(tgId); }
+  selectHero(tgId: number, code: string) { return this.core.selectHero(tgId, code); }
+  heroTop() { return this.core.heroTop(); }
   globalRating(tgId: number | null) {
     return this.core.globalRating(tgId);
   }
@@ -424,6 +427,9 @@ async function setup(env: Env, origin: string): Promise<Response> {
     commands: [
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
+      { command: 'hero', description: 'Mening shaxsiy geroyim' },
+      { command: 'heroes', description: 'Geroylar kolleksiyasi' },
+      { command: 'herotop', description: 'Geroylar TOP 10' },
       { command: 'history', description: 'Oxirgi 10 o‘yin' },
       { command: 'rating', description: 'Umumiy reyting' },
       { command: 'weekly', description: 'Haftalik TOP 10' },
