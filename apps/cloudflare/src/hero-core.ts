@@ -42,7 +42,20 @@ export class HeroCore {
     this.sql.exec(`CREATE INDEX IF NOT EXISTS hero_accounts_top ON hero_accounts(total_xp DESC, telegram_id)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_progress (telegram_id INTEGER NOT NULL, code TEXT NOT NULL, xp INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(telegram_id, code))`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_game_selection (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, code TEXT NOT NULL, PRIMARY KEY(game_number, telegram_id))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_owner_levels (telegram_id INTEGER PRIMARY KEY, level INTEGER NOT NULL CHECK(level BETWEEN 1 AND 1000000))`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_awards (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, code TEXT NOT NULL, xp INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`);
+  }
+  single(id: number, owned: boolean) {
+    const totalXp = this.account(id)?.total_xp ?? 0;
+    const owner = this.owner(id);
+    const level = Math.floor(Math.sqrt(Math.max(0,totalXp)/5))+1;
+    const override = owner ? this.sql.exec<{level:number}>(`SELECT level FROM hero_owner_levels WHERE telegram_id = ?`,id)[0]?.level : undefined;
+    return { owned, owner, totalXp, level: override ?? level, earnedLevel: level };
+  }
+  setOwnLevel(id: number, level: number): boolean {
+    if (!this.owner(id) || !Number.isSafeInteger(level) || level < 1 || level > 1000000 || !this.eligibleUser(id)) return false;
+    this.sql.exec(`INSERT INTO hero_owner_levels (telegram_id,level) VALUES (?,?) ON CONFLICT (telegram_id) DO UPDATE SET level=excluded.level`,id,level);
+    return true;
   }
   private account(id: number) {
     return this.sql.exec<{ selected: string; total_xp: number; day: string; day_xp: number }>(`SELECT selected, total_xp, day, day_xp FROM hero_accounts WHERE telegram_id = ?`, id)[0];
@@ -100,7 +113,7 @@ export class HeroCore {
       const oldXp = this.sql.exec<{ xp: number }>(`SELECT xp FROM hero_progress WHERE telegram_id = ? AND code = ?`, id, code)[0]?.xp ?? 0;
       const day = uzDay(this.clock());
       const today = a?.day === day ? a.day_xp : 0;
-      const xp = Math.max(0, Math.min(won ? 50 : 25, HERO_DAILY_CAP - today, HERO_MAX_XP - oldXp));
+      const xp = Math.max(0, Math.min(won ? 50 : 25, HERO_DAILY_CAP - today));
       if (xp === 0) return undefined;
       this.sql.exec(`INSERT INTO hero_awards (game_number, telegram_id, code, xp) VALUES (?, ?, ?, ?)`, game, id, code, xp);
       this.sql.exec(`INSERT INTO hero_progress (telegram_id, code, xp) VALUES (?, ?, ?) ON CONFLICT (telegram_id, code) DO UPDATE SET xp = hero_progress.xp + excluded.xp`, id, code, xp);
