@@ -115,6 +115,11 @@ try {
   const players = [1, 2, 3, 4, 5];
   for (const p of players) await pm(p, '/start');
   check(texts(1).some((t) => t.includes('MAFIA GAME')), '/start bosh menyu');
+  const replay = { update_id: 900001, message: { message_id: 900001, chat: { id: 5, type: 'private' }, from: user(5), text: '/profile' } };
+  const beforeReplay = texts(5).length;
+  await send(replay);
+  await send(replay);
+  check(texts(5).length === beforeReplay + 1, 'identical update ID processed once');
 
   await gm(1, '/game');
   await sleep(1500);
@@ -201,6 +206,7 @@ try {
   check(calls.some((c) => c.method === 'setWebhook' && c.params.allowed_updates.includes('pre_checkout_query')), 'webhook pre_checkout_query ni qabul qiladi');
   const diag = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   const diagBody = await diag.json();
+  check(typeof diagBody.security?.uncertain === 'number', 'security diagnostics exposed only through authenticated diag');
   check(diagBody.registry?.ok && diagBody.room?.ok && diagBody.registry.finished >= 1, `/telegram/diag: registry va GameRoom ishlaydi (${JSON.stringify(diagBody.registry)})`);
 } catch (e) {
   failures++;

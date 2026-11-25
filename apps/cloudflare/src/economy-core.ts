@@ -546,6 +546,11 @@ export class EconomyCore {
     return r ? { chargeId: r.charge_id, tgId: r.telegram_id, product: r.product, amount: r.amount, status: r.status, createdAt: r.created_at } : null;
   }
 
+  /** Atomic reservation prevents concurrent administrators from refunding the same payment. */
+  beginRefund(chargeId: string): boolean {
+    return this.sql.exec(`UPDATE payments SET status = 'REFUND_PENDING' WHERE charge_id = ? AND status IN ('PAID', 'UNMATCHED') RETURNING charge_id`, chargeId).length === 1;
+  }
+
   /** Telegram refundStarPayment muvaffaqiyatli bo'lgandan keyin: to'lov va obuna davri bekor qilinadi. */
   markRefunded(chargeId: string, by: string): boolean {
     return this.sql.tx(() => {

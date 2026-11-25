@@ -108,6 +108,8 @@ export interface RoomData {
   outbox: OutItem[];
   refs: Record<string, { chatId: number; messageId: number }>;
   ops: PendingOp[];
+  opsRetryAt?: number;
+  opsFailures?: number;
   nextId: number;
   alarmAt: number | null;
 }
@@ -140,6 +142,7 @@ export interface RoomDeps {
   rng: Rng;
   botUsername: () => string;
   devFakePlayers: boolean;
+  reportRegistryFailure?: () => void;
 }
 
 export type RoomResult<T = object> = ({ ok: true } & T) | { ok: false; error: LobbyError | EngineErrorCode | 'NOT_FOUND'; details?: Record<string, string | number> };
@@ -207,7 +210,7 @@ export class RoomCore {
   private async reschedule(): Promise<void> {
     const g = this.data.game;
     const candidates: number[] = [];
-    if (this.data.ops.length > 0) candidates.push(this.now);
+    if (this.data.ops.length > 0) candidates.push(Math.max(this.now, this.data.opsRetryAt ?? 0));
     if (this.data.outbox.length > 0) candidates.push(Math.max(this.now, this.data.outbox[0]!.notBefore));
     if (g?.status === 'LOBBY' && g.deadline) candidates.push(g.deadline);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
@@ -301,9 +304,17 @@ export class RoomCore {
     let hostJoined = false;
     if (input.host.dmAvailable) {
       const c = await this.deps.registry.claim(input.host.id, this.chatId, number);
-      if (c !== 'BUSY' && this.data.game === g) {
+      if (this.data.game !== g) {
+        if (c === 'OK') await this.deps.registry.release(input.host.id, number);
+        return { ok: false, error: 'NOT_FOUND' };
+      }
+      if (c !== 'BUSY' && !g.players.some((p) => p.id === input.host.id) && g.players.length < g.config.maxPlayers) {
         g.players.push({ id: input.host.id, name: input.host.name, fake: false, badge: input.host.badge });
         hostJoined = true;
+      } else if (g.players.some((p) => p.id === input.host.id)) {
+        hostJoined = true;
+      } else if (c === 'OK') {
+        await this.deps.registry.release(input.host.id, number);
       }
     }
     const v = this.lobbyView(g);
@@ -330,7 +341,7 @@ export class RoomCore {
     }
     if (g.players.some((p) => p.id === user.id)) return { ok: false, error: 'ALREADY_JOINED' };
     if (g.players.length >= g.config.maxPlayers) {
-      await this.deps.registry.release(user.id, g.number);
+      if (c === 'OK') await this.deps.registry.release(user.id, g.number);
       return { ok: false, error: 'FULL' };
     }
     g.players.push({ id: user.id, name: user.name, fake: false, badge: user.badge });
@@ -790,8 +801,11 @@ export class RoomCore {
 
   /** Registry amallari (at-least-once, idempotent). */
   private async processOps(): Promise<void> {
-    while (this.data.ops.length > 0) {
+    if ((this.data.opsRetryAt ?? 0) > this.now) return;
+    while (this.data.ops.length > 0 && this.externalCalls < 8) {
       const op = this.data.ops[0]!;
+      this.externalCalls++;
+      try {
       switch (op.type) {
         case 'record': {
           const recorded = await this.deps.registry.recordGame(op.input);
@@ -829,7 +843,17 @@ export class RoomCore {
           await this.deps.registry.releaseArcade(op.number);
           break;
       }
+      } catch {
+        const failures = Math.min(6, (this.data.opsFailures ?? 0) + 1);
+        this.data.opsFailures = failures;
+        this.data.opsRetryAt = this.now + Math.min(60_000, 1000 * 2 ** failures);
+        await this.deps.store.save(this.data);
+        this.deps.reportRegistryFailure?.();
+        return;
+      }
       this.data.ops = this.data.ops.filter((x) => x.id !== op.id);
+      delete this.data.opsRetryAt;
+      delete this.data.opsFailures;
       await this.deps.store.save(this.data);
     }
   }

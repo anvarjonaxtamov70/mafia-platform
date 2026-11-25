@@ -507,3 +507,25 @@ describe('Security regression', () => {
     expect(w.registryCore.userInfo(1)?.name).toBe('U1');
   });
 });
+
+
+describe('Security v3 refund safety', () => {
+  it('refund reservation is atomic and confirmed provider event reconciles a pending refund', async () => {
+    const w = new World({ starsMode: 'all' });
+    await w.send(privateText(2, '/start'));
+    const payload = await buyStars(w, 2, 'VIP_30', 'refund-pending');
+    const eco = w.registryCore.eco;
+    expect(eco.beginRefund('refund-pending')).toBe(true);
+    expect(eco.beginRefund('refund-pending')).toBe(false);
+    await w.send(privateText(1, '/refund refund-pending'));
+    expect(w.tg.calls.filter((c) => c.method === 'refundStarPayment')).toHaveLength(0);
+    const event = { currency: 'XTR', total_amount: 99, invoice_payload: payload, telegram_payment_charge_id: 'refund-pending' };
+    await w.send({ message: { message_id: 7, chat: { id: 3, type: 'private' }, from: user(3), refunded_payment: event } });
+    expect(eco.paymentInfo('refund-pending')?.status).toBe('REFUND_PENDING');
+    await w.send({ message: { message_id: 8, chat: { id: 2, type: 'private' }, from: user(2), refunded_payment: event } });
+    expect(eco.paymentInfo('refund-pending')?.status).toBe('REFUNDED');
+    expect(eco.tierInfo(2).tier).toBe('FREE');
+    await w.send({ message: { message_id: 8, chat: { id: 2, type: 'private' }, from: user(2), refunded_payment: event } });
+    expect(eco.paymentInfo('refund-pending')?.status).toBe('REFUNDED');
+  });
+});

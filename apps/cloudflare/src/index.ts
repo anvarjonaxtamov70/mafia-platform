@@ -43,6 +43,17 @@ function ownerIds(env: Env): ReadonlySet<number> {
   return new Set((env.ADMIN_IDS ?? '').split(',').map((x) => Number(x.trim())).filter((x) => Number.isSafeInteger(x) && x > 0));
 }
 
+/** No raw update, token, names or payment data are included in automated alerts. */
+async function reportFailure(env: Env, kind: 'webhook' | 'alarm' | 'registry'): Promise<void> {
+  try {
+    await registryStub(env).logError(kind, 'Operation failed; inspect protected diagnostics');
+    if (!(await registryStub(env).claimSecurityAlert(kind))) return;
+    await Promise.allSettled([...ownerIds(env)].map((id) => telegram(env).call('sendMessage', { chat_id: id, text: `⚠️ Hypernova: ${kind} xatosi. /admin_stats orqali holatni tekshiring. Har tur uchun xabar 15 daqiqada ko‘pi bilan bir marta.` })));
+  } catch {
+    // Alert failure must not prevent retry or the next game phase.
+  }
+}
+
 function registryStub(env: Env) {
   return env.REGISTRY.get(env.REGISTRY.idFromName('global'));
 }
@@ -135,6 +146,9 @@ export class Registry extends DurableObject<Env> {
   paymentInfo(chargeId: string) {
     return this.core.eco.paymentInfo(chargeId);
   }
+  beginRefund(chargeId: string) {
+    return this.core.eco.beginRefund(chargeId);
+  }
   markRefunded(chargeId: string, by: string) {
     return this.core.eco.markRefunded(chargeId, by);
   }
@@ -211,6 +225,18 @@ export class Registry extends DurableObject<Env> {
   recentErrors() {
     return this.core.recentErrors();
   }
+  beginUpdate(updateId: number, userId: number) {
+    return this.core.security.begin(updateId, userId);
+  }
+  finishUpdate(updateId: number, ok: boolean) {
+    this.core.security.finish(updateId, ok);
+  }
+  claimSecurityAlert(kind: 'webhook' | 'alarm' | 'registry') {
+    return this.core.security.claimAlert(kind);
+  }
+  securityStats() {
+    return this.core.security.stats();
+  }
   setGlobalMinPlayers(value: number, by: string) {
     return this.core.setGlobalMinPlayers(value, by);
   }
@@ -274,6 +300,7 @@ export class GameRoom extends DurableObject<Env> {
       rng: cryptoRng,
       botUsername: () => cachedUsername ?? env.BOT_USERNAME ?? '',
       devFakePlayers: env.DEV_FAKE_PLAYERS === 'true',
+      reportRegistryFailure: () => this.ctx.waitUntil(reportFailure(env, 'registry')),
     };
   }
 
@@ -307,7 +334,7 @@ export class GameRoom extends DurableObject<Env> {
       await this.core!.alarm();
     } catch (e) {
       // Cloudflare alarmni o'zi qayta ishga tushiradi; xato jurnalga yoziladi
-      await registryStub(this.env).logError('alarm', (e as Error).message ?? String(e)).catch(() => undefined);
+      this.ctx.waitUntil(reportFailure(this.env, 'alarm'));
       throw e;
     }
   }
@@ -416,6 +443,7 @@ async function diag(env: Env): Promise<Response> {
   try {
     const reg = registryStub(env);
     out['registry'] = { ok: true, ...(await reg.stats()) };
+    out['security'] = await reg.securityStats();
     out['errors'] = await reg.recentErrors();
   } catch (e) {
     ok = false;
@@ -442,7 +470,7 @@ async function diag(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
       return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token' });
@@ -470,15 +498,31 @@ export default {
       const parsed = await readTelegramUpdate(request);
       if (!parsed.ok) return new Response('bad request', { status: parsed.status });
       const update = parsed.update;
+      // Payments retain their charge-level idempotency and must never be dropped by spam limits.
+      const payment = Boolean(update.message?.successful_payment || update.message?.refunded_payment);
+      const actor = update.callback_query?.from ?? (update.message?.text?.startsWith('/') ? update.message.from : undefined);
+      const guarded = !payment && !update.pre_checkout_query && !!actor && !actor.is_bot;
+      if (guarded && actor) {
+        try {
+          const admission = await registryStub(env).beginUpdate(update.update_id, actor.id);
+          if (admission === 'BUSY') return new Response('retry', { status: 503 });
+          if (admission === 'RATE_LIMITED') {
+            // Do not amplify a flood with a Telegram API request per rejected click.
+            return new Response('ok');
+          }
+          if (admission !== 'ALLOW') return new Response('ok');
+        } catch {
+          ctx.waitUntil(reportFailure(env, 'registry'));
+          return new Response('retry', { status: 503 });
+        }
+      }
       try {
         await getRouter(env).handle(update);
-      } catch (e) {
-        // Telegram qayta-qayta yubormasligi uchun 200; xato jurnalga yoziladi (/admin_stats, /telegram/diag)
-        const message = (e as Error).message ?? String(e);
-        console.error('update failed', update.update_id, message);
-        await registryStub(env).logError('webhook', message).catch(() => undefined);
-        // To‘lovlar charge_id bo‘yicha idempotent: vaqtinchalik xatoda Telegram qayta yuborsin.
-        if (update.message?.successful_payment) return new Response('retry payment', { status: 503 });
+        if (guarded) await registryStub(env).finishUpdate(update.update_id, true);
+      } catch {
+        ctx.waitUntil(reportFailure(env, 'webhook'));
+        if (guarded) await registryStub(env).finishUpdate(update.update_id, false).catch(() => undefined);
+        if (payment) return new Response('retry payment', { status: 503 });
       }
       return new Response('ok');
     }

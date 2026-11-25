@@ -67,6 +67,7 @@ export interface TgMessage {
   sender_chat?: TgChat;
   text?: string;
   migrate_to_chat_id?: number;
+  refunded_payment?: { currency: string; total_amount: number; invoice_payload: string; telegram_payment_charge_id: string };
   successful_payment?: {
     currency: string;
     total_amount: number;
@@ -110,6 +111,7 @@ export interface RegistryApi {
   checkOrder(payload: string, tgId: number, amount: number, currency: string): Promise<CheckOrderResult>;
   completePayment(p: PaymentInput): Promise<PaymentResult>;
   paymentInfo(chargeId: string): Promise<PaymentRow | null>;
+  beginRefund(chargeId: string): Promise<boolean>;
   markRefunded(chargeId: string, by: string): Promise<boolean>;
   recentPayments(limit?: number, tgId?: number): Promise<PaymentRow[]>;
   // murojaatlar
@@ -288,6 +290,7 @@ export class Router {
     const m = update.message;
     if (!m) return;
     if (m.successful_payment) return this.onPayment(m);
+    if (m.refunded_payment) return this.onRefundedPayment(m);
     if (m.migrate_to_chat_id) {
       await this.d.registry.migrateGroup(m.chat.id, m.migrate_to_chat_id);
       await this.d.room(m.chat.id).migrate(m.migrate_to_chat_id);
@@ -415,8 +418,9 @@ export class Router {
     const from = m.from;
     const chatId = m.chat.id;
     const c = await this.parseCommand(m.text);
-    if (!c) return this.silenceCheck(m);
-    if (!from || from.is_bot) return;
+    // Commands must not be a loophole for dead/night silence. Authorized commands still run.
+    await this.silenceCheck(m);
+    if (!c || !from || from.is_bot) return;
     const room = this.d.room(chatId);
     const isAdmin = async () => (m.sender_chat && m.sender_chat.id === chatId) || (await this.isChatAdmin(chatId, from.id));
     const replyTo = m.message_id;
@@ -474,7 +478,7 @@ export class Router {
         return this.reply(chatId, view.text + note, view.keyboard, replyTo);
       }
       case 'devfill': {
-        if (!this.d.devFake || !(await isAdmin())) return;
+        if (!this.d.devFake || !this.isSuperadmin(from.id)) return;
         const n = Math.max(1, Math.min(29, Number(c.args) || 5));
         const r = await room.devFill(n);
         return this.reply(chatId, r.ok ? t('lobby.dev_filled', { count: r.added }) : this.errText(r), undefined, replyTo);
@@ -844,15 +848,26 @@ export class Router {
     if (!chargeId) return this.reply(from.id, t('admin.refund_usage'));
     const p = await this.d.registry.paymentInfo(chargeId);
     if (!p || p.status === 'REFUNDED') return this.reply(from.id, t('admin.refund_not_found'));
+    if (!(await this.d.registry.beginRefund(chargeId))) return this.reply(from.id, t('security.refund_pending'));
     try {
-      await this.d.tg.call('refundStarPayment', { user_id: p.tgId, telegram_payment_charge_id: chargeId });
-    } catch (e) {
-      return this.reply(from.id, t('admin.refund_failed', { error: escapeHtml(e instanceof TgError ? e.description : String(e)) }));
+      const accepted = await this.d.tg.call<boolean>('refundStarPayment', { user_id: p.tgId, telegram_payment_charge_id: chargeId });
+      if (accepted !== true) throw new Error('refund not confirmed');
+      await this.d.registry.markRefunded(chargeId, String(from.id));
+    } catch {
+      // Unknown remote outcome: never blindly issue another refund. Reconcile via authenticated refund event.
+      return this.reply(from.id, t('security.refund_pending'));
     }
-    await this.d.registry.markRefunded(chargeId, String(from.id));
     const product = p.product ? t(`invoice.${p.product}.title`) : '—';
     await this.reply(p.tgId, t('pay.refunded_user', { stars: p.amount, product }));
     return this.reply(from.id, t('admin.refund_done', { stars: p.amount, user: p.tgId }));
+  }
+
+  private async onRefundedPayment(m: TgMessage): Promise<void> {
+    const event = m.refunded_payment!;
+    if (m.chat.type !== 'private' || event.currency !== 'XTR') return;
+    const p = await this.d.registry.paymentInfo(event.telegram_payment_charge_id);
+    if (!p || p.tgId !== m.chat.id || p.amount !== event.total_amount || p.status === 'REFUNDED') return;
+    await this.d.registry.markRefunded(p.chargeId, 'telegram');
   }
 
   private async adminPayments(from: TgUser): Promise<void> {
