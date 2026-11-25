@@ -472,7 +472,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'top1', description: 'Guruh TOP 20 — 24 soat' },
       { command: 'top7', description: 'Guruh TOP 20 — 7 kun' },
       { command: 'top30', description: 'Guruh TOP 20 — 30 kun' },
-      { command: 'cancelgame', description: 'O‘yinni bekor qilish' },
+      { command: 'stop', description: 'O‘yinni to‘xtatish (admin)' },
       { command: 'settings', description: 'Guruh sozlamalari (admin)' },
     ],
   });
