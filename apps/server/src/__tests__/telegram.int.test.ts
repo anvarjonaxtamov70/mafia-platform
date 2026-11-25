@@ -129,7 +129,7 @@ describe('Telegram adapter E2E', () => {
     expect(String(calls.filter((c) => c.method === 'editMessageText').at(-1)!.payload['text'])).toContain('keyingi bosqichda');
   });
 
-  it('guruhda /game → lobby, tugma orqali qo‘shilish, /gstart → rollar shaxsiy chatga, tungi tugma ishlaydi', async () => {
+  it('guruhda /game → lobby, tugma orqali qo‘shilish, /startgame → rollar shaxsiy chatga, tungi tugma ishlaydi', async () => {
     for (const id of [1, 2, 3, 4]) await bot.handleUpdate(privateText(id, '/start'));
     await bot.handleUpdate(groupText(1, '/game'));
     const game = await db.game.findFirstOrThrow({ where: { status: 'LOBBY' } });
@@ -140,9 +140,9 @@ describe('Telegram adapter E2E', () => {
     for (const id of [2, 3, 4]) await bot.handleUpdate(callback(id, `l:j:${game.number}`, true));
     expect(await db.gamePlayer.count({ where: { gameId: game.id } })).toBe(4);
     // Oddiy o'yinchi boshlay olmaydi
-    await bot.handleUpdate(groupText(3, '/gstart'));
+    await bot.handleUpdate(groupText(3, '/startgame'));
     expect((await db.game.findUniqueOrThrow({ where: { id: game.id } })).status).toBe('LOBBY');
-    await bot.handleUpdate(groupText(1, '/gstart'));
+    await bot.handleUpdate(groupText(1, '/startgame'));
     expect((await db.game.findUniqueOrThrow({ where: { id: game.id } })).status).toBe('RUNNING');
 
     const state: GameState = await stateOf(db, game.id);
@@ -209,7 +209,7 @@ describe('Telegram adapter E2E', () => {
     await bot.handleUpdate(groupText(1, '/game'));
     const game = await db.game.findFirstOrThrow({ where: { status: 'LOBBY' } });
     for (const id of [2, 3, 4]) await bot.handleUpdate(callback(id, `l:j:${game.number}`, true));
-    await bot.handleUpdate(groupText(1, '/gstart'));
+    await bot.handleUpdate(groupText(1, '/startgame'));
     const state = await stateOf(db, game.id);
     const victim = state.players.find((p) => p.faction !== 'MAFIA')!;
     state.players.find((p) => p.id === victim.id)!.status = 'DEAD';

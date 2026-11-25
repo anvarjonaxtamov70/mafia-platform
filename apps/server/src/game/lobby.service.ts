@@ -100,8 +100,8 @@ export class LobbyService {
     const host = await this.users.upsert(input.host);
     if (await this.users.isBanned(host.id)) return { ok: false, error: 'BANNED' };
     const mode = input.mode ?? settings.mode;
-    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart, ...(input.quick ? { quick: true } : {}) } };
-    const deadline = settings.autostart ? new Date(this.clock() + settings.lobbySec * 1000) : null;
+    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: false, ...(input.quick ? { quick: true } : {}) } };
+    const deadline: Date | null = null;
 
     let created: { id: string; number: number; hostJoined: boolean };
     try {
@@ -153,7 +153,7 @@ export class LobbyService {
       throw e;
     }
     this.notifier.kick();
-    if(deadline) await this.games.safeSchedule({ gameId: created.id, phaseSeq: 0, at: deadline });
+
     return { ok: true, gameId: created.id, number: created.number, hostJoined: created.hostJoined };
   }
 
@@ -251,12 +251,12 @@ export class LobbyService {
   // ───────────────────────────── Boshlash ─────────────────────────────
 
   async start(where: { number: number } | { chatId: number | bigint } | { id: string }, trigger: { telegramId: bigint; isAdmin: boolean } | 'auto'): Promise<LobbyResult<{ gameId: string }>> {
+    if(trigger==='auto'||trigger?.isAdmin!==true)return {ok:false,error:'NO_PERMISSION'};
     const found = 'id' in where ? await this.db.game.findUnique({ where: { id: where.id } }) : await this.findLobby(where);
     if (!found) return { ok: false, error: 'NOT_FOUND' };
     if (found.status !== 'LOBBY') return { ok: false, error: 'NOT_LOBBY' };
     const game0 = await this.db.game.findUnique({ where: { id: found.id }, include: { host: true, players: { include: { user: true }, orderBy: { joinedAt: 'asc' } } } });
     if (!game0) return { ok: false, error: 'NOT_FOUND' };
-    if (trigger !== 'auto' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     const cfg = game0.configSnapshot as unknown as ConfigSnapshot;
     if (game0.players.length < cfg.minPlayers) return { ok: false, error: 'NOT_ENOUGH', details: { min: cfg.minPlayers, count: game0.players.length } };
 
@@ -362,23 +362,9 @@ export class LobbyService {
     return this.db.game.findUnique({ where: { id: g.id }, include: { host: true } });
   }
 
-  /** Lobby muddati tugadi (§3.5). */
+  /** Legacy scheduled registration jobs are harmless after manual-start migration. */
   async onLobbyTimeout(gameId: string): Promise<void> {
-    const game = await this.db.game.findUnique({ where: { id: gameId }, include: { _count: { select: { players: true } } } });
-    if (!game || game.status !== 'LOBBY') return;
-    if (game.phaseDeadlineAt && game.phaseDeadlineAt.getTime() > this.clock() + 1000) return;
-    const cfg = game.configSnapshot as unknown as ConfigSnapshot;
-    if(!cfg.lobby.autostart) {
-      await this.db.game.updateMany({ where: { id: gameId, status: 'LOBBY' }, data: { phaseDeadlineAt: null } });
-      return;
-    }
-    if (game._count.players >= cfg.minPlayers) {
-      let r = await this.start({ id: gameId }, 'auto');
-      // Shaxsiy chati yopiq o'yinchilar chiqarildi — qolganlar yetarli bo'lsa yana urinish
-      if (!r.ok && r.error === 'DM_FAILED') r = await this.start({ id: gameId }, 'auto');
-      if (r.ok || r.error === 'NOT_LOBBY') return;
-    }
-    await this.cancel({ id: gameId }, 'timeout', t('lobby.timeout_cancelled', { min: cfg.minPlayers }));
+    await this.db.game.updateMany({where:{id:gameId,status:'LOBBY'},data:{phaseDeadlineAt:null}});
   }
 }
 

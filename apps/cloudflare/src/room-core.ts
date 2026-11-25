@@ -31,7 +31,6 @@ import {
   getRole,
   heroAttack,
   judgeVeto,
-  leaveGame,
   revealMayor,
   skipNightAction,
   submitDayVote,
@@ -103,6 +102,8 @@ export type PendingOp =
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
+type LobbyTask = { id: number; kind: 'pin' | 'clear' | 'unpin'; chatId: number; messageId: number; number: number; attempts: number; at: number };
+
 export interface RoomData {
   v: 1;
   chatId: number;
@@ -115,6 +116,8 @@ export interface RoomData {
   opsFailures?: number;
   nextId: number;
   alarmAt: number | null;
+  lobbyTasks?: LobbyTask[];
+  lobbyPostedAt?: number;
 }
 
 export interface RegistryPort {
@@ -181,6 +184,7 @@ export class RoomCore {
   /** Joriy chaqiruvdagi tashqi (Telegram) so'rovlar soni — 50 subrequest limitidan oshmaslik uchun */
   private externalCalls = 0;
   private starting = false;
+  private processingOps = false;
 
   constructor(
     private readonly chatId: number,
@@ -199,6 +203,7 @@ export class RoomCore {
       nextId: 1,
       alarmAt: null,
     };
+    if(this.clearLegacyLobbyTimer())await this.commit();
   }
 
   private get now(): number {
@@ -216,7 +221,8 @@ export class RoomCore {
     const candidates: number[] = [];
     if (this.data.ops.length > 0) candidates.push(Math.max(this.now, this.data.opsRetryAt ?? 0));
     if (this.data.outbox.length > 0) candidates.push(Math.max(this.now, this.data.outbox[0]!.notBefore));
-    if (g?.status === 'LOBBY' && g.deadline) candidates.push(g.deadline);
+
+    for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
     const next = candidates.length ? Math.min(...candidates) : null;
     if (next !== this.data.alarmAt) {
@@ -277,20 +283,53 @@ export class RoomCore {
     ]);
   }
 
+  /** One current board per lobby, with bounded coalescing under group-wide spam. */
+  private queueLobbyBoard(g: RoomGame): void {
+    const key=lobbyRef(g.id);
+    if(this.data.outbox.some(o=>o.storeRefAs===key)) return;
+    const v=this.lobbyView(g);
+    this.send(this.chatId,v.text,v.keyboard,{storeRefAs:key});
+    const queued=this.data.outbox.at(-1)!;
+    if(this.data.refs[key]) queued.notBefore=Math.max(this.now,(this.data.lobbyPostedAt??0)+2000);
+  }
+
+  private lobbyTask(kind: LobbyTask['kind'], ref: {chatId:number;messageId:number}, number:number): void {
+    const tasks=this.data.lobbyTasks??=[];
+    if(tasks.some(x=>x.kind===kind&&x.chatId===ref.chatId&&x.messageId===ref.messageId))return;
+    tasks.push({id:this.data.nextId++,kind,chatId:ref.chatId,messageId:ref.messageId,number,attempts:0,at:this.now});
+  }
+  private retireBoard(ref: {chatId:number;messageId:number}, number:number): void {
+    this.data.lobbyTasks=(this.data.lobbyTasks??[]).filter(x=>!(x.kind==='pin'&&x.chatId===ref.chatId&&x.messageId===ref.messageId));
+    this.lobbyTask('clear',ref,number);
+    this.lobbyTask('unpin',ref,number);
+  }
+  private closeLobby(g:RoomGame):void {
+    const key=lobbyRef(g.id), ref=this.data.refs[key];
+    this.data.outbox=this.data.outbox.filter(o=>o.storeRefAs!==key&&!(o.payload.kind==='EDIT'&&o.payload.refKey===key));
+    if(ref)this.retireBoard(ref,g.number);
+    delete this.data.refs[key];
+  }
+  private async refreshLobby(g:RoomGame):Promise<RoomResult<{number:number;hostJoined:boolean;refreshed?:boolean}>> {
+    if(g.status!=='LOBBY'||this.starting)return {ok:false,error:'GROUP_ACTIVE_GAME'};
+    this.queueLobbyBoard(g);
+    await this.commit();
+    return {ok:true,number:g.number,hostJoined:false,refreshed:true};
+  }
+
   // ───────────────────────────── Lobby ─────────────────────────────
 
-  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>> {
-    if (this.data.game) return { ok: false, error: 'GROUP_ACTIVE_GAME' };
+  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>> {
     if (input.host.banned) return { ok: false, error: 'BANNED' };
+    if (this.data.game) return this.refreshLobby(this.data.game);
     const settings = await this.deps.registry.getSettings(this.chatId);
     const number = await this.deps.registry.allocateGame(this.chatId);
     // await davomida boshqa /game kelgan bo'lishi mumkin
     if (this.data.game) {
       await this.deps.registry.releaseGame(number, 'CANCELLED');
-      return { ok: false, error: 'GROUP_ACTIVE_GAME' };
+      return this.refreshLobby(this.data.game);
     }
     const mode = input.mode ?? settings.mode;
-    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: settings.autostart, ...(input.quick ? { quick: true } : {}) } };
+    const config: ConfigSnapshot = { ...settingsToConfig(settings, mode, input.quick), lobby: { lobbySec: settings.lobbySec, autostart: false, ...(input.quick ? { quick: true } : {}) } };
     const g: RoomGame = {
       id: `${this.chatId}-${number}`,
       number,
@@ -301,7 +340,7 @@ export class RoomCore {
       silenceNight: settings.silenceNight,
       hostId: input.host.id,
       hostName: input.host.name,
-      deadline: settings.autostart ? this.now + settings.lobbySec * 1000 : null,
+      deadline: null,
       players: [],
       state: null,
       version: 0,
@@ -325,8 +364,8 @@ export class RoomCore {
         await this.deps.registry.release(input.host.id, number);
       }
     }
-    const v = this.lobbyView(g);
-    this.send(this.chatId, v.text, v.keyboard, { storeRefAs: lobbyRef(g.id) });
+    if(this.data.game!==g||g.status!=='LOBBY')return {ok:false,error:'NOT_LOBBY'};
+    this.queueLobbyBoard(g);
     await this.commit();
     return { ok: true, number, hostJoined };
   }
@@ -338,9 +377,10 @@ export class RoomCore {
     if (!user.dmAvailable) return { ok: false, error: 'NEED_DM' };
     if (user.banned) return { ok: false, error: 'BANNED' };
     if (g.players.some((p) => p.id === user.id)) return { ok: false, error: 'ALREADY_JOINED' };
+    if(this.data.ops.some(op=>op.type==='release'&&op.tgId===user.id&&op.number===g.number))return {ok:false,error:'IN_OTHER_GAME'};
     if (g.players.length >= g.config.maxPlayers) return { ok: false, error: 'FULL' };
     const c = await this.deps.registry.claim(user.id, this.chatId, g.number);
-    if (c === 'BUSY') return { ok: false, error: 'IN_OTHER_GAME' };
+    if (c === 'BUSY') return { ok: false, error: 'IN_OTHER_GAME', details:{number:g.number} };
     // await dan keyin qayta tekshirish
     if (this.data.game !== g || g.status !== 'LOBBY' || this.starting) {
       // ALREADY may belong to another concurrent join; only release our own fresh claim.
@@ -372,12 +412,23 @@ export class RoomCore {
       await this.commit();
       return { ok: true };
     }
-    const r = await this.mutate(tgId, (s, now, rng) => leaveGame(s, String(tgId), now, rng));
-    if (r.ok) {
-      this.addOp({ type: 'release', tgId, number: g.number });
-      await this.commit();
-    }
-    return r.ok ? { ok: true } : r;
+    return {ok:false,error:'NOT_LOBBY',details:{running:1}};
+  }
+
+  /** Source room is authoritative: never transfer a running or starting participant. */
+  async leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult> {
+    const g=this.data.game;
+    if(!g||g.number!==number||g.status!=='LOBBY'||this.starting)return {ok:false,error:'NOT_LOBBY'};
+    if(g.players.some(p=>p.id===tgId)){
+      const result=await this.leave(tgId,number);
+      if(!result.ok)return result;
+    }else if(!this.data.ops.some(op=>op.type==='release'&&op.tgId===tgId&&op.number===number))return {ok:false,error:'NOT_JOINED'};
+    // The durable release op must finish before the target can acquire a claim.
+    this.externalCalls=0;
+    await this.processOps();
+    await this.commit();
+    if(this.data.ops.some(op=>op.type==='release'&&op.tgId===tgId&&op.number===number))return {ok:false,error:'IN_OTHER_GAME'};
+    return {ok:true};
   }
 
   async devFill(count: number): Promise<RoomResult<{ added: number }>> {
@@ -417,6 +468,7 @@ export class RoomCore {
   }
 
   async start(trigger: { by: number; isAdmin: boolean } | 'auto', number?: number): Promise<RoomResult> {
+    if (trigger === 'auto' || trigger?.isAdmin !== true) return {ok:false,error:'NO_PERMISSION'};
     if (this.starting) return { ok: false, error: 'NOT_LOBBY' };
     this.starting = true;
     try {
@@ -426,12 +478,12 @@ export class RoomCore {
     }
   }
 
-  private async startOnce(trigger: { by: number; isAdmin: boolean } | 'auto', number?: number): Promise<RoomResult> {
-    if (trigger !== 'auto') this.externalCalls = 0;
+  private async startOnce(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult> {
+    this.externalCalls = 0;
     const g = this.data.game;
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (g.status !== 'LOBBY') return { ok: false, error: 'NOT_LOBBY' };
-    if (trigger !== 'auto' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
+    if (!trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.players.length < g.config.minPlayers) return { ok: false, error: 'NOT_ENOUGH', details: { min: g.config.minPlayers, count: g.players.length } };
 
     const failing = await this.probeDms(g.players.filter((p) => !p.fake).map((p) => p.id));
@@ -493,8 +545,8 @@ export class RoomCore {
     g.status = 'RUNNING';
     g.startedAt = now;
     g.deadline = null;
+    this.closeLobby(g);
     this.applyState(g, null, pp.state, pp.events);
-    this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'CLEAR_KEYBOARD', refKey: lobbyRef(g.id) }, dedupeKey: '' }]);
     this.addOp({ type: 'running', number: g.number, players: g.players.length });
     await this.commit();
     return { ok: true };
@@ -505,7 +557,7 @@ export class RoomCore {
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
-    if (g.status === 'LOBBY') this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'CLEAR_KEYBOARD', refKey: lobbyRef(g.id) }, dedupeKey: '' }]);
+    if(g.status==='LOBBY')this.closeLobby(g);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
     this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
     this.data.game = null;
@@ -513,47 +565,22 @@ export class RoomCore {
     return { ok: true };
   }
 
-  /** Read the persisted settings at the room boundary; do not mutate a running game. */
-  async syncLobbyTimer(): Promise<void> {
+  /** Old durable snapshots may contain an enabled registration timer. Disable it without starting or cancelling. */
+  private clearLegacyLobbyTimer(): boolean {
     const g=this.data.game;
-    if(!g || g.status!=='LOBBY' || this.starting) return;
-    const settings=await this.deps.registry.getSettings(this.chatId);
-    if(this.data.game!==g || g.status!=='LOBBY' || this.starting) return;
-    if(g.config.lobby.autostart===settings.autostart && g.config.lobby.lobbySec===settings.lobbySec) return;
-    g.config.lobby.autostart=settings.autostart;
-    g.config.lobby.lobbySec=settings.lobbySec;
-    g.deadline=settings.autostart ? this.now+settings.lobbySec*1000 : null;
+    if(g?.status!=='LOBBY'||(!g.config.lobby.autostart&&g.deadline===null))return false;
+    g.config.lobby.autostart=false;
+    g.deadline=null;
     g.version++;
     this.lobbyEdit(g);
-    await this.commit();
-  }
-
-  private async lobbyTimeout(): Promise<void> {
-    const g = this.data.game;
-    if (!g || g.status !== 'LOBBY' || !g.deadline || g.deadline > this.now + 500) return;
-    if (this.starting) {
-      g.deadline = this.now + 1000;
-      await this.commit();
-      return;
-    }
-    if (!g.config.lobby.autostart) {
-      g.deadline = null;
-      this.lobbyEdit(g);
-      await this.commit();
-      return;
-    }
-    if (g.players.length >= g.config.minPlayers) {
-      let r = await this.start('auto');
-      if (!r.ok && r.error === 'DM_FAILED') r = await this.start('auto');
-      if (r.ok || this.data.game !== g || g.status !== 'LOBBY') return;
-    }
-    await this.cancel('timeout', t('lobby.timeout_cancelled', { min: g.config.minPlayers }));
+    return true;
   }
 
   /** Superguruhga ko'chish: eski chatdagi o'yin bekor qilinadi (yangi chatda qayta boshlanadi). */
   async migrate(newChatId: number): Promise<void> {
     const g = this.data.game;
     if (g) {
+      if(g.status==='LOBBY')this.closeLobby(g);
       this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
       this.data.game = null;
     }
@@ -837,20 +864,26 @@ export class RoomCore {
     this.externalCalls = 0;
     this.data.alarmAt = null;
     await this.processOps();
-    const g = this.data.game;
-    if (g?.status === 'LOBBY') await this.lobbyTimeout();
+    this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
     if (g2?.status === 'RUNNING' && g2.state?.phaseEndsAt && g2.state.phaseEndsAt <= this.now + 500) {
       const seq = g2.state.phaseSeq;
       await this.mutate(null, (s, now, rng) => advancePhase(s, now, rng, seq));
     }
     await this.processOps();
-    await this.flush(Math.max(0, SEND_BUDGET - this.externalCalls));
+    await this.processLobbyTasks(4);
+    await this.flush(Math.max(0, SEND_BUDGET - this.externalCalls - 8));
+    await this.processLobbyTasks(4);
     await this.commit();
   }
 
   /** Registry amallari (at-least-once, idempotent). */
   private async processOps(): Promise<void> {
+    if(this.processingOps)return;
+    this.processingOps=true;
+    try { await this.processOpsOnce(); } finally { this.processingOps=false; }
+  }
+  private async processOpsOnce(): Promise<void> {
     if ((this.data.opsRetryAt ?? 0) > this.now) return;
     while (this.data.ops.length > 0 && this.externalCalls < 8) {
       const op = this.data.ops[0]!;
@@ -910,6 +943,32 @@ export class RoomCore {
     }
   }
 
+  /** Non-critical Telegram pin/cleanup retries cannot block game delivery or erase unrelated pins. */
+  private async processLobbyTasks(budget:number):Promise<void>{
+    for(let i=0;i<budget;i++){
+      const task=(this.data.lobbyTasks??[]).find(x=>x.at<=this.now);
+      if(!task)break;
+      const g=this.data.game;
+      const ref=g&&this.data.refs[lobbyRef(g.id)];
+      if(task.kind==='pin'&&(!g||g.status!=='LOBBY'||g.number!==task.number||ref?.messageId!==task.messageId)){
+        this.data.lobbyTasks=this.data.lobbyTasks!.filter(x=>x.id!==task.id);continue;
+      }
+      try{
+        const method=task.kind==='pin'?'pinChatMessage':task.kind==='unpin'?'unpinChatMessage':'editMessageReplyMarkup';
+        await this.deps.telegram.call(method,{chat_id:task.chatId,message_id:task.messageId,...(task.kind==='pin'?{disable_notification:true}:task.kind==='clear'?{reply_markup:{inline_keyboard:[]}}:{})});
+        // A lobby may close during the Telegram call. Unpin precisely that message again.
+        if(task.kind==='pin'&&(this.data.game!==g||g?.status!=='LOBBY'||this.data.refs[lobbyRef(g.id)]?.messageId!==task.messageId))this.lobbyTask('unpin',task,task.number);
+        this.data.lobbyTasks=this.data.lobbyTasks!.filter(x=>x.id!==task.id);
+      }catch(e){
+        const err=e instanceof TgError?e:new TgError(0,String(e));
+        task.attempts++;
+        if(err.code===400||err.code===403||task.attempts>=5)this.data.lobbyTasks=this.data.lobbyTasks!.filter(x=>x.id!==task.id);
+        else task.at=this.now+Math.max(1000*(2**task.attempts),(err.retryAfter??0)*1000);
+      }
+      await this.deps.store.save(this.data);
+    }
+  }
+
   /** Navbatdagi xabarlarni yuborish: FIFO, EDIT birlashtiriladi, 429 / 403 hisobga olinadi. */
   async flush(budget = SEND_BUDGET): Promise<number> {
     let sent = 0;
@@ -957,7 +1016,15 @@ export class RoomCore {
   }
 
   private async deliver(item: OutItem): Promise<void> {
-    const p = item.payload;
+    let p = item.payload;
+    const key=item.storeRefAs;
+    const lobbySend=p.kind==='SEND'&&key?.startsWith('lobby:');
+    const lobby=lobbySend?this.data.game:null;
+    if(lobbySend){
+      if(!lobby||lobby.status!=='LOBBY'||key!==lobbyRef(lobby.id))return;
+      const v=this.lobbyView(lobby);
+      p={kind:'SEND',text:v.text,keyboard:v.keyboard};
+    }
     if (p.kind === 'SEND') {
       if (p.visual) {
         if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual, undefined, p.keyboard);
@@ -969,7 +1036,17 @@ export class RoomCore {
         ...HTML,
         ...(p.keyboard ? { reply_markup: { inline_keyboard: p.keyboard } } : {}),
       });
-      if (item.storeRefAs) this.data.refs[item.storeRefAs] = { chatId: item.chatId, messageId: res.message_id };
+      if(lobbySend&&lobby&&key){
+        const fresh={chatId:item.chatId,messageId:res.message_id};
+        if(this.data.game!==lobby||lobby.status!=='LOBBY')this.retireBoard(fresh,lobby.number);
+        else{
+          const old=this.data.refs[key];
+          if(old&&old.messageId!==fresh.messageId)this.retireBoard(old,lobby.number);
+          this.data.refs[key]=fresh;
+          this.data.lobbyPostedAt=this.now;
+          this.lobbyTask('pin',fresh,lobby.number);
+        }
+      }else if (item.storeRefAs) this.data.refs[item.storeRefAs] = { chatId: item.chatId, messageId: res.message_id };
       return;
     }
     const ref = this.data.refs[p.refKey];
@@ -992,7 +1069,6 @@ export class RoomCore {
   /** Faqat testlar uchun: joriy muddatni hozirga surish. */
   async forceDeadline(): Promise<void> {
     const g = this.data.game;
-    if (g?.status === 'LOBBY' && g.deadline) g.deadline = this.now;
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) g.state.phaseEndsAt = this.now;
     await this.alarm();
   }

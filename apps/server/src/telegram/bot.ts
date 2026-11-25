@@ -15,7 +15,6 @@ import {
   mafiaVoteMessage,
   mainMenu,
   nightActionMessage,
-  plainAlert,
   rolesText,
   learningView,
   SELECTABLE_MODES,
@@ -235,7 +234,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
     await replyHtml(ctx, await queries.profileText(user.id));
   });
 
-  grp.command('gstart', async (ctx) => {
+  grp.command('startgame', async (ctx) => {
     if (!ctx.from) return;
     const r = await lobby.start({ chatId: ctx.chat.id }, { telegramId: BigInt(ctx.from.id), isAdmin: await isAdminCtx(ctx) });
     if (!r.ok && r.error !== 'DM_FAILED') await replyHtml(ctx, lobbyErrorText(r.error, r.details));
@@ -336,8 +335,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
           const r = await lobby.leave(where, u);
           await ctx.answerCallbackQuery({ text: r.ok ? t('lobby.left') : lobbyErrorText(r.error) });
         } else if (data.op === 's') {
-          const r = await lobby.start(where, { telegramId: tgId, isAdmin: await isAdminCtx(ctx) });
-          await ctx.answerCallbackQuery(r.ok ? {} : { text: plainAlert(lobbyErrorText(r.error, r.details)), show_alert: true });
+          await ctx.answerCallbackQuery({text:t('cb.stale'),show_alert:true});
         } else {
           const r = await lobby.cancel(where, { telegramId: tgId, isAdmin: await isAdminCtx(ctx) });
           await ctx.answerCallbackQuery(r.ok ? {} : { text: lobbyErrorText(r.error) });
@@ -537,7 +535,7 @@ export async function registerCommands(bot: Bot): Promise<void> {
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },
       { command: 'players', description: 'Ishtirokchilar' },
-      { command: 'gstart', description: 'O‘yinni boshlash' },
+      { command: 'startgame', description: 'O‘yinni boshlash (admin)' },
       { command: 'status', description: 'O‘yin holati' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'mystats', description: 'Mening statistikam' },

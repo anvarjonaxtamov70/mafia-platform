@@ -33,7 +33,7 @@ describe('CPU byudjeti (bepul tarif: 10 ms)', () => {
       const c = await warm.loaded(GROUP);
       c.data.game!.config.maxPlayers = 30;
       for (const id of ids.slice(1)) await warm.send(callback(id, `l:j:${c.data.game!.number}`, GROUP));
-      await warm.router.handle({ update_id: 1, ...groupText(1, '/gstart') });
+      await warm.router.handle({ update_id: 1, ...groupText(1, '/startgame') });
       await warm.advance(200_000);
     }
 

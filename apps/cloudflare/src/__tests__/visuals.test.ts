@@ -105,7 +105,7 @@ describe('Visual v5', () => {
     await w.send(privateText(1, '/intro'));
     expect(w.tg.texts(1).some((v) => v.includes('vaqtincha yuklanmadi'))).toBe(true);
     const n = await lobby(w, [1,2,3,4]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const core = await w.loaded(GROUP);
     expect(core.data.game?.number).toBe(n);
     expect(w.tg.texts(1).some((v) => v.includes('SIZNING ROLINGIZ'))).toBe(true);

@@ -141,11 +141,11 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
   join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>>;
   leave(tgId: number, number?: number): Promise<RoomResult>;
+  leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult>;
   start(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult>;
-  syncLobbyTimer(): Promise<void>;
   cancel(trigger: { by: number; isAdmin: boolean }, text?: string, number?: number): Promise<RoomResult>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
@@ -283,8 +283,22 @@ export class Router {
     return this.d.room(chat);
   }
 
+  /** A destination validates its lobby first; the source then releases only a waiting player. */
+  private async joinRoom(room:RoomApi,user:UserInfo,number?:number):Promise<RoomResult<{title:string}>>{
+    const result=await room.join(user,number);
+    if(result.ok||result.error!=='IN_OTHER_GAME')return result;
+    const active=await this.d.registry.activeOf(user.id);
+    if(!active)return room.join(user,number);
+    const target=number??Number(result.details?.['number']);
+    if(!Number.isSafeInteger(target)||target<=0||active.number===target)return result;
+    const moved=await this.d.room(active.chatId).leaveLobbyForTransfer(user.id,active.number);
+    if(!moved.ok)return {ok:false,error:'IN_OTHER_GAME'};
+    return room.join(user,target);
+  }
+
   private errText(r: { error: string; details?: Record<string, string | number> }): string {
     const lobbyErrors: string[] = ['GROUP_ACTIVE_GAME', 'NOT_LOBBY', 'FULL', 'NEED_DM', 'IN_OTHER_GAME', 'ALREADY_JOINED', 'NOT_JOINED', 'NO_PERMISSION', 'NOT_ENOUGH', 'BANNED', 'CREATE_FORBIDDEN', 'DM_FAILED'];
+    if(r.error==='NOT_LOBBY'&&r.details?.['running']===1)return t('lobby.running_locked');
     if (lobbyErrors.includes(r.error)) return lobbyErrorText(r.error as LobbyError, r.details);
     if (r.error === 'NOT_FOUND') return t('lobby.not_found');
     return engineErrorText(r.error as EngineErrorCode);
@@ -355,7 +369,7 @@ export class Router {
           const number = Number(join[1]);
           const room = await this.roomOfGame(number);
           if (room) {
-            const r = await room.join(user, number);
+            const r = await this.joinRoom(room,user,number);
             if (r.ok) return this.reply(chatId, t('lobby.joined_dm', { group: escapeHtml(r.title) }));
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
@@ -454,7 +468,7 @@ export class Router {
     await this.silenceCheck(m, !!c);
     if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous)) return;
     // Anonymous group admins may manage this group only; never create fake user accounts or access owner commands.
-    if (anonymous && !['game','quick','gstart','cancelgame','settings','autostart','top','top1','top7','top30','leaderboard'].includes(c.cmd)) return;
+    if (anonymous && !['game','quick','startgame','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) return;
     const room = this.d.room(chatId);
     const isAdmin = async () => anonymous || await this.isChatAdmin(chatId, from.id);
     const replyTo = m.message_id;
@@ -467,12 +481,12 @@ export class Router {
         const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
-        if (!r.hostJoined && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
+        if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
         return;
       }
       case 'join': {
         const user = await this.d.registry.upsertUser(from, false);
-        const r = await room.join(user);
+        const r = await this.joinRoom(room,user);
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
@@ -506,7 +520,7 @@ export class Router {
       case 'mystats':
         await this.d.registry.upsertUser(from, false);
         return this.reply(chatId, await this.d.registry.profileText(from.id), undefined, replyTo);
-      case 'gstart': {
+      case 'startgame': {
         if (!(await isAdmin())) return this.reply(chatId, t('lobby.no_permission'), undefined, replyTo);
         const r = await room.start({ by: anonymous ? chatId : from.id, isAdmin: true });
         if (!r.ok && r.error !== 'DM_FAILED') return this.reply(chatId, this.errText(r), undefined, replyTo);
@@ -517,17 +531,6 @@ export class Router {
         const r = await room.cancel({ by: anonymous ? chatId : from.id, isAdmin: true });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
-      }
-      case 'autostart': {
-        if (!(await isAdmin())) return this.reply(chatId,t('gsettings.only_admin'),undefined,replyTo);
-        await this.d.registry.upsertGroup(chatId,m.chat.title ?? '');
-        const cur=await this.d.registry.getSettings(chatId);
-        const arg=c.args.trim().toLowerCase();
-        if (arg && arg!=='on' && arg!=='off' && (!/^\d{1,4}$/.test(arg) || Number(arg)<30 || Number(arg)>1800)) return this.reply(chatId,t('gsettings.auto_help'),undefined,replyTo);
-        const saved=arg ? await this.d.registry.saveSettings(chatId,{...cur,...(arg==='on'||arg==='off'?{autostart:arg==='on'}:{lobbySec:Number(arg)})},String(anonymous?chatId:from.id)) : cur;
-        if(arg) await room.syncLobbyTimer();
-        const v=settingsView(saved,chatId);
-        return this.reply(chatId,t('gsettings.auto_help')+'\n\n'+v.text,v.keyboard,replyTo);
       }
       case 'settings': {
         if (!(await isAdmin())) return this.reply(chatId, t('gsettings.only_admin'), undefined, replyTo);
@@ -624,7 +627,7 @@ export class Router {
         const room = this.d.room(chat.id);
         if (data.op === 'j') {
           const user = await this.d.registry.upsertUser(from, false);
-          const r = await room.join(user, data.game);
+          const r = await this.joinRoom(room,user,data.game);
           if (!r.ok && r.error === 'NEED_DM') {
             const username=await this.d.botUsername();
             if(username) {
@@ -634,12 +637,12 @@ export class Router {
               } catch { /* fallback to a normal alert below */ }
             }
           }
-          return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && r.error === 'NEED_DM');
+          return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && (r.error === 'NEED_DM'||r.error==='IN_OTHER_GAME'));
         }
-        if (data.op === 'l') return this.answer(cb, t('cb.stale'));
+        if (data.op === 'l' || data.op === 's') return this.answer(cb, t('cb.stale'));
         const isAdmin = await this.isChatAdmin(chat.id, from.id);
         if (!isAdmin) return this.answer(cb, t('lobby.no_permission'), true);
-        const r = data.op === 's' ? await room.start({ by: from.id, isAdmin }, data.game) : await room.cancel({ by: from.id, isAdmin }, undefined, data.game);
+        const r = await room.cancel({ by: from.id, isAdmin }, undefined, data.game);
         this.silence.delete(chat.id);
         return this.answer(cb, r.ok ? undefined : this.errText(r), !r.ok);
       }
@@ -649,9 +652,9 @@ export class Router {
           await this.d.tg.call('deleteMessage', { chat_id: chat.id, message_id: cb.message!.message_id }).catch(() => undefined);
           return this.answer(cb);
         }
+        if (data.op === 'auto' || data.op === 'lobby') return this.answer(cb,t('cb.stale'));
         const cur = await this.d.registry.getSettings(chat.id);
         const saved = await this.d.registry.saveSettings(chat.id, applySettingsOp(cur, data.op), String(from.id));
-        if (data.op === 'auto' || data.op === 'lobby') await this.d.room(chat.id).syncLobbyTimer();
         const view = settingsView(saved, chat.id);
         await this.edit(cb, view.text, view.keyboard);
         return this.answer(cb, t('gsettings.saved'));

@@ -102,13 +102,10 @@ export interface LobbyViewInput {
   deadline: number | null;
 }
 
-export function renderLobby(game: LobbyViewInput, names: string[], opts: { now: number; botUsername: string }): { text: string; keyboard: Keyboard } {
+export function renderLobby(game: LobbyViewInput, names: string[], _opts: { now: number; botUsername: string }): { text: string; keyboard: Keyboard } {
   const min = game.config.minPlayers;
   const list = names.length ? names.map((n, i) => `${i + 1}. ${escapeHtml(n)}`).join('\n') : t('lobby.empty_list');
-  const secondsLeft = game.deadline ? Math.max(0, Math.round((game.deadline - opts.now) / 1000)) : 0;
-  const hint = !game.config.lobby.autostart
-    ? (names.length < min ? t('lobby.need_more_manual',{min}) : t('lobby.ready_manual'))
-    : names.length < min ? t('lobby.need_more',{min,seconds:secondsLeft}) : t('lobby.ready',{seconds:secondsLeft});
+  const hint = names.length < min ? t('lobby.need_more_manual',{min}) : t('lobby.ready_manual');
   const text = (game.config.lobby.quick ? t('quick.banner') + '\n\n' : '') + t('lobby.title', {
     host: escapeHtml(game.hostName),
     mode: t(`mode.${game.mode}`),
