@@ -102,6 +102,7 @@ export interface RegistryApi {
   wallet(tgId: number): Promise<WalletInfo>;
   inventory(tgId: number): Promise<InventoryInfo>;
   buy(tgId: number, code: string, idem: string): Promise<BuyResult>;
+  buyDiamondVip(tgId: number, idem: string): Promise<BuyResult>;
   toggleArm(tgId: number, code: string): Promise<boolean>;
   equip(tgId: number, kind: 'FRAME' | 'TITLE', code: string | null): Promise<boolean>;
   dailyInfo(tgId: number): Promise<DailyInfo>;
@@ -758,8 +759,10 @@ export class Router {
         await this.d.registry.upsertUser(from, dmOpened);
         return { text: await this.d.registry.profileText(id), keyboard: [[{ text: t('hero.menu'), callback_data: encode({ t: 'menu', section: 'hero' }) }], ...profileKeyboard()] };
       }
-      case 'shop':
-        return shopHomeView((await this.d.registry.wallet(id)).coins);
+      case 'shop': {
+        const w = await this.d.registry.wallet(id);
+        return shopHomeView(w.coins, w.diamonds ?? 0);
+      }
       case 'inventory':
         return inventoryView(await this.d.registry.inventory(id));
       case 'vip':
@@ -781,7 +784,8 @@ export class Router {
     const reg = this.d.registry;
     switch (op) {
       case 'shop': {
-        const v = shopHomeView((await reg.wallet(id)).coins);
+        const w = await reg.wallet(id);
+        const v = shopHomeView(w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
@@ -794,7 +798,8 @@ export class Router {
       case 'buy': {
         const item = catalogItem(arg);
         if (!item || item.price === null) return this.answer(cb, t('shop.unknown'));
-        const v = buyConfirmView(item, (await reg.wallet(id)).coins);
+        const w = await reg.wallet(id);
+        const v = buyConfirmView(item, w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
@@ -805,7 +810,7 @@ export class Router {
         if (!r.ok) {
           const msg =
             r.error === 'INSUFFICIENT'
-              ? t('shop.insufficient', { price: r.price ?? 0, coins: r.balance })
+              ? t(item?.currency === 'DIAMOND' ? 'shop.diamond_insufficient' : 'shop.insufficient', { price: r.price ?? 0, coins: r.balance })
               : r.error === 'OWNED'
                 ? t('shop.already_owned')
                 : r.error === 'TIER_ONLY'
@@ -815,7 +820,7 @@ export class Router {
         }
         const v = shopCategoryView(item!.kind, await reg.inventory(id));
         await this.edit(cb, v.text, v.keyboard);
-        return this.answer(cb, t('shop.bought', { name: itemName(arg), coins: r.balance }), true);
+        return this.answer(cb, t(item!.currency === 'DIAMOND' ? 'shop.diamond_bought' : 'shop.bought', { name: itemName(arg), coins: r.balance }), true);
       }
       case 'arm':
       case 'ef':
@@ -847,6 +852,19 @@ export class Router {
         const v = roleStatsView(stats, w);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
+      }
+      case 'vipdia': {
+        if (arg) return this.answer(cb, t('cb.stale'));
+        const w = await reg.wallet(id);
+        await this.edit(cb, t('vip.diamond_confirm', { balance: w.diamonds ?? 0 }), [[{ text: t('common.yes'), callback_data: encode({ t: 'eco', op: 'vipdiok', arg: '' }) }, { text: t('common.no'), callback_data: encode({ t: 'menu', section: 'vip' }) }]]);
+        return this.answer(cb);
+      }
+      case 'vipdiok': {
+        if (arg) return this.answer(cb, t('cb.stale'));
+        const result = await reg.buyDiamondVip(id, `vip:${cb.id}`);
+        const v = vipView(await reg.wallet(id), { starsAllowed: this.starsAllowed(id), isAdmin: this.isSuperadmin(id) });
+        await this.edit(cb, v.text, v.keyboard);
+        return this.answer(cb, result.ok ? t('vip.diamond_success') : result.error === 'INSUFFICIENT' ? t('shop.diamond_insufficient', { price: 30, coins: result.balance }) : t('common.error'), true);
       }
       case 'star':
         return this.sendInvoice(cb, arg);

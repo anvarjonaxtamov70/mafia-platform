@@ -7,6 +7,7 @@ import { escapeHtml, t } from '@mafia/localization';
 import { encode } from './callback-data';
 import {
   CATALOG,
+  DIAMOND_VIP_PRICE,
   catalogItem,
   formatDate,
   isAvailable,
@@ -35,14 +36,15 @@ export const itemName = (code: string): string => t(`item.${code}`);
 
 // ───────────────────────────── Do'kon ─────────────────────────────
 
-export function shopHomeView(coins: number): View {
+export function shopHomeView(coins: number, diamonds = 0): View {
   return {
-    text: t('shop.title', { coins }),
+    text: t('shop.title', { coins, diamonds }),
     keyboard: [
-      [eb(t('shop.cat.FRAME'), 'cat', 'FRAME')],
-      [eb(t('shop.cat.TITLE'), 'cat', 'TITLE')],
-      [eb(t('shop.cat.ARCADE'), 'cat', 'ARCADE')],
+      [eb('Himoya · 300 💵', 'buy', 'SHIELD'), eb('Hujjat · 200 💵', 'buy', 'FAKE_DOC')],
+      [eb('Ovozdan himoya · 1 💎', 'buy', 'VOTE_SHIELD')],
       [menuBtn(t('shop.cat.VIP'), 'vip')],
+      [eb(t('shop.cat.FRAME'), 'cat', 'FRAME'), eb(t('shop.cat.TITLE'), 'cat', 'TITLE')],
+      [eb(t('shop.cat.ARCADE'), 'cat', 'ARCADE')],
       [menuBtn(t('menu.inventory'), 'inventory')],
       backRow(),
     ],
@@ -56,9 +58,9 @@ export function shopCategoryView(kind: ItemKind, inv: InventoryInfo): View {
     const name = itemName(it.code);
     if (it.kind === 'ARCADE') {
       const qty = inv.items.find((x) => x.code === it.code)?.qty ?? 0;
-      lines.push(t('shop.item_arcade', { emoji: it.emoji, name, price: it.price ?? 0, qty }));
+      lines.push(t('shop.item_arcade', { emoji: it.emoji, name, price: it.price ?? 0, qty, currency: it.currency === 'DIAMOND' ? '💎' : '💵' }));
       lines.push(`   <i>${t(`item_desc.${it.code}`)}</i>`);
-      buttons.push(eb(t('shop.btn_buy', { name, price: it.price ?? 0 }), 'buy', it.code));
+      buttons.push(eb(t('shop.btn_buy_currency', { name, price: it.price ?? 0, currency: it.currency === 'DIAMOND' ? '💎' : '💵' }), 'buy', it.code));
       continue;
     }
     const available = isAvailable(it, inv);
@@ -71,13 +73,13 @@ export function shopCategoryView(kind: ItemKind, inv: InventoryInfo): View {
       buttons.push(eb(t('shop.btn_buy', { name, price: it.price }), 'buy', it.code));
     }
   }
-  const text = `${t(`shop.cat.${kind}`)}\n\n${t(`shop.cat_desc.${kind}`)}\n\n${lines.join('\n')}\n\n${t('shop.balance', { coins: inv.coins })}`;
+  const text = `${t(`shop.cat.${kind}`)}\n\n${t(`shop.cat_desc.${kind}`)}\n\n${lines.join('\n')}\n\n${t('shop.balance_both', { coins: inv.coins, diamonds: inv.diamonds ?? 0 })}`;
   return { text, keyboard: [...rows(buttons, 1), [eb(t('common.back'), 'shop')]] };
 }
 
-export function buyConfirmView(item: CatalogItem, coins: number): View {
+export function buyConfirmView(item: CatalogItem, coins: number, diamonds = 0): View {
   return {
-    text: t('shop.confirm', { emoji: item.emoji, name: itemName(item.code), price: item.price ?? 0, coins }),
+    text: t('shop.confirm_currency', { emoji: item.emoji, name: itemName(item.code), price: item.price ?? 0, coins: item.currency === 'DIAMOND' ? diamonds : coins, currency: item.currency === 'DIAMOND' ? '💎' : '💵' }),
     keyboard: [[eb(t('common.yes'), 'buyok', item.code), eb(t('common.no'), 'cat', item.kind)]],
   };
 }
@@ -127,6 +129,7 @@ export function vipView(w: WalletInfo, o: { starsAllowed: boolean; isAdmin: bool
   const vip = starsProduct('VIP_30')!;
   const pro = starsProduct('VIP_PRO_30')!;
   const text = [
+    t('vip.diamond_offer', { price: DIAMOND_VIP_PRICE, balance: w.diamonds ?? 0 }),
     t('vip.title', {
       tier: t(`tier.${w.tier}`),
       until: until ? t('vip.until', { date: formatDate(until) }) : '',
@@ -135,7 +138,7 @@ export function vipView(w: WalletInfo, o: { starsAllowed: boolean; isAdmin: bool
     }),
     o.starsAllowed ? t('vip.repeat_note') : t('vip.stars_soon'),
   ].join('\n\n');
-  const keyboard: Keyboard = [];
+  const keyboard: Keyboard = [[eb(t('vip.diamond_button', { price: DIAMOND_VIP_PRICE }), 'vipdia')]];
   if (o.starsAllowed) {
     keyboard.push([eb(t('vip.btn_buy_vip', { stars: vip.stars }), 'star', 'VIP_30')]);
     keyboard.push([eb(t('vip.btn_buy_pro', { stars: pro.stars }), 'star', 'VIP_PRO_30')]);

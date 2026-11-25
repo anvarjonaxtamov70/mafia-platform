@@ -526,6 +526,7 @@ export class RegistryCore {
       diamonds: w.permanentOwner ? '∞' : (w.diamonds ?? 0), points: this.points(tgId),
       shield: inv.items.find((i) => i.code === 'SHIELD')?.qty ?? 0,
       document: inv.items.find((i) => i.code === 'FAKE_DOC')?.qty ?? 0,
+      voteShield: inv.items.find((i) => i.code === 'VOTE_SHIELD')?.qty ?? 0,
       wins: p['games_won']!, played: p['games_played']!,
     }) + (frame ? '\n' + t('profile.frame_top', { emoji: frame.emoji }) : '');
   }

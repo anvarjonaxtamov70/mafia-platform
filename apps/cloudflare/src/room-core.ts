@@ -79,7 +79,7 @@ export interface RoomGame {
   createdAt: number;
   startedAt?: number;
   /** Arcade: o'yin boshida band qilingan buyumlar (tgId → bor/yo'q) */
-  arcade?: Record<string, { shield: boolean; fakeDocument: boolean }>;
+  arcade?: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }>;
 }
 
 export interface OutItem {
@@ -124,7 +124,7 @@ export interface RegistryPort {
   releaseGame(number: number, status: 'CANCELLED' | 'FINISHED'): Promise<void>;
   markRunning(number: number, players: number): Promise<void>;
   recordGame(input: RecordGameInput): Promise<RecordResult>;
-  reserveArcade(number: number, tgIds: number[]): Promise<Record<string, { shield: boolean; fakeDocument: boolean }>>;
+  reserveArcade(number: number, tgIds: number[]): Promise<Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }>>;
   settleArcade(number: number, used: Record<string, string[]>): Promise<void>;
   releaseArcade(number: number): Promise<void>;
   markDmBlocked(tgIds: number[]): Promise<void>;
@@ -445,7 +445,7 @@ export class RoomCore {
     }
 
     // Arcade: yoqilgan buyumlar band qilinadi (har turdan bittadan, §18.1)
-    let items: Record<string, { shield: boolean; fakeDocument: boolean }> = {};
+    let items: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean }> = {};
     if (g.config.allowArcadeItems) {
       this.externalCalls++;
       items = await this.deps.registry.reserveArcade(
@@ -482,7 +482,7 @@ export class RoomCore {
       g.arcade = items;
       const all = Object.values(items);
       // Buyumlar barcha o'yinchilarga o'yin boshlanishidan oldin ko'rsatiladi (§4.4); kimda ekanligi aytilmaydi
-      this.send(this.chatId, t('game.arcade_items', { shields: all.filter((x) => x.shield).length, docs: all.filter((x) => x.fakeDocument).length }));
+      this.send(this.chatId, t('game.arcade_items', { shields: all.filter((x) => x.shield).length, docs: all.filter((x) => x.fakeDocument).length, votes: all.filter((x) => x.voteShield).length }));
     }
     const fakes = new Set(g.players.filter((p) => p.fake).map((p) => String(p.id)));
     const pp = this.postProcess(created.state, created.events, fakes, -1, now);
@@ -593,6 +593,7 @@ export class RoomCore {
           const list: string[] = [];
           if (had.shield && fin && !fin.shield) list.push('SHIELD');
           if (had.fakeDocument && fin && !fin.fakeDocument) list.push('FAKE_DOC');
+          if (had.voteShield && fin && !fin.voteShield) list.push('VOTE_SHIELD');
           if (list.length) used[id] = list;
         }
         this.addOp({ type: 'settleItems', number: g.number, used });

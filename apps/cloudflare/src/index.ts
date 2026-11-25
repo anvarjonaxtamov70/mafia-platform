@@ -105,6 +105,7 @@ export class Registry extends DurableObject<Env> {
   buy(tgId: number, code: string, idem: string) {
     return this.core.eco.buy(tgId, code, idem);
   }
+  buyDiamondVip(tgId: number, idem: string) { return this.core.eco.buyDiamondVip(tgId, idem); }
   toggleArm(tgId: number, code: string) {
     return this.core.eco.toggleArm(tgId, code);
   }

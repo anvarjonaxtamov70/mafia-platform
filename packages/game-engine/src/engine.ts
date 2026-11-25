@@ -143,6 +143,7 @@ export function createGame(input: CreateGameInput): EngineResult | { ok: false; 
       items: {
         shield: config.allowArcadeItems && !!items?.shield,
         fakeDocument: config.allowArcadeItems && !!items?.fakeDocument,
+        ...(config.allowArcadeItems && items?.voteShield ? { voteShield: true } : {}),
       },
       missedActions: 0,
       missedVotes: 0,
@@ -387,6 +388,11 @@ function executeCandidate(s: GameState, candidateId: string, events: GameEvent[]
   if (c.role === 'JESTER') {
     c.status = 'PERSONAL_WIN_EXIT';
     events.push({ type: 'PERSONAL_WIN', playerId: c.id, role: c.role, audience: { kind: 'public' } });
+    return;
+  }
+  if (s.config.allowArcadeItems && c.items.voteShield) {
+    c.items.voteShield = false;
+    events.push({ type: 'VOTE_PROTECTED', playerId: c.id, audience: { kind: 'public' } });
     return;
   }
   c.status = 'DEAD';
