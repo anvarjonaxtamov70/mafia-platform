@@ -101,6 +101,7 @@ const setupSecret = createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('
 const force = () => fetch(`${base}/__test/force?chat=${GROUP}`, { method: 'POST', headers: { 'x-setup-key': setupSecret } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const texts = (chat) => calls.filter((c) => c.method === 'sendMessage' && c.params.chat_id === chat).map((c) => c.params.text);
+const edits = (chat) => calls.filter((c) => c.method === 'editMessageText' && c.params.chat_id === chat).map((c) => c.params.text);
 const buttons = (chat) =>
   calls
     .filter((c) => c.method === 'sendMessage' && c.params.chat_id === chat)
@@ -146,6 +147,17 @@ try {
   check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === 4 && c.params.png), 'role card is valid multipart PNG');
   await pm(5, '/intro');
   check(calls.some((c) => c.method === 'sendAnimation' && c.params.chat_id === 5 && c.params.gif), 'intro is valid multipart GIF');
+  // Separate users keep hero checks independent of game click limits.
+  await pm(7, '/hero');
+  check(texts(7).some((t) => t.includes('HYPERNOVA HERO') && t.includes('1/100')), 'new user has starter hero');
+  await cb(7, 'm:pick_don');
+  check((edits(7).at(-1) ?? '').includes('hali ochilmagan'), 'locked hero cannot be selected');
+  await pm(6, '/heroes');
+  check(texts(6).some((t) => t.includes('10/10')), 'second configured owner unlocks all heroes');
+  await cb(6, 'm:pick_don');
+  check((edits(6).at(-1) ?? '').includes('Geroy tanlandi'), 'owner can select legendary hero');
+  await pm(7, '/herotop');
+  check(texts(7).some((t) => t.includes('GEROYLAR TOP 10')), 'hero leaderboard available');
   await gm(1, '/game');
   await sleep(1500);
   const lobbyMsg = calls.find((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA'));
@@ -183,7 +195,6 @@ try {
   check(texts(2).some((t) => t.includes('O‘yinlar: 1')), 'profil statistikasi saqlandi');
 
   // ───── Iqtisodiyot (Durable Object SQLite transactionSync bilan) ─────
-  const edits = (chat) => calls.filter((c) => c.method === 'editMessageText' && c.params.chat_id === chat).map((c) => c.params.text);
   check(texts(2).some((t) => t.includes('🪙 +')), 'o‘yin tugaganda Coins berildi');
   await cb(2, 'e:daily:');
   await sleep(200);

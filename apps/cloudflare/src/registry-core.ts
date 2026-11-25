@@ -24,6 +24,7 @@ import { MIN_PLAYERS_FLOOR, type Faction, type MainOutcome, type PlayerOutcome, 
 import { escapeHtml, t } from '@mafia/localization';
 import { EconomyCore } from './economy-core';
 import { SecurityCore } from './security-core';
+import { HeroCore, type HeroAward } from './hero-core';
 import type { Sql } from './sql';
 
 export type { Sql } from './sql';
@@ -87,6 +88,7 @@ export interface RecordedPlayer {
   xp: number;
   coins: number;
   ratingChange: number;
+  hero?: HeroAward;
 }
 
 export interface RecordResult {
@@ -172,6 +174,7 @@ const SCHEMA = [
 export class RegistryCore {
   readonly eco: EconomyCore;
   readonly security: SecurityCore;
+  readonly heroes: HeroCore;
 
   constructor(
     private readonly sql: Sql,
@@ -180,12 +183,14 @@ export class RegistryCore {
   ) {
     this.eco = new EconomyCore(sql, clock, undefined, owners);
     this.security = new SecurityCore(sql, clock);
+    this.heroes = new HeroCore(sql, clock, (id) => this.eco.isOwner(id));
   }
 
   migrate(): void {
     for (const q of SCHEMA) this.sql.exec(q);
     this.eco.migrate();
     this.security.migrate();
+    this.heroes.migrate();
   }
 
   private one<T>(q: string, ...p: (string | number | null)[]): T | undefined {
@@ -272,20 +277,29 @@ export class RegistryCore {
   }
 
   claim(tgId: number, chatId: number, number: number): ClaimResult {
-    const cur = this.one<{ game_number: number }>(`SELECT game_number FROM active_players WHERE telegram_id = ?`, tgId);
-    if (cur) return cur.game_number === number ? 'ALREADY' : 'BUSY';
-    this.sql.exec(`INSERT INTO active_players (telegram_id, chat_id, game_number, since) VALUES (?, ?, ?, ?)`, tgId, chatId, number, this.clock());
-    return 'OK';
+    return this.sql.tx(() => {
+      const cur = this.one<{ game_number: number }>(`SELECT game_number FROM active_players WHERE telegram_id = ?`, tgId);
+      if (cur) return cur.game_number === number ? 'ALREADY' : 'BUSY';
+      this.sql.exec(`INSERT INTO active_players (telegram_id, chat_id, game_number, since) VALUES (?, ?, ?, ?)`, tgId, chatId, number, this.clock());
+      this.heroes.snapshot(tgId, number);
+      return 'OK';
+    });
   }
 
   release(tgId: number, number: number): void {
-    this.sql.exec(`DELETE FROM active_players WHERE telegram_id = ? AND game_number = ?`, tgId, number);
+    this.sql.tx(() => {
+      this.sql.exec(`DELETE FROM active_players WHERE telegram_id = ? AND game_number = ?`, tgId, number);
+      this.heroes.release(tgId, number);
+    });
   }
 
   releaseGame(number: number, status: 'CANCELLED' | 'FINISHED' = 'CANCELLED'): void {
-    this.eco.releaseArcade(number);
-    this.sql.exec(`DELETE FROM active_players WHERE game_number = ?`, number);
-    this.sql.exec(`UPDATE games SET status = ?, finished_at = COALESCE(finished_at, ?) WHERE number = ? AND status <> 'FINISHED'`, status, this.clock(), number);
+    this.sql.tx(() => {
+      this.eco.releaseArcade(number);
+      this.sql.exec(`DELETE FROM active_players WHERE game_number = ?`, number);
+      this.heroes.releaseGame(number);
+      this.sql.exec(`UPDATE games SET status = ?, finished_at = COALESCE(finished_at, ?) WHERE number = ? AND status <> 'FINISHED'`, status, this.clock(), number);
+    });
   }
 
   markRunning(number: number, players: number): void {
@@ -381,6 +395,7 @@ export class RegistryCore {
 
   private recordGameTx(input: RecordGameInput): RecordResult {
     const now = this.clock();
+    const heroEligible = input.ranked && !input.practice && input.players.length >= 4 && new Set(input.players.map((p) => p.tgId)).size === input.players.length && !input.players.some((p) => p.fake);
     const out: RecordedPlayer[] = [];
     const referrals: RecordResult['referrals'] = [];
     if (!input.practice && !input.players.some((p) => p.fake)) this.security.observeGame(input.number, input.chatId, input.players);
@@ -454,7 +469,8 @@ export class RegistryCore {
       );
       const reward = penalized || p.left ? { coins: 0, referral: null } : this.eco.gameReward({ number: input.number, tgId: p.tgId, outcome: p.outcome, survived: p.survived, left: p.left });
       if (reward.referral) referrals.push({ referrerId: reward.referral.referrerId, referredName: p.name, reward: reward.referral.reward });
-      out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange });
+      const hero = heroEligible && p.active && !penalized && !p.left ? this.heroes.award(p.tgId, input.number, won) : undefined;
+      out.push({ tgId: p.tgId, outcome: p.outcome, xp, coins: reward.coins, ratingChange, ...(hero ? { hero } : {}) });
     }
     this.sql.exec(
       `UPDATE games SET status = 'FINISHED', finished_at = ?, outcome = ?, players = ?, days = ? WHERE number = ?`,
@@ -465,10 +481,15 @@ export class RegistryCore {
       input.number,
     );
     this.sql.exec(`DELETE FROM active_players WHERE game_number = ?`, input.number);
+    this.heroes.releaseGame(input.number);
     return { players: out, referrals };
   }
 
   // ───────────────────────────── Ko'rinishlar ─────────────────────────────
+
+  heroAccount(tgId: number) { return this.heroes.view(tgId); }
+  selectHero(tgId: number, code: string) { return this.heroes.select(tgId, code); }
+  heroTop() { return this.heroes.top(); }
 
   profileText(tgId: number): string {
     const u = this.one<UserRow>(`SELECT * FROM users WHERE telegram_id = ?`, tgId);
