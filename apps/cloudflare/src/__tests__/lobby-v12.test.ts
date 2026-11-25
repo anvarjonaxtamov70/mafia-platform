@@ -18,7 +18,7 @@ describe('lobby v12',()=>{
     expect(core.data.game).toMatchObject({number:n,deadline,hostId:1,mode:'CLASSIC'});
     expect(core.data.game!.players.map(p=>p.id)).toEqual([1,2,3,4]);
     expect(board(w)).toHaveLength(2);
-    const msg=board(w).at(-1)!;expect(msg.params['text']).toContain('4/30');
+    const msg=board(w).at(-1)!;expect(msg.params['text']).toContain('4/'+core.data.game!.config.maxPlayers);
     expect(JSON.stringify(msg.params['reply_markup'])).toContain('l:j:'+n);
     const fresh=core.data.refs['lobby:'+core.data.game!.id]!.messageId;
     expect(fresh).not.toBe(old);

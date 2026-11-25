@@ -183,6 +183,11 @@ try {
   const refreshed=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
   check(refreshed!==lobbyMsg&&refreshed?.params.reply_markup.inline_keyboard[0][0].callback_data===joinBtn,'same active registration reposted');
   for (const p of players.slice(1)) await cb(p, joinBtn, true);
+  await gm(2,'/startgame');
+  await gm(1,'/gstart');
+  await gm(1,'/autostart on');
+  await sleep(500);
+  check(!texts(GROUP).some(t=>t.includes('TUN BOSHLANDI')), 'member and legacy start commands cannot start game');
   await gm(1, '/startgame');
   await sleep(2000);
   check(calls.some(c=>c.method==='unpinChatMessage'&&c.params.chat_id===GROUP),'registration unpinned');

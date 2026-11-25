@@ -96,7 +96,7 @@ describe('manual start only',()=>{
       await w.send(groupText(id,'/gstart'));
       await w.send(groupText(id,'/autostart on'));
       await w.send(callback(id,'l:s:'+n,GROUP));
-      await w.send(callback(id,'gs:'+GROUP+':auto',GROUP));
+      await w.send(callback(id,'gs:auto:'+GROUP,GROUP));
       expect(core.data.game?.status).toBe('LOBBY');
     }
     expect(await core.start('auto',n)).toMatchObject({ok:false,error:'NO_PERMISSION'});
@@ -123,12 +123,16 @@ describe('manual start only',()=>{
       for(const id of [2,3,4,5])await w.send(privateText(id,'/start'));
       await w.send(groupText(2,'/game '+mode));
       const c=await w.loaded(GROUP),n=c.data.game!.number;
+      const needed=c.data.game!.config.minPlayers;
       w.tg.admins.add(3);
       for(const id of [1,2,3]){
         await w.send(groupText(id,'/startgame'));
         expect(c.data.game?.status).toBe('LOBBY');
       }
-      for(const id of [3,4,5])await w.send(callback(id,'l:j:'+n,GROUP));
+      for(let id=3;id<=needed+1;id++){
+        await w.send(privateText(id,'/start'));
+        await w.send(callback(id,'l:j:'+n,GROUP));
+      }
       await w.send(groupText(2,'/startgame'));
       expect(c.data.game?.status).toBe('LOBBY');
       await w.send(groupText(3,'/startgame'));
