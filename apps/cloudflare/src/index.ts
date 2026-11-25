@@ -284,6 +284,7 @@ const ROOM_METHODS = [
   'createLobby',
   'join',
   'leave',
+  'leaveLobbyForTransfer',
   'start',
   'syncLobbyTimer',
   'cancel',

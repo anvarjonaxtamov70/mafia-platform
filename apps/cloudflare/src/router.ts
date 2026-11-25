@@ -141,9 +141,10 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
   join(user: UserInfo, number?: number): Promise<RoomResult<{ title: string }>>;
   leave(tgId: number, number?: number): Promise<RoomResult>;
+  leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult>;
   start(trigger: { by: number; isAdmin: boolean }, number?: number): Promise<RoomResult>;
   syncLobbyTimer(): Promise<void>;
   cancel(trigger: { by: number; isAdmin: boolean }, text?: string, number?: number): Promise<RoomResult>;
@@ -283,6 +284,18 @@ export class Router {
     return this.d.room(chat);
   }
 
+  /** A destination validates its lobby first; the source then releases only a waiting player. */
+  private async joinRoom(room:RoomApi,user:UserInfo,number?:number):Promise<RoomResult<{title:string}>>{
+    const result=await room.join(user,number);
+    if(result.ok||result.error!=='IN_OTHER_GAME')return result;
+    const active=await this.d.registry.activeOf(user.id);
+    if(!active)return room.join(user,number);
+    if(number!==undefined&&active.number===number)return result;
+    const moved=await this.d.room(active.chatId).leaveLobbyForTransfer(user.id,active.number);
+    if(!moved.ok)return {ok:false,error:'IN_OTHER_GAME'};
+    return room.join(user,number);
+  }
+
   private errText(r: { error: string; details?: Record<string, string | number> }): string {
     const lobbyErrors: string[] = ['GROUP_ACTIVE_GAME', 'NOT_LOBBY', 'FULL', 'NEED_DM', 'IN_OTHER_GAME', 'ALREADY_JOINED', 'NOT_JOINED', 'NO_PERMISSION', 'NOT_ENOUGH', 'BANNED', 'CREATE_FORBIDDEN', 'DM_FAILED'];
     if (lobbyErrors.includes(r.error)) return lobbyErrorText(r.error as LobbyError, r.details);
@@ -355,7 +368,7 @@ export class Router {
           const number = Number(join[1]);
           const room = await this.roomOfGame(number);
           if (room) {
-            const r = await room.join(user, number);
+            const r = await this.joinRoom(room,user,number);
             if (r.ok) return this.reply(chatId, t('lobby.joined_dm', { group: escapeHtml(r.title) }));
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
@@ -467,12 +480,12 @@ export class Router {
         const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
-        if (!r.hostJoined && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
+        if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
         return;
       }
       case 'join': {
         const user = await this.d.registry.upsertUser(from, false);
-        const r = await room.join(user);
+        const r = await this.joinRoom(room,user);
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         return;
       }
@@ -624,7 +637,7 @@ export class Router {
         const room = this.d.room(chat.id);
         if (data.op === 'j') {
           const user = await this.d.registry.upsertUser(from, false);
-          const r = await room.join(user, data.game);
+          const r = await this.joinRoom(room,user,data.game);
           if (!r.ok && r.error === 'NEED_DM') {
             const username=await this.d.botUsername();
             if(username) {
@@ -634,7 +647,7 @@ export class Router {
               } catch { /* fallback to a normal alert below */ }
             }
           }
-          return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && r.error === 'NEED_DM');
+          return this.answer(cb, r.ok ? t('lobby.joined') : this.errText(r), !r.ok && (r.error === 'NEED_DM'||r.error==='IN_OTHER_GAME'));
         }
         if (data.op === 'l') return this.answer(cb, t('cb.stale'));
         const isAdmin = await this.isChatAdmin(chat.id, from.id);
