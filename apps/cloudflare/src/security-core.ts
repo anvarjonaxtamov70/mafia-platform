@@ -24,7 +24,7 @@ export class SecurityCore {
   }
 
   begin(updateId: number, userId: number): Admission {
-    if (!Number.isSafeInteger(updateId) || updateId < 0 || !Number.isSafeInteger(userId) || userId <= 0) return 'RATE_LIMITED';
+    if (!Number.isSafeInteger(updateId) || updateId < 0 || !Number.isSafeInteger(userId) || userId === 0) return 'RATE_LIMITED';
     const now = this.clock();
     return this.sql.tx(() => {
       if (++this.admissions % 128 === 0) {

@@ -1,5 +1,6 @@
 import { VISUAL_ASSETS } from './generated/visual-assets';
 import type { Telegram } from './telegram';
+import type { Keyboard } from '@mafia/bot-core';
 
 export function visualBlob(key: string): Blob | null {
   if (!Object.hasOwn(VISUAL_ASSETS, key)) return null;
@@ -10,7 +11,7 @@ export function visualBlob(key: string): Blob | null {
 }
 
 /** Decorative only: never retry or prevent text/game delivery on media failure. */
-export async function sendVisual(tg: Telegram, chatId: number, key: string, caption?: string): Promise<boolean> {
+export async function sendVisual(tg: Telegram, chatId: number, key: string, caption?: string, keyboard?: Keyboard): Promise<boolean> {
   try {
     const file = visualBlob(key);
     if (!file) return false;
@@ -20,6 +21,7 @@ export async function sendVisual(tg: Telegram, chatId: number, key: string, capt
       [animation ? 'animation' : 'photo']: file,
       ...(caption ? { caption: caption.slice(0, 900) } : {}),
       disable_notification: true,
+      ...(keyboard ? {reply_markup:{inline_keyboard:keyboard}} : {}),
     });
     return true;
   } catch {

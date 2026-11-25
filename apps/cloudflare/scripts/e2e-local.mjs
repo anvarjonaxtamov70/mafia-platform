@@ -42,7 +42,7 @@ const tg = createServer((req, res) => {
     let result = true;
     if (method === 'sendMessage' || method === 'sendInvoice' || method === 'sendPhoto' || method === 'sendAnimation') result = { message_id: nextId++ };
     if (method === 'getMe') result = { id: 1, is_bot: true, first_name: 'Mafia', username: 'e2e_mafia_bot' };
-    if (method === 'getChatMember') result = { status: params.user_id === 1 ? 'creator' : 'member' };
+    if (method === 'getChatMember') result = { status: params.user_id === 1 ? 'creator' : params.user_id === 8 ? 'administrator' : 'member' };
     if (method === 'getWebhookInfo') result = { url: 'x', pending_update_count: 0 };
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ ok: true, result }));
@@ -156,9 +156,25 @@ try {
   check(texts(6).some(t=>t.includes('Daraja: 1000')), 'owner display level');
   await pm(7, '/herotop');
   check(texts(7).some(t=>t.includes('Geroylar TOP 10')), 'hero top');
+  await gm(7, '/game');
+  await sleep(1200);
+  check(texts(GROUP).some(t=>t.includes('YANGI MAFIA')), 'ordinary member can create game');
+  await gm(7,'/cancelgame');
+  check(texts(GROUP).some(t=>t.includes('faqat guruh administratori')), 'ordinary member cannot cancel game');
+  await pm(8,'/start');
+  await gm(8,'/cancelgame');
+  await sleep(1000);
+  await gm(8,'/game');
+  await sleep(1200);
+  const regularAdminLobby = calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+  check(!!regularAdminLobby,'non-owner Telegram administrator creates lobby');
+  const lobbyKeys = (regularAdminLobby?.params.reply_markup.inline_keyboard??[]).flat().map(b=>b.callback_data??'');
+  check(lobbyKeys.length===1&&lobbyKeys[0].startsWith('l:j:'), 'lobby has exactly one join button');
+  await gm(8,'/cancelgame');
+  await sleep(1000);
   await gm(1, '/game');
   await sleep(1500);
-  const lobbyMsg = calls.find((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA'));
+  const lobbyMsg = calls.filter((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA')).at(-1);
   check(!!lobbyMsg, 'lobby xabari guruhga yuborildi (alarm orqali)');
   const joinBtn = lobbyMsg?.params.reply_markup.inline_keyboard[0][0].callback_data;
   for (const p of players.slice(1)) await cb(p, joinBtn, true);
@@ -167,6 +183,7 @@ try {
   for (const p of players) check(texts(p).some((t) => t.includes('SIZNING ROLINGIZ')), `o‘yinchi ${p} ga rol yuborildi`);
   check(!texts(GROUP).some((t) => t.includes('SIZNING ROLINGIZ')), 'guruhga rol oshkor qilinmadi');
   check(texts(GROUP).some((t) => t.includes('TUN BOSHLANDI')), 'tun boshlandi');
+  check(calls.some(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('TUN BOSHLANDI')&&c.params.reply_markup?.inline_keyboard.flat().some(b=>b.url==='https://t.me/e2e_mafia_bot')), 'game phase message opens bot');
   check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === GROUP && c.params.png), 'public game start card');
 
   // O'yin: hamma tunda o'tkazadi, bosqichlar test hook bilan tezlashtiriladi

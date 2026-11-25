@@ -47,10 +47,17 @@ async function playUntilEnd(s: TestServices, gameId: string, number: number): Pr
 }
 
 describe('Lobby (§3.4–3.5)', () => {
+  it('ordinary member can create but not start or cancel', async () => {
+    const s=makeServices(db);
+    const r=await s.lobby.createLobby({chatId:CHAT_ID,title:'G',host:tgUser(1),isAdmin:false});
+    if(!r.ok)throw Error(r.error);
+    expect(await s.lobby.start({number:r.number},{telegramId:1n,isAdmin:false})).toMatchObject({ok:false,error:'NO_PERMISSION'});
+    expect(await s.lobby.cancel({number:r.number},{telegramId:1n,isAdmin:false})).toMatchObject({ok:false,error:'NO_PERMISSION'});
+  });
   it('lobby yaratiladi, outbox ga lobby xabari yoziladi, taymer rejalashtiriladi', async () => {
     const s = makeServices(db);
     await s.users.upsert(tgUser(1), { dmOpened: true });
-    const r = await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(1), isAdmin: false });
+    const r = await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(1), isAdmin: true });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.hostJoined).toBe(true);
@@ -62,8 +69,8 @@ describe('Lobby (§3.4–3.5)', () => {
 
   it('guruhda bir vaqtda faqat bitta faol o‘yin', async () => {
     const s = makeServices(db);
-    await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(1), isAdmin: false });
-    const r2 = await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(2), isAdmin: false });
+    await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(1), isAdmin: true });
+    const r2 = await s.lobby.createLobby({ chatId: CHAT_ID, title: 'G', host: tgUser(2), isAdmin: true });
     expect(r2.ok).toBe(false);
     if (!r2.ok) expect(r2.error).toBe('GROUP_ACTIVE_GAME');
   });
@@ -99,12 +106,12 @@ describe('Lobby (§3.4–3.5)', () => {
   it('4 dan kam o‘yinchi bilan boshlanmaydi (minimal 4)', async () => {
     const s = makeServices(db);
     const { number } = await lobbyWithPlayers(s, 3);
-    const r = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    const r = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('NOT_ENOUGH');
   });
 
-  it('faqat tashkilotchi yoki admin boshlay oladi', async () => {
+  it('faqat admin boshlay oladi', async () => {
     const s = makeServices(db);
     const { number } = await lobbyWithPlayers(s, 4);
     const r = await s.lobby.start({ number }, { telegramId: 1002n, isAdmin: false });
@@ -116,12 +123,12 @@ describe('Lobby (§3.4–3.5)', () => {
     const s = makeServices(db);
     const { number, gameId } = await lobbyWithPlayers(s, 5);
     s.probe.failingIds.add('1003');
-    const r = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    const r = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('DM_FAILED');
     expect(await db.gamePlayer.count({ where: { gameId } })).toBe(4);
     s.probe.failingIds.clear();
-    const r2 = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    const r2 = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     expect(r2.ok).toBe(true);
   });
 
@@ -149,7 +156,7 @@ describe('To‘liq o‘yin (§40)', () => {
   it('8 kishilik Classic: boshidan oxirigacha, natija va statistika saqlanadi', async () => {
     const s = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s, 8);
-    const start = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    const start = await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     expect(start.ok).toBe(true);
 
     const st = await stateOf(db, gameId);
@@ -184,7 +191,7 @@ describe('To‘liq o‘yin (§40)', () => {
   it('o‘yin tugaganidan keyin harakat qabul qilinmaydi', async () => {
     const s = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s, 4);
-    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     const final = await playUntilEnd(s, gameId, number);
     const r = await s.games.dayVote(number, 1000n, 1, final.phaseSeq);
     expect(r.ok).toBe(false);
@@ -193,7 +200,7 @@ describe('To‘liq o‘yin (§40)', () => {
   it('eskirgan tugma (eski phaseSeq) rad etiladi', async () => {
     const s = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s, 4);
-    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     const st = await stateOf(db, gameId);
     s.clock.now = st.phaseEndsAt! + 2000;
     await s.games.onPhaseTimer(gameId, st.phaseSeq);
@@ -205,7 +212,7 @@ describe('To‘liq o‘yin (§40)', () => {
   it('boshqa o‘yinchi nomidan harakat qilib bo‘lmaydi (o‘yinda bo‘lmagan foydalanuvchi)', async () => {
     const s = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s, 4);
-    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     const st = await stateOf(db, gameId);
     await s.users.upsert(tgUser(9999), { dmOpened: true });
     const r = await s.games.skip(number, 9999n, st.phaseSeq);
@@ -218,7 +225,7 @@ describe('Ishonchlilik (§12.5, §29)', () => {
   it('ikki parallel taymer bitta bosqichni ikki marta yakunlamaydi', async () => {
     const s = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s, 6);
-    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    await s.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     const st = await stateOf(db, gameId);
     s.clock.now = st.phaseEndsAt! + 2000;
     const results = await Promise.all(Array.from({ length: 5 }, () => s.games.onPhaseTimer(gameId, st.phaseSeq)));
@@ -232,7 +239,7 @@ describe('Ishonchlilik (§12.5, §29)', () => {
   it('server restart: yangi servis nusxasi va sweeper o‘tib ketgan bosqichni davom ettiradi', async () => {
     const s1 = makeServices(db);
     const { gameId, number } = await lobbyWithPlayers(s1, 5);
-    await s1.lobby.start({ number }, { telegramId: 1000n, isAdmin: false });
+    await s1.lobby.start({ number }, { telegramId: 1000n, isAdmin: true });
     const before = await stateOf(db, gameId);
 
     // "Restart": xotiradagi hech narsa saqlanmagan yangi nusxa

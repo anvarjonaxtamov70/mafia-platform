@@ -67,6 +67,7 @@ export class FakeTelegram implements Telegram {
     let result: unknown = true;
     if (method === 'sendMessage' || method === 'sendInvoice' || method === 'sendPhoto' || method === 'sendAnimation') result = { message_id: this.nextId++ };
     if (method === 'getChatMember') result = { status: this.admins.has(Number(params['user_id'])) ? 'administrator' : 'member' };
+    if (method === 'getChatAdministrators') result = [...this.admins].map(id => ({ user: { id }, status: 'administrator' }));
     if (method === 'getMe') result = { username: 'test_mafia_bot' };
     return result as T;
   }
