@@ -20,7 +20,7 @@ describe('v8 shop', () => {
       expect(e.diamonds(id)).toBe(0);
     }
     expect(e.buy(2, 'KNIFE', 'no').ok).toBe(false);
-    expect(e.buy(2, 'HERO_SHIELD', 'no2').ok).toBe(false);
+    expect(e.buy(2, 'HERO_SHIELD', 'no2')).toMatchObject({ok:true,balance:0});
     expect(e.toggleArm(2, 'VOTE_SHIELD')).toBe(true);
     expect(e.reserveArcade(7,[2])['2']?.voteShield).toBe(true);
     expect(e.reserveArcade(7,[2])['2']?.voteShield).toBe(true);

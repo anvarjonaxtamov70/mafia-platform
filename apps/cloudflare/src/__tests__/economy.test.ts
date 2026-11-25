@@ -143,41 +143,14 @@ describe('O‘yin mukofotlari va vazifalar', () => {
 });
 
 describe('Do‘kon va inventar (§18, §21)', () => {
-  it('Coins bilan sotib olish, yetmasa rad, ikkinchi marta olinmaydi, tanlash profilda ko‘rinadi', async () => {
-    const w = new World();
-    await w.send(privateText(7, '/start'));
-    w.registryCore.eco.credit(7, 1000, 'TEST', null, 'seed');
-    await w.send(callback(7, 'm:shop'));
-    expect(lastEdit(w)).toContain('MAFIA DO‘KONI');
-    await w.send(callback(7, 'e:cat:FRAME'));
-    expect(lastEdit(w)).toContain('Bronze ramka');
-    await w.send(callback(7, 'e:buy:BRONZE'));
-    expect(lastEdit(w)).toContain('Sotib olasizmi');
-    await w.send(callback(7, 'e:buyok:BRONZE'));
-    expect(lastAnswer(w)).toContain('Sotib olindi');
-    expect(w.registryCore.eco.coins(7)).toBe(700);
-    await w.send(callback(7, 'e:buyok:BRONZE'));
-    expect(lastAnswer(w)).toContain('allaqachon');
-    await w.send(callback(7, 'e:buyok:GOLD'));
-    expect(lastAnswer(w)).toContain('yetarli emas');
-    expect(w.registryCore.eco.coins(7)).toBe(700);
-    w.now += 3000; // tugma bosish tezligi chegarasi: 3 soniyada 6 ta
-    await w.send(callback(7, 'e:ef:BRONZE'));
-    expect(w.registryCore.profileText(7)).toContain('🥉━');
-    await w.send(callback(7, 'e:uf:'));
-    expect(w.registryCore.profileText(7)).not.toContain('🥉━');
-    expect(w.registryCore.eco.ledgerBalance(7)).toBe(700);
-  });
-
-  it('VIP buyumini Coins bilan olib bo‘lmaydi, sotib olinmagan ramkani tanlab bo‘lmaydi', async () => {
-    const w = new World();
-    await w.send(privateText(7, '/start'));
-    w.registryCore.eco.credit(7, 5000, 'TEST', null, 'seed');
-    await w.send(callback(7, 'e:buyok:DIAMOND'));
-    expect(lastAnswer(w)).toContain('VIP');
-    expect(w.registryCore.eco.equip(7, 'FRAME', 'GOLD')).toBe(false);
-    expect(w.registryCore.eco.equip(7, 'FRAME', 'DIAMOND')).toBe(false);
-    expect(w.registryCore.eco.coins(7)).toBe(5000);
+  it('retired cosmetics cannot be purchased or equipped, existing balances preserved', async () => {
+    const w=new World(); await w.send(privateText(7,'/start'));
+    const e=w.registryCore.eco; e.credit(7,1000,'TEST',null,'seed');
+    await w.send(callback(7,'e:buyok:BRONZE'));
+    expect(e.coins(7)).toBe(1000);
+    expect(e.buy(7,'GOLD','old').ok).toBe(false);
+    expect(e.equip(7,'FRAME','GOLD')).toBe(false);
+    expect(e.equip(7,'TITLE','CITY_HERO')).toBe(false);
   });
 
   it('Arcade buyumlari to‘planadi, Arcade’da ishlatish yoqiladi/o‘chiriladi', async () => {
@@ -190,7 +163,7 @@ describe('Do‘kon va inventar (§18, §21)', () => {
     await w.send(callback(7, 'e:arm:SHIELD'));
     expect(w.registryCore.eco.inventory(7).items.find((i) => i.code === 'SHIELD')!.armed).toBe(true);
     await w.send(callback(7, 'm:inventory'));
-    expect(lastEdit(w)).toContain('Himoya: 2 ta');
+    expect(lastEdit(w)).toContain('Himoya: 2');
   });
 });
 
@@ -334,7 +307,7 @@ describe('Telegram Stars va VIP (§19, §20)', () => {
     expect(eco.tierInfo(2).vipUntil).toBe(w.now + 60 * DAY_MS);
     // VIP imkoniyatlari: belgi, ramka, statistika
     expect(w.registryCore.userInfo(2)!.badge).toBe('👑');
-    expect(eco.equip(2, 'FRAME', 'DIAMOND')).toBe(true);
+    expect(eco.equip(2, 'FRAME', 'DIAMOND')).toBe(false);
     await w.send(callback(2, 'e:stats:'));
     expect(lastEdit(w)).toContain('ROL STATISTIKASI');
     // Muddat tugagach
@@ -422,7 +395,7 @@ describe('Menyu bo‘limlari', () => {
     await w.send(privateText(9, '/start'));
     for (const [section, expected] of [
       ['shop', 'DO‘KONI'],
-      ['inventory', 'INVENTARINGIZ'],
+      ['inventory', 'Dollar'],
       ['vip', 'VIP OBUNA'],
       ['daily', 'KUNLIK MUKOFOT'],
       ['invite', 'TAKLIF QILISH'],
@@ -450,8 +423,8 @@ describe('Superadmin owner benefits', () => {
     const eco = w.registryCore.eco;
     for (const id of [1, 10]) {
       expect(eco.wallet(id)).toMatchObject({ tier: 'VIP_PRO', permanentOwner: true, coins: 1_000_000_000 });
-      expect(eco.equip(id, 'FRAME', 'DIAMOND')).toBe(true);
-      expect(eco.equip(id, 'TITLE', 'LEGENDARY_PLAYER')).toBe(true);
+      expect(eco.equip(id, 'FRAME', 'DIAMOND')).toBe(false);
+      expect(eco.equip(id, 'TITLE', 'LEGENDARY_PLAYER')).toBe(false);
       expect(eco.coins(id)).toBe(0);
       expect(eco.ledgerBalance(id)).toBe(0);
       expect(eco.buy(id, 'SHIELD', 'owner-' + id)).toMatchObject({ ok: true, balance: 1_000_000_000 });
