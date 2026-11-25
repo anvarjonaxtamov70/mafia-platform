@@ -26,7 +26,13 @@
     "dev": "npm run build && tsx watch --tsconfig apps/server/tsconfig.json apps/server/src/main.ts",
     "cf:typecheck": "tsc -p apps/cloudflare/tsconfig.json",
     "cf:e2e": "node apps/cloudflare/scripts/e2e-local.mjs",
-    "cf:deploy": "npm run deploy -w @mafia/cloudflare"
+    "cf:deploy": "npm run deploy -w @mafia/cloudflare",
+    "visuals:generate": "node apps/cloudflare/scripts/generate-visuals.mjs",
+    "pretypecheck": "npm run visuals:generate",
+    "pretest": "npm run visuals:generate",
+    "pretest:integration": "npm run visuals:generate",
+    "pretest:all": "npm run visuals:generate",
+    "precf:typecheck": "npm run visuals:generate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

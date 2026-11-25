@@ -22,14 +22,17 @@ const secret = createHash('sha256').update(`mafia-webhook|${TOKEN}`).digest('hex
 const calls = [];
 let nextId = 1;
 const tg = createServer((req, res) => {
-  let body = '';
-  req.on('data', (c) => (body += c));
+  const parts = [];
+  req.on('data', (c) => parts.push(c));
   req.on('end', () => {
     const method = req.url.split('/').pop();
-    const params = body ? JSON.parse(body) : {};
+    const raw = Buffer.concat(parts);
+    const multipart = String(req.headers['content-type']).includes('multipart/form-data');
+    const body = raw.toString('latin1');
+    const params = multipart ? { chat_id: Number(/name="chat_id"\r\n\r\n(-?\d+)/.exec(body)?.[1]), png: raw.includes(Buffer.from([137,80,78,71,13,10,26,10])), gif: raw.includes(Buffer.from('GIF89a')) } : raw.length ? JSON.parse(raw.toString('utf8')) : {};
     calls.push({ method, params });
     let result = true;
-    if (method === 'sendMessage' || method === 'sendInvoice') result = { message_id: nextId++ };
+    if (method === 'sendMessage' || method === 'sendInvoice' || method === 'sendPhoto' || method === 'sendAnimation') result = { message_id: nextId++ };
     if (method === 'getMe') result = { id: 1, is_bot: true, first_name: 'Mafia', username: 'e2e_mafia_bot' };
     if (method === 'getChatMember') result = { status: params.user_id === 1 ? 'creator' : 'member' };
     if (method === 'getWebhookInfo') result = { url: 'x', pending_update_count: 0 };
@@ -121,6 +124,10 @@ try {
   await send(replay);
   check(texts(5).length === beforeReplay + 1, 'identical update ID processed once');
 
+  await cb(4, 'm:art_don');
+  check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === 4 && c.params.png), 'role card is valid multipart PNG');
+  await pm(5, '/intro');
+  check(calls.some((c) => c.method === 'sendAnimation' && c.params.chat_id === 5 && c.params.gif), 'intro is valid multipart GIF');
   await gm(1, '/game');
   await sleep(1500);
   const lobbyMsg = calls.find((c) => c.method === 'sendMessage' && c.params.chat_id === GROUP && c.params.text.includes('YANGI MAFIA'));
@@ -132,6 +139,7 @@ try {
   for (const p of players) check(texts(p).some((t) => t.includes('SIZNING ROLINGIZ')), `o‘yinchi ${p} ga rol yuborildi`);
   check(!texts(GROUP).some((t) => t.includes('SIZNING ROLINGIZ')), 'guruhga rol oshkor qilinmadi');
   check(texts(GROUP).some((t) => t.includes('TUN BOSHLANDI')), 'tun boshlandi');
+  check(calls.some((c) => c.method === 'sendPhoto' && c.params.chat_id === GROUP && c.params.png), 'public game start card');
 
   // O'yin: hamma tunda o'tkazadi, bosqichlar test hook bilan tezlashtiriladi
   for (let round = 0; round < 80; round++) {

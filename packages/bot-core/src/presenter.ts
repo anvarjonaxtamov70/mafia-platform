@@ -31,6 +31,7 @@ export interface PresentInput {
   users: Map<string, PresentUser>;
   /** Mutatsiyadan oldingi bosqich raqami (ovoz xabari tugmalarini olib tashlash uchun) */
   prevPhaseSeq: number;
+  visuals?: boolean;
 }
 
 export function roleLabel(role: RoleCode): string {
@@ -155,7 +156,7 @@ export function present(input: PresentInput): OutboxDraft[] {
         break;
       case 'ROLE_ASSIGNED': {
         const pid = e.audience.kind === 'private' ? e.audience.playerId : '';
-        dm(pid, t('dm.role', { emoji: getRole(e.role).emoji, role: t(`role.${e.role}.name`), faction: t(`faction.${e.faction}`), desc: t(`role.${e.role}.desc`) }));
+        dm(pid, t('dm.role', { emoji: getRole(e.role).emoji, role: t(`role.${e.role}.name`), faction: t(`faction.${e.faction}`), desc: t(`role.${e.role}.desc`) }), input.visuals ? [[{ text: t('visual.card_button'), callback_data: encode({ t: 'menu', section: 'art_' + e.role.toLowerCase() }) }]] : undefined);
         break;
       }
       case 'MAFIA_TEAM': {

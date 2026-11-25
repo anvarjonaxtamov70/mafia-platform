@@ -65,7 +65,7 @@ export class FakeTelegram implements Telegram {
       throw new TgError(403, 'Forbidden: bot was blocked by the user');
     }
     let result: unknown = true;
-    if (method === 'sendMessage' || method === 'sendInvoice') result = { message_id: this.nextId++ };
+    if (method === 'sendMessage' || method === 'sendInvoice' || method === 'sendPhoto' || method === 'sendAnimation') result = { message_id: this.nextId++ };
     if (method === 'getChatMember') result = { status: this.admins.has(Number(params['user_id'])) ? 'administrator' : 'member' };
     if (method === 'getMe') result = { username: 'test_mafia_bot' };
     return result as T;
@@ -124,12 +124,14 @@ export class World {
   router: Router;
   rng = seededRng(5);
   devFake = false;
+  visuals = false;
   admins = new Set<number>([1]);
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean } = {}) {
     this.devFake = !!opts.devFake;
+    this.visuals = !!opts.visuals;
     this.starsMode = opts.starsMode ?? 'admins';
     this.registryCore = new RegistryCore(sqliteSql(), () => this.now, opts.ownerBenefits ? this.admins : undefined);
     this.registryCore.migrate();
@@ -140,6 +142,7 @@ export class World {
       room: (chatId) => this.roomApi(chatId),
       admins: this.admins,
       devFake: this.devFake,
+      visuals: this.visuals,
       starsMode: this.starsMode,
       botUsername: async () => 'test_mafia_bot',
       now: () => this.now,
@@ -162,6 +165,7 @@ export class World {
         rng: this.rng,
         botUsername: () => 'test_mafia_bot',
         devFakePlayers: this.devFake,
+        visuals: this.visuals,
       });
       this.rooms.set(chatId, core);
     }

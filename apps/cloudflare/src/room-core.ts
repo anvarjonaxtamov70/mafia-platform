@@ -47,6 +47,7 @@ import {
 import { escapeHtml, t } from '@mafia/localization';
 import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
+import { sendVisual } from './visuals';
 
 export type { ConfigSnapshot };
 
@@ -142,6 +143,7 @@ export interface RoomDeps {
   rng: Rng;
   botUsername: () => string;
   devFakePlayers: boolean;
+  visuals?: boolean;
   reportRegistryFailure?: () => void;
 }
 
@@ -568,8 +570,16 @@ export class RoomCore {
       events,
       users: this.users(g),
       prevPhaseSeq: before?.phaseSeq ?? 0,
+      visuals: !!this.deps.visuals,
     });
     this.enqueue(drafts);
+    // Cosmetic group banners follow critical text. Never put role-specific art in a group.
+    if (this.deps.visuals) {
+      const ended = events.some((e) => e.type === 'GAME_ENDED');
+      const started = events.some((e) => e.type === 'GAME_STARTED');
+      const visual = ended && state.result ? 'game_' + state.result.outcome.toLowerCase() : started ? 'game_start' : null;
+      if (visual) this.enqueue([{ chatId: BigInt(this.chatId), payload: { kind: 'SEND', text: '', visual }, dedupeKey: '' }]);
+    }
     if (state.status === 'FINISHED' && state.result) {
       const byId = new Map(g.players.map((p) => [String(p.id), p]));
       if (g.arcade && Object.keys(g.arcade).length > 0) {
@@ -909,6 +919,10 @@ export class RoomCore {
   private async deliver(item: OutItem): Promise<void> {
     const p = item.payload;
     if (p.kind === 'SEND') {
+      if (p.visual) {
+        if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual);
+        return;
+      }
       const res = await this.deps.telegram.call<{ message_id: number }>('sendMessage', {
         chat_id: item.chatId,
         text: p.text.length > 4096 ? `${p.text.slice(0, 4095)}…` : p.text,

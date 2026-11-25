@@ -14,7 +14,7 @@ export function displayName(u: { firstName: string; lastName?: string | null; us
 
 // ───────────────────────────── Menyular ─────────────────────────────
 
-export function mainMenu(competition = false): Keyboard {
+export function mainMenu(competition = false, visuals = false): Keyboard {
   const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
   return [
     [b('menu.play', 'play')],
@@ -24,6 +24,7 @@ export function mainMenu(competition = false): Keyboard {
     [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
     [b('menu.invite', 'invite')],
     [b('menu.characters', 'characters'), b('menu.guide', 'guide')],
+    ...(visuals ? [[b('visual.intro_button', 'intro')]] : []),
     [b('menu.rules', 'rules'), b('menu.settings', 'settings')],
     [b('menu.help', 'help')],
   ];
@@ -32,7 +33,7 @@ export function mainMenu(competition = false): Keyboard {
 export const backRow = () => [{ text: t('common.back'), callback_data: encode({ t: 'menu', section: 'home' }) }];
 
 /** Interaktiv katalog va qo‘llanma: Telegram xabarlari, Mini App talab qilinmaydi. */
-export function learningView(section: string): { text: string; keyboard: Keyboard } | null {
+export function learningView(section: string, visuals = false): { text: string; keyboard: Keyboard } | null {
   const button = (text: string, section: string) => ({ text, callback_data: encode({ t: 'menu', section }) });
   const categories = ['CITY', 'MAFIA', 'NEUTRAL', 'SPECIAL'] as const;
   if (section === 'guide') {
@@ -57,7 +58,7 @@ export function learningView(section: string): { text: string; keyboard: Keyboar
     if (!role) return null;
     return {
       text: role.emoji + ' <b>' + t('role.' + role.code + '.name') + '</b>\n\n' + t('role.' + role.code + '.desc') + '\n\n' + t('characters.minimum', { count: Math.max(MIN_PLAYERS_FLOOR, role.minPlayers) }) + '\n' + t('characters.modes', { modes: role.modes.map((m) => t('mode.' + m)).join(', ') }),
-      keyboard: [[button(t('common.back'), 'roles_' + role.category.toLowerCase())], backRow()],
+      keyboard: [...(visuals ? [[button(t('visual.card_button'), 'art_' + role.code.toLowerCase())]] : []), [button(t('common.back'), 'roles_' + role.category.toLowerCase())], backRow()],
     };
   }
   return null;

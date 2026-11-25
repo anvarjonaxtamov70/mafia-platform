@@ -49,6 +49,7 @@ import type { BuyResult, CheckOrderResult, ClaimDailyResult, PaymentInput, Payme
 import type { TgUserInput, UserInfo } from './registry-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
+import { sendVisual } from './visuals';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
 
@@ -160,6 +161,7 @@ export interface RouterDeps {
   room(chatId: number): RoomApi;
   admins: ReadonlySet<number>;
   devFake: boolean;
+  visuals?: boolean;
   /** Telegram Stars: off | admins (faqat bot egalari sinaydi) | all */
   starsMode: StarsMode;
   botUsername(): Promise<string>;
@@ -185,6 +187,7 @@ class RateLimiter {
 export class RouterCaches {
   readonly clicks = new RateLimiter(6, 3000);
   readonly chats = new RateLimiter(3, 3000);
+  readonly media = new RateLimiter(1, 5000);
   readonly adminCache = new Map<string, { value: boolean; expires: number }>();
   readonly gameChats = new Map<number, number>();
   readonly silence = new Map<number, SilenceSnapshot>();
@@ -193,6 +196,7 @@ export class RouterCaches {
 export class Router {
   private readonly clicks: RateLimiter;
   private readonly chats: RateLimiter;
+  private readonly media: RateLimiter;
   private readonly adminCache: Map<string, { value: boolean; expires: number }>;
   private readonly gameChats: Map<number, number>;
   private readonly silence: Map<number, SilenceSnapshot>;
@@ -203,6 +207,7 @@ export class Router {
   ) {
     this.clicks = caches.clicks;
     this.chats = caches.chats;
+    this.media = caches.media;
     this.adminCache = caches.adminCache;
     this.gameChats = caches.gameChats;
     this.silence = caches.silence;
@@ -353,7 +358,7 @@ export class Router {
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
         }
-        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true));
+        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals));
       }
       case 'help':
         return this.reply(chatId, t('help.text'));
@@ -379,9 +384,11 @@ export class Router {
         return this.reply(chatId, t('privacy.text'));
       case 'rules':
         return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }));
+      case 'intro':
+        return this.showVisual(from.id, 'intro');
       case 'characters':
       case 'guide': {
-        const view = learningView(c.cmd)!;
+        const view = learningView(c.cmd, !!this.d.visuals)!;
         return this.reply(chatId, view.text, view.keyboard);
       }
       case 'roles':
@@ -559,7 +566,7 @@ export class Router {
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
-          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true));
+          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals));
           return this.answer(cb);
         }
         const r = await this.d.registry.anonymize(from.id);
@@ -634,12 +641,13 @@ export class Router {
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
-    const learning = learningView(section);
+    if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
+    const learning = learningView(section, !!this.d.visuals);
     if (learning) return this.edit(cb, learning.text, learning.keyboard);
     const username = await this.d.botUsername();
     switch (section) {
       case 'home':
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true));
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals));
       case 'play':
         return this.edit(cb, t('play.text'), [
           ...(username ? [[{ text: t('play.add_to_group'), url: `https://t.me/${username}?startgroup=true` }]] : []),
@@ -671,9 +679,19 @@ export class Router {
       default: {
         const v = await this.section(from, section, cb.message?.chat.type === 'private');
         if (v) return this.edit(cb, v.text, v.keyboard);
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true));
+        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals));
       }
     }
+  }
+
+  private async showVisual(id: number, section: string): Promise<void> {
+    if (!this.d.visuals) return this.reply(id, t('visual.unavailable'));
+    const key = section === 'intro' ? 'intro' : 'role_' + section.slice(4);
+    const role = section === 'intro' ? null : learningView(key);
+    if (section !== 'intro' && !role) return;
+    if (!this.media.allow(String(id), this.d.now())) return this.reply(id, t('common.rate_limited'));
+    const caption = section === 'intro' ? 'HYPERNOVA MAFIA' : t('role.' + key.slice(5).toUpperCase() + '.name');
+    if (!(await sendVisual(this.d.tg, id, key, caption))) await this.reply(id, t('visual.unavailable'));
   }
 
   private async competitionView(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {

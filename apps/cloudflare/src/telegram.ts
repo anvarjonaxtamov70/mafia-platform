@@ -24,13 +24,24 @@ export class TelegramClient implements Telegram {
   ) {}
 
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    const multipart = (method === 'sendPhoto' || method === 'sendAnimation') && Object.values(params).some((v) => v instanceof Blob);
+    let bodyData: string | FormData = JSON.stringify(params);
+    if (multipart) {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(params)) {
+        if (value instanceof Blob) form.append(key, value, value.type === 'image/gif' ? 'hypernova.gif' : 'hypernova.png');
+        else if (value !== undefined && value !== null) form.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+      bodyData = form;
+    }
     let res: Response;
     try {
       res = await this.fetchFn(`${this.base}/bot${this.token}/${method}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(8_000),
+        ...(multipart ? {} : { headers: { 'content-type': 'application/json' } }),
+        body: bodyData,
+        signal: AbortSignal.timeout(multipart ? 2_500 : 8_000),
+        redirect: 'error',
       });
     } catch (e) {
       // Tarmoq xatosi — token URL ichida, xabarga qo'shilmaydi
