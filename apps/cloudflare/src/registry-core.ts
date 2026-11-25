@@ -23,6 +23,7 @@ import {
 import { MIN_PLAYERS_FLOOR, type Faction, type MainOutcome, type PlayerOutcome, type RoleCode } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
 import { EconomyCore } from './economy-core';
+import { SecurityCore } from './security-core';
 import type { Sql } from './sql';
 
 export type { Sql } from './sql';
@@ -166,6 +167,7 @@ const SCHEMA = [
 
 export class RegistryCore {
   readonly eco: EconomyCore;
+  readonly security: SecurityCore;
 
   constructor(
     private readonly sql: Sql,
@@ -173,11 +175,13 @@ export class RegistryCore {
     owners: ReadonlySet<number> = new Set<number>(),
   ) {
     this.eco = new EconomyCore(sql, clock, undefined, owners);
+    this.security = new SecurityCore(sql, clock);
   }
 
   migrate(): void {
     for (const q of SCHEMA) this.sql.exec(q);
     this.eco.migrate();
+    this.security.migrate();
   }
 
   private one<T>(q: string, ...p: (string | number | null)[]): T | undefined {
@@ -375,6 +379,7 @@ export class RegistryCore {
     const now = this.clock();
     const out: RecordedPlayer[] = [];
     const referrals: RecordResult['referrals'] = [];
+    if (!input.practice && !input.players.some((p) => p.fake)) this.security.observeGame(input.number, input.chatId, input.players);
     for (const p of input.practice ? [] : input.players) {
       if (p.fake) continue;
       const exists = this.one(`SELECT 1 AS x FROM game_results WHERE game_number = ? AND telegram_id = ?`, input.number, p.tgId);
@@ -554,7 +559,8 @@ export class RegistryCore {
     const s = this.stats();
     const e = this.recentErrors();
     const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
-    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}`;
+    const security = { ...this.security.stats(), ...this.security.abuseStats() };
+    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}`;
   }
 
   /** Ichki xatolar jurnali (oxirgi 200 ta saqlanadi) — /admin_stats va /telegram/diag da ko'rinadi */

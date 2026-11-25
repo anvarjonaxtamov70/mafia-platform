@@ -22,7 +22,9 @@ export function validTelegramUpdate(v: unknown): v is TgUpdate {
     if (m['from'] !== undefined && !user(m['from'])) return false;
     if (m['sender_chat'] !== undefined && !chat(m['sender_chat'])) return false;
     if (m['migrate_to_chat_id'] !== undefined && (!id(m['migrate_to_chat_id']) || m['migrate_to_chat_id'] >= 0)) return false;
-    if (m['chat']['type'] === 'private' && (!user(m['from']) || m['from']['id'] !== m['chat']['id'])) return false;
+    const refund = m['refunded_payment'];
+    if (refund !== undefined && (!obj(refund) || !purchase(refund) || !str(refund['telegram_payment_charge_id'], 256) || m['chat']['type'] !== 'private' || m['successful_payment'] !== undefined)) return false;
+    if (refund === undefined && m['chat']['type'] === 'private' && (!user(m['from']) || m['from']['id'] !== m['chat']['id'])) return false;
     const p = m['successful_payment'];
     if (p !== undefined && (!obj(p) || !purchase(p) || !str(p['telegram_payment_charge_id'], 256) || !user(m['from']) || m['chat']['type'] !== 'private')) return false;
   }

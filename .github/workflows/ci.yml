@@ -36,6 +36,8 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -43,6 +45,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Production dependency audit (high/critical blocks CI)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Lint
         run: npm run lint

@@ -325,9 +325,11 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     await w.send(groupText(Number(victim.id), 'salom'));
     const deletes = () => w.tg.calls.filter((c) => c.method === 'deleteMessage').length;
     expect(deletes()).toBe(1);
+    await w.send(groupText(Number(victim.id), '/status'));
+    expect(deletes()).toBe(2);
     w.now += 20_000; // kesh yangilanishi
     await w.send(groupText(Number(alive.id), 'men tirikman'));
-    expect(deletes()).toBe(1);
+    expect(deletes()).toBe(2);
   });
 
   it('tunda Mafia chati jamoadoshlarga yetkaziladi', async () => {
@@ -390,9 +392,9 @@ describe('Hypernova v2 — Telegram-first', () => {
 
 
 describe('Stability regression', () => {
-  it('ten independent group rooms finish without cross-room state or stuck players', async () => {
+  it('100 independent group rooms finish without cross-room state or stuck players', async () => {
     const w = new World();
-    const groups = Array.from({ length: 10 }, (_, i) => ({ chat: GROUP - i - 1, ids: Array.from({ length: 4 }, (_, j) => 100 + i * 4 + j) }));
+    const groups = Array.from({ length: 100 }, (_, i) => ({ chat: GROUP - i - 1, ids: Array.from({ length: 4 }, (_, j) => 100 + i * 4 + j) }));
     for (const group of groups) {
       for (const id of group.ids) await w.send(privateText(id, '/start'));
       const host = group.ids[0]!;
@@ -415,7 +417,7 @@ describe('Stability regression', () => {
       expect((await w.loaded(group.chat)).data.game).toBeNull();
       for (const id of group.ids) expect(w.registryCore.activeOf(id)).toBeNull();
     }
-  }, 60_000);
+  }, 120_000);
 
   it('two concurrent start requests cannot start the same lobby twice', async () => {
     const w = new World();
@@ -425,5 +427,67 @@ describe('Stability regression', () => {
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     await w.runAlarms();
     for (const id of [1, 2, 3, 4]) expect(w.tg.texts(id).filter((text) => text.includes('SIZNING ROLINGIZ'))).toHaveLength(1);
+  });
+});
+
+
+describe('Security v3 ingress and registry recovery', () => {
+  it('persistent admission rejects replay, limits each actor and permits others', () => {
+    const w = new World();
+    const security = w.registryCore.security;
+    expect(security.begin(1, 10)).toBe('ALLOW');
+    expect(security.begin(1, 10)).toBe('BUSY');
+    security.finish(1, true);
+    expect(security.begin(1, 10)).toBe('DUPLICATE');
+    for (let i = 2; i <= 60; i++) { expect(security.begin(i, 10)).toBe('ALLOW'); security.finish(i, true); }
+    expect(security.begin(61, 10)).toBe('RATE_LIMITED');
+    expect(security.begin(62, 11)).toBe('ALLOW');
+    w.now += 121_000;
+    expect(security.begin(62, 11)).toBe('DUPLICATE');
+    expect(security.stats()).toMatchObject({ limited: 1, uncertain: 1 });
+    expect(security.begin(63, 10)).toBe('ALLOW');
+    expect(security.claimAlert('webhook')).toBe(true);
+    expect(security.claimAlert('webhook')).toBe(false);
+    w.now += 15 * 60_000;
+    expect(security.claimAlert('webhook')).toBe(true);
+  });
+  it('1000 actors can be admitted independently without replay', () => {
+    const security = new World().registryCore.security;
+    for (let i = 1; i <= 1000; i++) { expect(security.begin(i, i)).toBe('ALLOW'); security.finish(i, true); }
+    for (let i = 1; i <= 1000; i++) expect(security.begin(i, i)).toBe('DUPLICATE');
+    expect(security.stats()).toEqual({ limited: 0, uncertain: 0, processing: 0 });
+  });
+  it('failed registry operation is preserved and retried after bounded backoff', async () => {
+    const w = new World();
+    const number = await lobby(w, [1, 2, 3, 4]);
+    const core = await w.loaded(GROUP);
+    const release = w.registryCore.release.bind(w.registryCore);
+    let fail = true;
+    w.registryCore.release = (id, n) => { if (fail) throw new Error('test registry outage'); release(id, n); };
+    await core.leave(2, number);
+    await core.alarm();
+    expect(core.data.ops.some((op) => op.type === 'release')).toBe(true);
+    expect(core.data.opsRetryAt).toBeGreaterThan(w.now);
+    fail = false;
+    w.restart(GROUP);
+    await w.advance(3000);
+    expect((await w.loaded(GROUP)).data.ops).toHaveLength(0);
+    expect(w.registryCore.activeOf(2)).toBeNull();
+  });
+});
+
+
+describe('Security v3 abuse telemetry', () => {
+  it('repeated mostly inactive same-roster games are review signals, not bans', () => {
+    const w = new World();
+    const players = [1, 2, 3, 4].map((tgId) => ({ tgId, active: tgId === 1, fake: false, left: false }));
+    for (let n = 1; n <= 6; n++) w.registryCore.security.observeGame(n, GROUP, players);
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(1);
+    w.registryCore.security.observeGame(6, GROUP, players);
+    w.registryCore.security.observeGame(7, GROUP, players.map((p) => ({ ...p, active: true })));
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(1);
+    expect(w.registryCore.adminStats()).toContain('Shubhali o‘yinlar');
+    w.now += 25 * 60 * 60 * 1000;
+    expect(w.registryCore.security.abuseStats().suspiciousGames).toBe(0);
   });
 });
