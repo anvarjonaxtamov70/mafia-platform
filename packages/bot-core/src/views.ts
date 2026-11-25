@@ -14,19 +14,15 @@ export function displayName(u: { firstName: string; lastName?: string | null; us
 
 // ───────────────────────────── Menyular ─────────────────────────────
 
-export function mainMenu(competition = false, visuals = false, heroes = false): Keyboard {
+/** Compact home. Keep legacy arguments for existing runtime callers. */
+export function mainMenu(_competition = false, _visuals = false, heroes = false): Keyboard {
   const b = (key: string, section: string) => ({ text: t(key), callback_data: encode({ t: 'menu', section }) });
   return [
     [b('menu.play', 'play')],
-    [b('menu.profile', 'profile'), b('menu.rating', 'rating')],
-    ...(heroes ? [[b('hero.menu', 'hero')]] : []),
-    ...(competition ? [[b('menu.history', 'history')]] : []),
-    [b('menu.shop', 'shop')],
-    [b('menu.vip', 'vip'), b('menu.daily', 'daily')],
+    [b('menu.profile', 'profile'), ...(heroes ? [b('hero.menu', 'hero')] : [])],
+    [b('menu.shop', 'shop'), b('menu.vip', 'vip')],
     [b('menu.invite', 'invite')],
-    [b('menu.characters', 'characters'), b('menu.guide', 'guide')],
-    ...(visuals ? [[b('visual.intro_button', 'intro')]] : []),
-    [b('menu.rules', 'rules'), b('menu.settings', 'settings')],
+    [b('menu.characters', 'characters'), b('menu.settings', 'settings')],
     [b('menu.help', 'help')],
   ];
 }
