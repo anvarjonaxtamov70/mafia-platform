@@ -183,7 +183,7 @@ try {
   const refreshed=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
   check(refreshed!==lobbyMsg&&refreshed?.params.reply_markup.inline_keyboard[0][0].callback_data===joinBtn,'same active registration reposted');
   for (const p of players.slice(1)) await cb(p, joinBtn, true);
-  await gm(1, '/gstart');
+  await gm(1, '/startgame');
   await sleep(2000);
   check(calls.some(c=>c.method==='unpinChatMessage'&&c.params.chat_id===GROUP),'registration unpinned');
   for (const p of players) check(texts(p).some((t) => t.includes('SIZNING ROLINGIZ')), `o‘yinchi ${p} ga rol yuborildi`);

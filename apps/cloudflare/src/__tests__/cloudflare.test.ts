@@ -110,7 +110,7 @@ describe('Registry (SQLite)', () => {
 });
 
 describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
-  it('/start → menyu; /game → lobby; tugma bilan qo‘shilish; /gstart → rollar DM', async () => {
+  it('/start → menyu; /game → lobby; tugma bilan qo‘shilish; /startgame → rollar DM', async () => {
     const w = new World();
     const ids = [1, 2, 3, 4];
     const number = await lobby(w, ids);
@@ -120,9 +120,9 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     // Lobby xabari tahrirlangan (yangi xabar emas)
     expect(w.tg.calls.filter((c) => c.method === 'editMessageText' && Number(c.params['chat_id']) === GROUP).length).toBeGreaterThan(0);
 
-    await w.send(groupText(3, '/gstart'));
+    await w.send(groupText(3, '/startgame'));
     expect(state(w)).toBeNull();
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const s = state(w)!;
     expect(s.status).toBe('RUNNING');
     for (const id of ids) expect(w.tg.texts(id).some((t) => t.includes('SIZNING ROLINGIZ'))).toBe(true);
@@ -134,7 +134,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
   it('o‘yin boshidan oxirigacha alarm orqali, natijalar va profil yangilanadi', async () => {
     const w = new World();
     const number = await lobby(w, [1, 2, 3, 4, 5, 6]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     await playToEnd(w, number);
     expect(w.rooms.get(GROUP)!.data.game).toBeNull();
     expect(w.tg.texts(GROUP).some((t) => t.includes('SHAHAR G‘ALABA QOZONDI'))).toBe(true);
@@ -150,7 +150,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
   it('eskirgan tugma rad etiladi; boshqa o‘yinchi nomidan harakat qilib bo‘lmaydi', async () => {
     const w = new World();
     const number = await lobby(w, [1, 2, 3, 4]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const s = state(w)!;
     const commissar = s.players.find((p) => p.role === 'COMMISSAR')!;
     const btn = buttonsFor(w, Number(commissar.id)).find((d) => decode(d)?.t === 'action')!;
@@ -173,7 +173,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
   it('restart: DO xotirasi yo‘qolsa ham o‘yin storage dan davom etadi', async () => {
     const w = new World();
     const number = await lobby(w, [1, 2, 3, 4, 5]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const seq = state(w)!.phaseSeq;
     w.restart(GROUP);
     await w.advance(200_000);
@@ -196,16 +196,18 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     expect(w.registryCore.activeOf(2)?.number).toBe(other.number);
   });
 
-  it('lobby muddati tugasa: kam bo‘lsa bekor, yetarli bo‘lsa avtostart', async () => {
+  it('registration never expires or starts by timer at any roster size', async () => {
     const w = new World();
     await lobby(w, [1, 2]);
     await w.advance(200_000);
-    expect((await w.loaded(GROUP)).data.game).toBeNull();
-    expect(w.registryCore.activeOf(1)).toBeNull();
+    expect((await w.loaded(GROUP)).data.game?.status).toBe('LOBBY');
+    expect(w.registryCore.activeOf(1)).not.toBeNull();
 
     const w2 = new World();
     await lobby(w2, [1, 2, 3, 4]);
     await w2.advance(200_000);
+    expect(w2.rooms.get(GROUP)!.data.game!.status).toBe('LOBBY');
+    await w2.send(groupText(1,'/startgame'));
     expect(w2.rooms.get(GROUP)!.data.game!.status).toBe('RUNNING');
   });
 
@@ -213,12 +215,12 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     const w = new World();
     const number = await lobby(w, [1, 2, 3, 4, 5]);
     w.tg.blocked.add(3);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const g = w.rooms.get(GROUP)!.data.game!;
     expect(g.status).toBe('LOBBY');
     expect(g.players.map((p) => p.id)).not.toContain(3);
     expect(w.registryCore.activeOf(3)).toBeNull();
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     expect(w.rooms.get(GROUP)!.data.game!.status).toBe('RUNNING');
     expect(number).toBeGreaterThan(0);
   });
@@ -235,7 +237,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     for (const id of ids.slice(1)) await w.send(callback(id, `l:j:${number}`, GROUP));
     expect(core.data.game!.players).toHaveLength(30);
     w.tg.calls = [];
-    await w.router.handle({ update_id: 1, ...groupText(1, '/gstart') });
+    await w.router.handle({ update_id: 1, ...groupText(1, '/startgame') });
     // start chaqiruvi: faqat DM tekshiruvlari (30) + javoblar
     const store = w.stores.get(GROUP)!;
     expect(store.alarm).not.toBeNull();
@@ -278,7 +280,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
     w.tg.admins.add(1);
     await w.send(groupText(1, '/game'));
     await w.send(groupText(1, '/devfill 5'));
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     for (let i = 0; i < 100 && w.rooms.get(GROUP)!.data.game; i++) {
       const s = state(w)!;
       await w.advance((s.phaseEndsAt ?? w.now) - w.now + 1000);
@@ -316,7 +318,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
   it('o‘lgan o‘yinchining guruhdagi xabari o‘chiriladi, tirikniki kunduzi qoladi', async () => {
     const w = new World();
     await lobby(w, [1, 2, 3, 4]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const core = w.rooms.get(GROUP)!;
     const st = core.data.game!.state!;
     const victim = st.players.find((p) => p.faction !== 'MAFIA')!;
@@ -336,7 +338,7 @@ describe('Cloudflare: to‘liq oqim (router → GameRoom → Registry)', () => {
   it('tunda Mafia chati jamoadoshlarga yetkaziladi', async () => {
     const w = new World();
     await lobby(w, [1, 2, 3, 4, 5, 6, 7]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const st = w.rooms.get(GROUP)!.data.game!.state!;
     const mafia = st.players.filter((p) => p.faction === 'MAFIA');
     expect(mafia.length).toBe(2);
@@ -404,7 +406,7 @@ describe('Stability regression', () => {
       const n = (await w.loaded(group.chat)).data.game!.number;
       for (const id of group.ids.slice(1)) await w.send(callback(id, 'l:j:' + n, group.chat));
     }
-    await Promise.all(groups.map((group, i) => w.router.handle({ update_id: 10000 + i, ...groupText(group.ids[0]!, '/gstart', group.chat) })));
+    await Promise.all(groups.map((group, i) => w.router.handle({ update_id: 10000 + i, ...groupText(group.ids[0]!, '/startgame', group.chat) })));
     await w.runAlarms();
     for (const group of groups) {
       expect((await w.loaded(group.chat)).data.game?.state?.players.map((p) => Number(p.id)).sort((a, b) => a - b)).toEqual(group.ids);
@@ -522,7 +524,7 @@ describe('v4 competition and AFK', () => {
   it('expired phase rejects a callback even if the alarm is late', async () => {
     const w = new World();
     const n = await lobby(w, [1, 2, 3, 4]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     const core = await w.loaded(GROUP);
     const s = core.data.game!.state!;
     const seq = s.phaseSeq;

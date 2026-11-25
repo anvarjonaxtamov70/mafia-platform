@@ -103,7 +103,7 @@ describe('O‘yin mukofotlari va vazifalar', () => {
     const w = new World();
     const ids = [1, 2, 3, 4, 5];
     let number = await lobby(w, ids);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     await playToEnd(w, number);
     const eco = w.registryCore.eco;
     for (const id of ids) {
@@ -117,7 +117,7 @@ describe('O‘yin mukofotlari va vazifalar', () => {
     expect(eco.claimQuest(2, 'PLAY_2')).toEqual({ ok: false });
 
     number = await lobby(w, ids);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     await playToEnd(w, number);
     const before = eco.coins(2);
     await w.send(callback(2, 'e:qc:PLAY_2'));
@@ -132,7 +132,7 @@ describe('O‘yin mukofotlari va vazifalar', () => {
     w.tg.admins.add(1);
     await w.send(groupText(1, '/game'));
     await w.send(groupText(1, '/devfill 5'));
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     for (let i = 0; i < 100 && w.rooms.get(GROUP)!.data.game; i++) {
       const s = w.rooms.get(GROUP)!.data.game!.state!;
       await w.advance((s.phaseEndsAt ?? w.now) - w.now + 1000);
@@ -177,7 +177,7 @@ describe('Arcade rejimi: buyumlarni band qilish va hisob-kitob', () => {
     eco.buy(2, 'SHIELD', 'b1');
     eco.toggleArm(2, 'SHIELD');
     const number = await lobby(w, ids, 'arcade');
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     expect(w.tg.texts(GROUP).some((x) => x.includes('Qalqon bilan: 1'))).toBe(true);
     expect(eco.inventory(2).items.find((i) => i.code === 'SHIELD')!.qty).toBe(0);
     // Mafia hujum qilmaydi → qalqon ishlatilmaydi → qaytariladi
@@ -194,7 +194,7 @@ describe('Arcade rejimi: buyumlarni band qilish va hisob-kitob', () => {
     eco.buy(2, 'SHIELD', 'b1');
     eco.toggleArm(2, 'SHIELD');
     await lobby(w, ids);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     expect(eco.inventory(2).items.find((i) => i.code === 'SHIELD')!.qty).toBe(1);
     expect(w.tg.texts(GROUP).some((x) => x.includes('ARCADE BUYUMLARI'))).toBe(false);
   });
@@ -237,7 +237,7 @@ describe('Referal (§23)', () => {
     const ids = [1, 2, 3, 5];
     for (let g = 0; g < 3; g++) {
       const number = await lobby(w, ids);
-      await w.send(groupText(1, '/gstart'));
+      await w.send(groupText(1, '/startgame'));
       await playToEnd(w, number);
       if (g === 0) expect(w.registryCore.eco.coins(100)).toBe(0);
     }

@@ -24,7 +24,7 @@ describe('lobby v12',()=>{
     expect(fresh).not.toBe(old);
     expect(pins(w,'unpinChatMessage').some(c=>c.params['message_id']===old)).toBe(true);
     expect(pins(w).at(-1)?.params['message_id']).toBe(fresh);
-    await w.send(groupText(1,'/gstart'));
+    await w.send(groupText(1,'/startgame'));
     expect(pins(w,'unpinChatMessage').some(c=>c.params['message_id']===fresh)).toBe(true);
     expect(w.tg.calls.some(c=>c.method==='unpinAllChatMessages')).toBe(false);
     expect(core.data.game?.status).toBe('RUNNING');
@@ -38,7 +38,7 @@ describe('lobby v12',()=>{
     expect((await w.loaded(GROUP)).data.game!.players.some(p=>p.id===2)).toBe(false);
     await w.send(callback(2,'l:j:'+n,GROUP));
     expect(w.registryCore.activeOf(2)?.number).toBe(n);
-    await w.send(groupText(1,'/gstart'));
+    await w.send(groupText(1,'/startgame'));
     await w.send(groupText(2,'/leave'));
     await w.send(callback(2,'l:j:'+b.number,OTHER));
     expect(w.registryCore.activeOf(2)?.number).toBe(n);
@@ -62,10 +62,13 @@ describe('lobby v12',()=>{
     const active=w.registryCore.activeOf(2)!;
     expect(rooms.find(c=>c.data.game?.number===active.number)?.data.game?.players.some(p=>p.id===2)).toBe(true);
   });
-  it('cancel and timeout unpin only the lobby, including after durable room restart',async()=>{
+  it('cancel unpins only the lobby; restart and time passage leave it pinned',async()=>{
     const w=new World();await lobby(w,[1,2]);const core=await w.loaded(GROUP);
     const id=core.data.refs['lobby:'+core.data.game!.id]!.messageId;
     w.restart(GROUP);await w.advance(200_000);
+    expect((await w.loaded(GROUP)).data.game?.status).toBe('LOBBY');
+    expect(pins(w,'unpinChatMessage').some(c=>c.params['message_id']===id)).toBe(false);
+    await w.send(groupText(1,'/cancelgame'));
     expect((await w.loaded(GROUP)).data.game).toBeNull();
     expect(pins(w,'unpinChatMessage').at(-1)?.params['message_id']).toBe(id);
     const g=await open(w,GROUP,1);
@@ -80,7 +83,7 @@ describe('lobby v12',()=>{
       if(method==='pinChatMessage'||method==='unpinChatMessage')throw new TgError(403,'not enough rights');
       return original<T>(method,params);
     };
-    await lobby(w,[1,2,3,4]);await w.send(groupText(1,'/gstart'));
+    await lobby(w,[1,2,3,4]);await w.send(groupText(1,'/startgame'));
     expect((await w.loaded(GROUP)).data.game?.status).toBe('RUNNING');
     expect(w.tg.texts(2).some(t=>t.includes('SIZNING ROLINGIZ'))).toBe(true);
   });

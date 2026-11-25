@@ -15,7 +15,6 @@ import {
   mafiaVoteMessage,
   mainMenu,
   nightActionMessage,
-  plainAlert,
   rolesText,
   learningView,
   SELECTABLE_MODES,

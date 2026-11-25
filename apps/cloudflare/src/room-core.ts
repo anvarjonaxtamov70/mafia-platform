@@ -203,8 +203,7 @@ export class RoomCore {
       nextId: 1,
       alarmAt: null,
     };
-    this.clearLegacyLobbyTimer();
-    await this.commit();
+    if(this.clearLegacyLobbyTimer())await this.commit();
   }
 
   private get now(): number {
@@ -567,13 +566,14 @@ export class RoomCore {
   }
 
   /** Old durable snapshots may contain an enabled registration timer. Disable it without starting or cancelling. */
-  private clearLegacyLobbyTimer(): void {
+  private clearLegacyLobbyTimer(): boolean {
     const g=this.data.game;
-    if(g?.status!=='LOBBY'||(!g.config.lobby.autostart&&g.deadline===null))return;
+    if(g?.status!=='LOBBY'||(!g.config.lobby.autostart&&g.deadline===null))return false;
     g.config.lobby.autostart=false;
     g.deadline=null;
     g.version++;
     this.lobbyEdit(g);
+    return true;
   }
 
   /** Superguruhga ko'chish: eski chatdagi o'yin bekor qilinadi (yangi chatda qayta boshlanadi). */

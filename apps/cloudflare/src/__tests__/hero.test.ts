@@ -114,7 +114,7 @@ describe('Hero v6', () => {
   it('real RoomCore game rewards at least one active player and sends Hero XP notice', async () => {
     const w = new World();
     const n = await lobby(w, [1,2,3,4]);
-    await w.send(groupText(1, '/gstart'));
+    await w.send(groupText(1, '/startgame'));
     await playToEnd(w, n);
     await w.runAlarms();
     expect([1,2,3,4].some((id) => w.registryCore.heroAccount(id).totalXp > 0)).toBe(true);

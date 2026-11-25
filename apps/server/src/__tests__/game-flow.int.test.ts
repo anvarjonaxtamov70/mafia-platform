@@ -132,23 +132,26 @@ describe('Lobby (§3.4–3.5)', () => {
     expect(r2.ok).toBe(true);
   });
 
-  it('lobby muddati tugasa, yetarli o‘yinchi bo‘lmasa bekor qilinadi', async () => {
+  it('legacy timeout does not cancel undersized manual lobby', async () => {
     const s = makeServices(db);
     const { gameId } = await lobbyWithPlayers(s, 2);
     s.clock.now += 200_000;
     await s.lobby.onLobbyTimeout(gameId);
     const g = await db.game.findUniqueOrThrow({ where: { id: gameId } });
-    expect(g.status).toBe('CANCELLED');
-    expect(g.activeGroupKey).toBeNull();
+    expect(g.status).toBe('LOBBY');
+    expect(g.activeGroupKey).not.toBeNull();
+    expect(g.phaseDeadlineAt).toBeNull();
   });
 
-  it('lobby muddati tugasa va yetarli o‘yinchi bo‘lsa avtomatik boshlanadi', async () => {
+  it('legacy timeout never starts a ready lobby', async () => {
     const s = makeServices(db);
-    const { gameId } = await lobbyWithPlayers(s, 4);
+    const { gameId, number } = await lobbyWithPlayers(s, 4);
     s.clock.now += 200_000;
     await s.lobby.onLobbyTimeout(gameId);
     const g = await db.game.findUniqueOrThrow({ where: { id: gameId } });
-    expect(g.status).toBe('RUNNING');
+    expect(g.status).toBe('LOBBY');
+    expect(await s.lobby.start({number},'auto')).toMatchObject({ok:false,error:'NO_PERMISSION'});
+    expect((await s.lobby.start({number},{telegramId:1000n,isAdmin:true})).ok).toBe(true);
   });
 });
 
@@ -272,7 +275,7 @@ describe('Ishonchlilik (§12.5, §29)', () => {
       for (const id of tg.slice(1)) await s.lobby.join({ number: r.number }, tgUser(id));
       games.push({ gameId: r.gameId, number: r.number });
     }
-    const started = await Promise.all(games.map((g) => s.lobby.start({ number: g.number }, 'auto')));
+    const started = await Promise.all(games.map((g,i) => s.lobby.start({ number: g.number }, {telegramId:BigInt(100_000+i*10),isAdmin:true})));
     expect(started.every((r) => r.ok)).toBe(true);
     const states = await Promise.all(games.map((g) => stateOf(db, g.gameId)));
     for (const [i, st] of states.entries()) {
