@@ -285,6 +285,7 @@ const ROOM_METHODS = [
   'join',
   'leave',
   'start',
+  'syncLobbyTimer',
   'cancel',
   'devFill',
   'nightAction',

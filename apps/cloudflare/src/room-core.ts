@@ -228,10 +228,15 @@ export class RoomCore {
 
   private enqueue(drafts: OutboxDraft[]): void {
     for (const d of drafts) {
+      let payload=d.payload;
+      const username=this.deps.botUsername();
+      if(this.data.game?.status==='RUNNING' && Number(d.chatId)===this.chatId && username && (payload.kind==='SEND'||payload.kind==='EDIT')) {
+        payload={...payload,keyboard:[...(payload.keyboard??[]),[{text:t('lobby.open_bot'),url:`https://t.me/${username}`}]]};
+      }
       this.data.outbox.push({
         id: this.data.nextId++,
         chatId: Number(d.chatId),
-        payload: d.payload,
+        payload,
         ...(d.storeRefAs ? { storeRefAs: d.storeRefAs } : {}),
         ...(d.coalesceKey ? { coalesceKey: d.coalesceKey } : {}),
         attempts: 0,
@@ -277,7 +282,6 @@ export class RoomCore {
   async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean }): Promise<RoomResult<{ number: number; hostJoined: boolean }>> {
     if (this.data.game) return { ok: false, error: 'GROUP_ACTIVE_GAME' };
     if (input.host.banned) return { ok: false, error: 'BANNED' };
-    if (!input.isAdmin) return { ok: false, error: 'CREATE_FORBIDDEN' };
     const settings = await this.deps.registry.getSettings(this.chatId);
     const number = await this.deps.registry.allocateGame(this.chatId);
     // await davomida boshqa /game kelgan bo'lishi mumkin
@@ -297,7 +301,7 @@ export class RoomCore {
       silenceNight: settings.silenceNight,
       hostId: input.host.id,
       hostName: input.host.name,
-      deadline: this.now + settings.lobbySec * 1000,
+      deadline: settings.autostart ? this.now + settings.lobbySec * 1000 : null,
       players: [],
       state: null,
       version: 0,
@@ -509,6 +513,21 @@ export class RoomCore {
     return { ok: true };
   }
 
+  /** Read the persisted settings at the room boundary; do not mutate a running game. */
+  async syncLobbyTimer(): Promise<void> {
+    const g=this.data.game;
+    if(!g || g.status!=='LOBBY' || this.starting) return;
+    const settings=await this.deps.registry.getSettings(this.chatId);
+    if(this.data.game!==g || g.status!=='LOBBY' || this.starting) return;
+    if(g.config.lobby.autostart===settings.autostart && g.config.lobby.lobbySec===settings.lobbySec) return;
+    g.config.lobby.autostart=settings.autostart;
+    g.config.lobby.lobbySec=settings.lobbySec;
+    g.deadline=settings.autostart ? this.now+settings.lobbySec*1000 : null;
+    g.version++;
+    this.lobbyEdit(g);
+    await this.commit();
+  }
+
   private async lobbyTimeout(): Promise<void> {
     const g = this.data.game;
     if (!g || g.status !== 'LOBBY' || !g.deadline || g.deadline > this.now + 500) return;
@@ -517,12 +536,13 @@ export class RoomCore {
       await this.commit();
       return;
     }
+    if (!g.config.lobby.autostart) {
+      g.deadline = null;
+      this.lobbyEdit(g);
+      await this.commit();
+      return;
+    }
     if (g.players.length >= g.config.minPlayers) {
-      if (!g.config.lobby.autostart) {
-        g.deadline = null;
-        await this.commit();
-        return;
-      }
       let r = await this.start('auto');
       if (!r.ok && r.error === 'DM_FAILED') r = await this.start('auto');
       if (r.ok || this.data.game !== g || g.status !== 'LOBBY') return;
@@ -940,7 +960,7 @@ export class RoomCore {
     const p = item.payload;
     if (p.kind === 'SEND') {
       if (p.visual) {
-        if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual);
+        if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual, undefined, p.keyboard);
         return;
       }
       const res = await this.deps.telegram.call<{ message_id: number }>('sendMessage', {

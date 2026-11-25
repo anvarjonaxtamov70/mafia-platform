@@ -36,7 +36,7 @@ export function defaultGroupSettings(minPlayers = MIN_PLAYERS_FLOOR): GroupSetti
     lobbySec: 180,
     revealRoles: true,
     autostart: true,
-    adminOnlyCreate: true,
+    adminOnlyCreate: false,
     silenceDead: true,
     silenceNight: true,
   };
@@ -69,7 +69,7 @@ export function normalizeSettings(raw: unknown, globalMin = MIN_PLAYERS_FLOOR): 
     lobbySec: clamp(r['lobbySec'], 30, 1800, d.lobbySec),
     revealRoles: bool(r['revealRoles'], d.revealRoles),
     autostart: bool(r['autostart'], d.autostart),
-    adminOnlyCreate: true,
+    adminOnlyCreate: false,
     silenceDead: bool(r['silenceDead'], d.silenceDead),
     silenceNight: bool(r['silenceNight'], d.silenceNight),
   };
@@ -138,7 +138,7 @@ export function settingsView(s: GroupSettingsData, chatId: number): { text: stri
 }
 
 export function applySettingsOp(s: GroupSettingsData, op: string): GroupSettingsData {
-  const n = { ...s, adminOnlyCreate: true };
+  const n = { ...s, adminOnlyCreate: false };
   switch (op) {
     case 'mode':
       n.mode = SELECTABLE_MODES[(SELECTABLE_MODES.indexOf(s.mode) + 1) % SELECTABLE_MODES.length]!;
@@ -171,7 +171,7 @@ export function applySettingsOp(s: GroupSettingsData, op: string): GroupSettings
       n.autostart = !s.autostart;
       break;
     case 'admin':
-      n.adminOnlyCreate = true;
+      n.adminOnlyCreate = false;
       break;
     case 'lobby':
       n.lobbySec = nextStep(LOBBY_STEPS, s.lobbySec);
