@@ -444,5 +444,8 @@
   "characters.select": "Batafsil ma’lumot uchun personajni tanlang.",
   "characters.minimum": "👥 Rol uchun minimal o‘yinchilar: {count}",
   "characters.modes": "🎮 Mos rejimlar: {modes}",
-  "quick.banner": "⚡ <b>TEZKOR O‘YIN</b>\nTun 45s · Muhokama 60s · Ovoz 30s · Hukm 10s\nReytingsiz o‘yin."
+  "quick.banner": "⚡ <b>TEZKOR O‘YIN</b>\nTun 45s · Muhokama 60s · Ovoz 30s · Hukm 10s\nReytingsiz o‘yin.",
+  "owner.tier": "💎 VIP PRO — doimiy (Superadmin)",
+  "owner.vip": "💎 <b>SUPERADMIN · VIP PRO</b>\n\nVIP PRO: doimiy va bepul.\n🪙 Coins: cheklanmagan (1 000 000 000 ko‘rsatiladi, xaridlarda kamaymaydi).\nBarcha VIP ramkalari va unvonlari ochiq.\nHaqiqiy Telegram Stars alohida hisoblanadi.",
+  "owner.already_vip": "Sizda VIP PRO doimiy faol. Obuna sotib olish shart emas."
 }

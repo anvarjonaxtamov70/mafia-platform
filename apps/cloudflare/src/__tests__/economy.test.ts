@@ -436,3 +436,74 @@ describe('Menyu bo‘limlari', () => {
     expect(w.registryCore.recentErrors().count24h).toBe(0);
   });
 });
+
+
+describe('Superadmin owner benefits', () => {
+  it('only configured owners have permanent VIP PRO and a non-minted allowance', async () => {
+    const w = new World({ starsMode: 'all', ownerBenefits: true });
+    w.admins.add(10);
+    w.tg.admins.add(20);
+    for (const id of [1, 10, 20]) await w.send(privateText(id, '/start'));
+    const eco = w.registryCore.eco;
+    for (const id of [1, 10]) {
+      expect(eco.wallet(id)).toMatchObject({ tier: 'VIP_PRO', permanentOwner: true, coins: 1_000_000_000 });
+      expect(eco.equip(id, 'FRAME', 'DIAMOND')).toBe(true);
+      expect(eco.equip(id, 'TITLE', 'LEGENDARY_PLAYER')).toBe(true);
+      expect(eco.coins(id)).toBe(0);
+      expect(eco.ledgerBalance(id)).toBe(0);
+      expect(eco.buy(id, 'SHIELD', 'owner-' + id)).toMatchObject({ ok: true, balance: 1_000_000_000 });
+      expect(eco.buy(id, 'SHIELD', 'owner-' + id)).toMatchObject({ ok: true, balance: 1_000_000_000 });
+      expect(eco.inventory(id).items.find((i) => i.code === 'SHIELD')?.qty).toBe(1);
+      expect(eco.ledgerBalance(id)).toBe(0);
+    }
+    expect(eco.wallet(20)).toMatchObject({ tier: 'FREE', coins: 0 });
+    expect(eco.buy(20, 'SHIELD', 'normal')).toMatchObject({ ok: false, error: 'INSUFFICIENT' });
+    expect(eco.buy(1, 'KNIFE', 'no-knife')).toMatchObject({ ok: false, error: 'UNKNOWN' });
+    w.now += 3650 * DAY_MS;
+    expect(eco.wallet(10).tier).toBe('VIP_PRO');
+    expect(w.registryCore.userInfo(10)?.badge).toBe('💎');
+    expect(w.registryCore.profileText(10)).toContain('doimiy');
+    w.admins.delete(10);
+    expect(eco.wallet(10)).toMatchObject({ tier: 'FREE', coins: 0 });
+    expect(eco.wallet(10).frame).toBeNull();
+  });
+
+  it('owner VIP does not create paid invoices; explicit 1 Star test remains available', async () => {
+    const w = new World({ starsMode: 'all', ownerBenefits: true });
+    await w.send(privateText(1, '/start'));
+    await w.send(callback(1, 'm:vip'));
+    expect(lastEdit(w)).toContain('doimiy');
+    await w.send(callback(1, 'e:star:VIP_PRO_30'));
+    expect(invoices(w)).toHaveLength(0);
+    await w.send(callback(1, 'e:star:TEST_1'));
+    expect(invoices(w)).toHaveLength(1);
+    expect(invoices(w)[0]?.params['prices']).toEqual([{ label: expect.any(String), amount: 1 }]);
+    expect(w.registryCore.eco.tierInfo(1).tier).toBe('VIP_PRO');
+  });
+});
+
+
+describe('Security regression', () => {
+  it('a new charge for an already-paid order is recorded but does not grant VIP twice', async () => {
+    const w = new World({ starsMode: 'all' });
+    await w.send(privateText(2, '/start'));
+    const payload = await buyStars(w, 2, 'VIP_30', 'first-charge');
+    const until = w.registryCore.eco.tierInfo(2).vipUntil;
+    await w.send(paymentUpdate(2, payload, 99, 'second-charge'));
+    expect(w.registryCore.eco.tierInfo(2).vipUntil).toBe(until);
+    expect(w.registryCore.eco.paymentInfo('second-charge')?.status).toBe('UNMATCHED');
+  });
+  it('rejects malformed callback payloads and unsafe numeric IDs', () => {
+    for (const value of ['l:j:1:extra', 'm:vip:extra', 'dm:y:extra', 'a:1:2:SKIP:3', 'v:1:2:3:4', 'my:9007199254740993', 'gs:min+:1-2', 'gs:min+:0', 'm:' + '💎'.repeat(20)]) {
+      expect(decode(value)).toBeNull();
+    }
+  });
+  it('group callbacks cannot alter private wallets or profiles', async () => {
+    const w = new World({ ownerBenefits: true });
+    await w.send(privateText(1, '/start'));
+    await w.send(callback(1, 'e:buyok:SHIELD', GROUP));
+    await w.send(callback(1, 'dm:y', GROUP));
+    expect(w.registryCore.eco.inventory(1).items).toHaveLength(0);
+    expect(w.registryCore.userInfo(1)?.name).toBe('U1');
+  });
+});

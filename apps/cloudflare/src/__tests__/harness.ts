@@ -128,10 +128,10 @@ export class World {
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean } = {}) {
     this.devFake = !!opts.devFake;
     this.starsMode = opts.starsMode ?? 'admins';
-    this.registryCore = new RegistryCore(sqliteSql(), () => this.now);
+    this.registryCore = new RegistryCore(sqliteSql(), () => this.now, opts.ownerBenefits ? this.admins : undefined);
     this.registryCore.migrate();
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({

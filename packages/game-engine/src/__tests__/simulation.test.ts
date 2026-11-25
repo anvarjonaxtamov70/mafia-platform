@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulations, simulateGame } from '../simulator';
+import { advancePhase, createGame } from '../engine';
+import { seededRng } from '../rng';
 import type { GameMode } from '../types';
 
 describe('Simulyatsiya (§37.4)', () => {
@@ -38,4 +40,29 @@ describe('Simulyatsiya (§37.4)', () => {
       for (const p of s.players) for (const v of Object.values(p.ability.charges)) expect(v).toBeGreaterThanOrEqual(0);
     }
   }, 300_000);
+});
+
+
+describe('All mode / player-count stability matrix', () => {
+  const modes: GameMode[] = ['CLASSIC', 'ADVANCED', 'CHAOS', 'PRIVATE', 'ARCADE', 'TOURNAMENT'];
+  for (const mode of modes) {
+    it(mode + ': 4–30 players, random play and complete inactivity terminate', () => {
+      for (let players = 4; players <= 30; players++) {
+        for (const seed of [17, 813]) {
+          const r = simulateGame({ players, mode, seed });
+          expect(r.finished, mode + '/' + players + '/' + seed).toBe(true);
+        }
+        const rng = seededRng(players);
+        const created = createGame({ id: 'afk-' + mode + '-' + players, mode, players: Array.from({ length: players }, (_, i) => ({ id: String(i + 1), name: 'P' + i })), config: { maxPlayers: 30 }, now: 0, rng });
+        if (!created.ok) throw new Error('createGame: ' + created.error);
+        let state = created.state;
+        for (let step = 0; step < 250 && state.status === 'RUNNING'; step++) {
+          const next = advancePhase(state, (state.phaseEndsAt ?? 0) + 1, rng, state.phaseSeq);
+          if (!next.ok) throw new Error('advancePhase: ' + next.error);
+          state = next.state;
+        }
+        expect(state.status, mode + '/' + players + '/afk').toBe('FINISHED');
+      }
+    }, 120_000);
+  }
 });

@@ -515,6 +515,8 @@ export class Router {
     const from = cb.from;
     const data = cb.data ? decode(cb.data) : null;
     if (!data || from.is_bot) return this.answer(cb, t('cb.stale'));
+    // Private menus, economy and deletion must never be invoked from a group or another user's message.
+    if (['menu', 'eco', 'delme'].includes(data.t) && (cb.message?.chat.type !== 'private' || cb.message.chat.id !== from.id)) return this.answer(cb, t('cb.stale'));
     if (!this.clicks.allow(`cb:${from.id}`, this.d.now())) return this.answer(cb, t('common.rate_limited'));
     try {
       await this.callback(cb, data);
@@ -773,6 +775,7 @@ export class Router {
     if (!product) return this.answer(cb, t('cb.stale'));
     if (!this.starsAllowed(id)) return this.answer(cb, t('pay.disabled'), true);
     if (product.adminOnly && !this.isSuperadmin(id)) return this.answer(cb, t('pay.admin_only'), true);
+    if (!product.adminOnly && (await this.d.registry.wallet(id)).permanentOwner) return this.answer(cb, t('owner.already_vip'), true);
     const order = await this.d.registry.createOrder(id, code);
     if (!order.ok) return this.answer(cb, t('common.error'));
     const title = t(`invoice.${code}.title`);
@@ -796,6 +799,7 @@ export class Router {
     const r = await this.d.registry.checkOrder(q.invoice_payload, q.from.id, q.total_amount, q.currency);
     if (!r.ok) return void (await deny(t('pay.precheck_failed')));
     if (r.product.adminOnly && !this.isSuperadmin(q.from.id)) return void (await deny(t('pay.admin_only')));
+    if (!r.product.adminOnly && (await this.d.registry.wallet(q.from.id)).permanentOwner) return void (await deny(t('owner.already_vip')));
     await this.d.tg.call('answerPreCheckoutQuery', { pre_checkout_query_id: q.id, ok: true });
   }
 
