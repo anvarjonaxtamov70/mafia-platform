@@ -230,6 +230,8 @@ export class RoomCore {
       alarmAt: null,
     };
     if(this.clearLegacyLobbyTimer())await this.commit();
+    const deferred=this.data.game;
+    if(deferred?.v2DeferredMigration!==undefined&&!this.v2Pending(deferred.number))await this.migrate(deferred.v2DeferredMigration);
   }
 
   private get now(): number {
@@ -250,7 +252,10 @@ export class RoomCore {
 
     for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
-    if(g?.status==='RUNNING'&&g.v2Session&&!this.v2Pending(g.number)){const deadline=this.v2Due(g.v2Session);if(deadline!==null)candidates.push(deadline);}
+    if(g?.status==='RUNNING'&&g.v2Session&&!this.v2Pending(g.number)){
+      const deadline=g.v2DeferredMigration!==undefined?this.now:this.v2Due(g.v2Session);
+      if(deadline!==null)candidates.push(deadline);
+    }
     const next = candidates.length ? Math.min(...candidates) : null;
     if (next !== this.data.alarmAt) {
       this.data.alarmAt = next;
@@ -1016,6 +1021,8 @@ export class RoomCore {
     this.externalCalls = 0;
     this.data.alarmAt = null;
     await this.processOps();
+    const deferred=this.data.game;
+    if(deferred?.v2DeferredMigration!==undefined&&!this.v2Pending(deferred.number))await this.migrate(deferred.v2DeferredMigration);
     this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
     if(g2?.status==='RUNNING'&&g2.v2Session&&!this.v2Pending(g2.number)){
@@ -1088,6 +1095,8 @@ export class RoomCore {
             if(!g||g.number!==op.number||!g.v2Session)throw Error('missing night settlement room');
             const p=op.pending,ledger=this.deps.v2Settlement;
             if(g.v2Ledger&&!ledger)throw Error('v2 ledger unavailable');
+            // Even if another alarm entered while an earlier op was in flight, persist this exact plan before any external write.
+            await this.deps.store.save(this.data);
             const receipt:GrenchBatchReceipt=g.v2Ledger
               ?await ledger!.settleNight(p.game,p.round,p.debits)
               :{status:'OK',game:p.game,round:p.round,entries:p.debits.map(d=>({...d,status:'INSUFFICIENT' as const}))};
@@ -1098,6 +1107,7 @@ export class RoomCore {
           case 'v2Hero': {
             const g=this.data.game,ledger=this.deps.v2Settlement;
             if(!g||g.number!==op.number||!g.v2Session||!g.v2Ledger||!ledger)throw Error('hero settlement unavailable');
+            await this.deps.store.save(this.data);
             const receipt=await ledger.settleHero(op.pending.request);
             if(this.data.game!==g||!g.v2Session)throw Error('settlement room changed');
             this.acceptV2(g,finalizeV2HeroShot(g.v2Session,op.pending,receipt));
