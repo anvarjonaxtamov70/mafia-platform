@@ -170,6 +170,60 @@ describe('v2 independent engine',()=>{
   const checks=night(s).effects.filter(e=>e.kind==='CHECK');
   expect(checks).toEqual(['1','0','2'].map(recipient=>({kind:'CHECK',recipient,target:'4',role:'CITIZEN'})));
  });
+ it('Kamikaze ordinary multi-attacker death punishes Commissar, hero hit does not retaliate',()=>{
+  let s=game(['DON','COMMISSAR','KAMIKAZE','CITIZEN','CITIZEN']);
+  s=act(act(s,0,2),1,2,'SHOOT');
+  let r=night(s);
+  expect(r.state.players.slice(0,3).map(p=>p.hp)).toEqual([0,0,0]);
+  expect(r.state.players[1]!.personal).toBe('LOSS');expect(r.state.players[2]!.personal).toBe('LOSS');
+  s=game(['DON','COMMISSAR','KAMIKAZE','CITIZEN']);
+  s.phase='DAWN';s.players[0]!.heroCharges=1;s.players[0]!.heroDamage=100;
+  r=v2HeroShot(s,'0','2',s.seq);
+  expect(r.state.players[0]!.hp).toBe(100);expect(r.state.players[2]).toMatchObject({hp:0,personal:'WIN'});
+ });
+ it('Krampous counts prior eliminated marks, not departures; protection saves marks',()=>{
+  let s=game(['DON','KRAMPOUS','DOCTOR','CITIZEN','CITIZEN','CITIZEN','CITIZEN']);
+  s.players[1]!.marks=['3','4','5','6'];s.players[3]!.hp=0;s.players[3]!.death='MAFIA';
+  s.players[4]!.hp=0;s.players[4]!.left=true;s.players[4]!.death='LEAVE';
+  s.players[5]!.shield=1;
+  s=act(act(s,1,1),2,6);
+  let r=night(s);
+  expect(r.state.players[1]).toMatchObject({hp:0,personal:null});
+  expect(r.state.players[5]).toMatchObject({hp:100,shield:0});expect(r.state.players[6]!.hp).toBe(100);
+  s=game(['DON','KRAMPOUS','CITIZEN','CITIZEN','CITIZEN','CITIZEN']);
+  s.players[1]!.marks=['2','3','4'];s.players[2]!.hp=0;s.players[2]!.death='MAFIA';
+  expect(()=>act(s,1,3)).toThrow();
+  r=night(act(s,1,1));expect(r.state.players[1]).toMatchObject({hp:0,personal:'WIN'});
+ });
+ it('Frozen blocks Wizard response and hero/vote, but does not penalize a missed frozen night',()=>{
+  let s=game(['DON','FROZEN','WIZARD','COMMISSAR','CITIZEN','CITIZEN']);
+  s=act(act(s,0,2),1,2);
+  let r=night(s);
+  expect(r.effects.some(e=>e.kind==='WIZARD_CHOICE')).toBe(false);expect(r.state.players[2]!.hp).toBe(0);
+  s=game(['DON','FROZEN','COMMISSAR','CITIZEN','CITIZEN']);
+  s.players[2]!.missed=1;s.players[2]!.heroCharges=1;
+  r=night(act(s,1,2));expect(r.state.players[2]).toMatchObject({hp:100,missed:1,blockedUntil:1});
+  expect(()=>v2HeroShot(r.state,'2','0',r.state.seq)).toThrow();
+  r.state.phase='VOTING';expect(()=>v2Vote(r.state,'2','0',r.state.seq)).toThrow();
+  r.state.phase='NIGHT';r.state.round=2;
+  expect(()=>act(r.state,2,0,'CHECK')).not.toThrow();
+ });
+ it('Chameleon faction changes only after living night resolution',()=>{
+  let s=game(['DON','CHAMELEON','COMMISSAR','CITIZEN','CITIZEN']);
+  s=act(act(s,1,3),0,1);
+  const r=night(s);expect(r.state.players[1]).toMatchObject({hp:0,role:'CHAMELEON'});
+  s=game(['DON','CHAMELEON','COMMISSAR','CITIZEN','CITIZEN']);
+  const q=night(act(s,1,3));expect(q.state.players[1]!.role).toBe('SERGEANT');
+ });
+ it('VS promotion stays with the former leader colour; completed round is not incremented at game end',()=>{
+  let s=v2CreateFixed(['0','1','2','3','4','5'],['DON','MAFIOSO','MAFIOSO','DOCTOR','COMMISSAR','DOCTOR'],'VS',0,rng());
+  for(const p of s.players)p.colour=['0','2','4'].includes(p.id)?'RED':'BLUE';
+  s.players[0]!.hp=0;
+  const r=night(s);expect(r.state.players[2]!.role).toBe('DON');expect(r.state.players[1]!.role).toBe('MAFIOSO');
+  s=game(['DON','SUIDSID','CITIZEN','COMMISSAR','CITIZEN']);
+  s.phase='VERDICT';s.candidate='1';const end=v2Advance(v2Verdict(s,'2',true,s.seq),1,s.seq);
+  expect(end.state.phase).toBe('ENDED');expect(end.state.round).toBe(1);
+ });
  it('all ordered role pairs accept or reject with immutable original state',()=>{
   for(const a of V2_ROLES)for(const b of V2_ROLES){
     const mode=a==='ZOMBIE'||b==='ZOMBIE'?'ZOMBIE':'CLASSIC';

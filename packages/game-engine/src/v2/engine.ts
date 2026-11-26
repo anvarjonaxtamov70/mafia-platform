@@ -83,6 +83,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const s=clone(input),effects:V2Effect[]=[];
   const active=s.players.filter(p=>v2Eligible(s,p));
   const initial=new Map(s.players.map(p=>[p.id,p.role]));
+  const initialFaction=(p:V2Player)=>V2_DEFS[initial.get(p.id)!].faction;
   for(const p of s.players)p.hangingProtection=false;
   for(const p of active)if(p.role==='FROZEN'&&!s.intents.some(i=>i.actor===p.id&&i.kind!=='SKIP'))p.lastFrozen=null;
   // Stable seat order, independent of Telegram callback arrival order.
@@ -131,6 +132,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const conversions:{actor:string;target:string}[]=[];
   const detonations:V2Player[]=[];
   const grenchHp:{actor:string;target:string}[]=[];
+  const roleChanges:{actor:string;role:V2Role}[]=[];
   for(const i of actions){
     const a=player(s,i.actor)!,t=player(s,i.target!)!;
     switch(a.role){
@@ -149,8 +151,8 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
       case 'CHEMIST':if(faction(t)!=='MAFIA')hit(a,t.id);break;
       case 'TENTAK':if(faction(t)!=='CITY')hit(a,t.id);break;
       case 'CHAMELEON':{
-        const f=faction(t);const next=f==='CITY'?'SERGEANT':f==='MAFIA'?'MAFIOSO':f==='SOLO'?'MANYAK':null;
-        if(next){a.role=next;a.changed=true;effects.push({kind:'ROLE',target:a.id,role:next});}break;
+        const f=initialFaction(t);const next=f==='CITY'?'SERGEANT':f==='MAFIA'?'MAFIOSO':f==='SOLO'?'MANYAK':null;
+        if(next)roleChanges.push({actor:a.id,role:next});break;
       }
       case 'ZOMBIE':conversions.push({actor:a.id,target:t.id});break;
       case 'KRAMPOUS':
@@ -182,7 +184,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
       if(target.shield>0){target.shield--;return false;}return true;
     });
     if(!residual.length)continue;
-    if(target.role==='WIZARD'&&!residual.some(a=>a.force)){
+    if(target.role==='WIZARD'&&!asleep(s,target)&&!residual.some(a=>a.force)){
       const choice=choices.wizard?.get(target.id);
       if(!choice)effects.push({kind:'WIZARD_CHOICE',recipient:target.id,attackers:[...new Set(residual.map(a=>a.actor))]});
       if(choice==='FORGIVE')continue;
@@ -228,7 +230,11 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     if(t.shield>0){t.shield--;continue;}
     t.role='ZOMBIE';t.marks=[];effects.push({kind:'ROLE',target:t.id,role:'ZOMBIE'});
   }
-  for(const a of detonations)if(a.marks.filter(id=>player(s,id)?.hp===0).length>=3)a.personal='WIN';
+  // Chameleon changes apply only after the simultaneous night is resolved;
+  // a zombie conversion wins over its old ability, and dead players cannot switch sides.
+  for(const c of roleChanges){const a=player(s,c.actor)!;if(alive(a)&&a.role==='CHAMELEON'){a.role=c.role;a.changed=true;effects.push({kind:'ROLE',target:a.id,role:c.role});}}
+  // A previously eliminated marked target counts, but forfeiture/AFK is not a kill.
+  for(const a of detonations)if(a.marks.filter(id=>{const p=player(s,id);return p?.hp===0&&!p.left;}).length>=3)a.personal='WIN';
   for(const p of active){
     if(!alive(p)||frozen.has(p.id))continue;
     const acted=s.intents.some(i=>i.actor===p.id);
@@ -241,7 +247,8 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
 function promote(s:V2State,effects:V2Effect[]){
   for(const [old,next] of [['DON','MAFIOSO'],['COMMISSAR','SERGEANT']] as const){
     if(s.players.some(p=>alive(p)&&p.role===old))continue;
-    const successor=s.players.filter(p=>alive(p)&&p.role===next).sort((a,b)=>Number(b.changed)-Number(a.changed))[0];
+    const former=s.players.filter(p=>p.role===old);
+    const successor=s.players.filter(p=>alive(p)&&p.role===next&&(s.mode!=='VS'||former.some(x=>x.colour===p.colour))).sort((a,b)=>next==='SERGEANT'?Number(b.changed)-Number(a.changed):0)[0];
     if(successor){successor.role=old;effects.push({kind:'ROLE',target:successor.id,role:old});}
   }
 }
@@ -314,7 +321,7 @@ export function v2Verdict(input:V2State,actor:string,yes:boolean,seq:number):V2S
 export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
   if(input.seq!==seq||input.outcome)throw new Error('stale phase');
   const s=clone(input),effects:V2Effect[]=[];
-  function nextNight(){s.round++;s.intents=[];s.votes=[];s.verdicts=[];s.candidate=null;s.revenge=null;finishOr(s,'NIGHT',now);}
+  function nextNight(){s.intents=[];s.votes=[];s.verdicts=[];s.candidate=null;s.revenge=null;const outcome=v2Victory(s);if(outcome){s.outcome=outcome;phase(s,'ENDED',now);}else{s.round++;phase(s,'NIGHT',now);}}
   if(s.phase==='DAWN')finishOr(s,'DISCUSSION',now);
   else if(s.phase==='DISCUSSION')phase(s,'VOTING',now);
   else if(s.phase==='VOTING'){
