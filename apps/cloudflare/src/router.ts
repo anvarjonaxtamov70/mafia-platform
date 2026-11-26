@@ -21,6 +21,8 @@ import {
   REFERRAL,
   roleStatsView,
   rolesText,
+  referenceRolesView,
+  referenceRoleDetail,
   learningView,
   SELECTABLE_MODES,
   settingsView,
@@ -404,9 +406,10 @@ export class Router {
         const view = learningView(c.cmd, !!this.d.visuals)!;
         return this.reply(chatId, view.text, view.keyboard);
       }
-      case 'roles':
-        for (const part of splitLong(rolesText())) await this.reply(chatId, part);
-        return;
+      case 'roles': {
+        const view=referenceRolesView();
+        return this.reply(chatId,view.text,view.keyboard);
+      }
       case 'admin_hero_level': {
         if (!this.isSuperadmin(from.id)) return this.reply(chatId,t('admin.no_access'));
         const level = /^\d{1,7}$/.test(c.args.trim()) ? Number(c.args.trim()) : 0;
@@ -612,9 +615,17 @@ export class Router {
     const from = cb.from;
     const chat = cb.message?.chat;
     switch (data.t) {
-      case 'menu':
+      case 'menu': {
+        if(data.section.startsWith('ref_')) {
+          const role=referenceRoleDetail(data.section);
+          if(!role||chat?.type!=='private'||chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+          if(role.alert)return this.answer(cb,role.text,true);
+          await this.reply(from.id,escapeHtml(role.text));
+          return this.answer(cb);
+        }
         await this.menu(cb, data.section);
         return this.answer(cb);
+      }
       case 'eco':
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
