@@ -1,13 +1,14 @@
 /**
  * Guruh sozlamalari: tiplar, standartlar, normallashtirish va /settings paneli (runtime-mustaqil).
  */
-import { buildConfig, GAME_MODES, MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type GameConfig, type GameMode } from '@mafia/game-engine';
+import { buildConfig, GAME_MODES, MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type GameConfig, type GameMode, V2_MODES, type V2Mode } from '@mafia/game-engine';
 import { t } from '@mafia/localization';
 import { encode } from './callback-data';
 import type { Keyboard } from './outbox-types';
 
 export interface GroupSettingsData {
   mode: GameMode;
+  v2Mode?: V2Mode;
   minPlayers: number;
   maxPlayers: number;
   nightSec: number;
@@ -60,6 +61,7 @@ export function normalizeSettings(raw: unknown, globalMin = MIN_PLAYERS_FLOOR): 
   const minPlayers = clamp(r['minPlayers'], MIN_PLAYERS_FLOOR, MAX_PLAYERS_CEILING, d.minPlayers);
   return {
     mode,
+    ...(V2_MODES.includes(r['v2Mode'] as V2Mode)?{v2Mode:r['v2Mode'] as V2Mode}:{}),
     minPlayers,
     maxPlayers: clamp(r['maxPlayers'], minPlayers, MAX_PLAYERS_CEILING, Math.max(minPlayers, d.maxPlayers)),
     nightSec: clamp(r['nightSec'], 20, 600, d.nightSec),
@@ -183,4 +185,12 @@ export function applySettingsOp(s: GroupSettingsData, op: string): GroupSettings
       break;
   }
   return n;
+}
+
+export const V2_MODE_LABELS:Record<V2Mode,string>={CLASSIC:'🎩 Classic',ZOMBIE:'🧟 Zombi',HYPERNOVA:'🌌 Hypernova',VS:'⚔️ VS'};
+/** V2 timings and player bounds are fixed by the current engine. Do not expose legacy timing controls here. */
+export function v2SettingsView(s:GroupSettingsData,chatId:number):{text:string;keyboard:Keyboard}{
+ const mode=s.v2Mode??'CLASSIC';
+ const button=(text:string,op:string)=>({text,callback_data:encode({t:'gs',op,chat:chatId})});
+ return {text:'⚙️ <b>Guruh sozlamalari</b>\n\nO‘yin rejimi: '+V2_MODE_LABELS[mode]+'\n\nRejim faqat keyingi yangi o‘yinga qo‘llanadi.\n4–30 o‘yinchi · 30 soniyalik bosqichlar.',keyboard:[...V2_MODES.map(m=>[button((m===mode?'✅ ':'')+V2_MODE_LABELS[m],'v2mode_'+m)]),[button('❌ Yopish','close')]]};
 }

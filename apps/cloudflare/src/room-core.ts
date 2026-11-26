@@ -13,6 +13,7 @@ import {
   present,
   renderLobby,
   settingsToConfig,
+  V2_MODE_LABELS,
   targetKeyboard,
   type ConfigSnapshot,
   type GroupSettingsData,
@@ -311,7 +312,7 @@ export class RoomCore {
 
   private lobbyView(g: RoomGame): ViewResult {
     return renderLobby(
-      { number: g.number, mode: g.mode, config: g.config, hostName: g.hostName, deadline: g.deadline },
+      { number: g.number, mode: g.mode, ...(g.v2Mode?{modeLabel:V2_MODE_LABELS[g.v2Mode]}:{}), config: g.config, hostName: g.hostName, deadline: g.deadline },
       g.players.map((p) => (p.badge ? `${p.name} ${p.badge}` : p.name)),
       { now: this.now, botUsername: this.deps.botUsername() },
     );

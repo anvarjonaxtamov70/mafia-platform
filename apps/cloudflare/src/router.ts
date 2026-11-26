@@ -26,6 +26,7 @@ import {
   learningView,
   SELECTABLE_MODES,
   settingsView,
+  v2SettingsView,
   shopHomeView,
   splitLong,
   starsProduct,
@@ -194,6 +195,8 @@ export interface RouterDeps {
   admins: ReadonlySet<number>;
   devFake: boolean;
   v2Preview?: boolean;
+  /** Strict staging UX: no direct mode override; group settings only. */
+  v2SettingsMode?: boolean;
   visuals?: boolean;
   /** Telegram Stars: off | admins (faqat bot egalari sinaydi) | all */
   starsMode: StarsMode;
@@ -558,6 +561,15 @@ export class Router {
       case 'game': {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = anonymous ? { id: chatId, name: m.chat.title ?? 'Guruh administratori', dmAvailable: false, banned: false, badge: '' } : await this.d.registry.upsertUser(from, false);
+        if(this.d.v2SettingsMode){
+          if(c.args)return this.reply(chatId,'Rejimni faqat admin /settings orqali o‘zgartiradi. O‘yin uchun /game yozing.',undefined,replyTo);
+          const s=await this.d.registry.getSettings(chatId);
+          const r=await room.createLobby({title:m.chat.title??'',host,isAdmin:anonymous,v2Mode:s.v2Mode??'CLASSIC',mode:'CLASSIC',...(c.cmd==='quick'?{quick:true}:{}),commandMessageId:replyTo});
+          if(!r.ok)return this.reply(chatId,this.errText(r),undefined,replyTo);
+          this.gameChats.set(r.number,chatId);
+          if(!r.hostJoined&&!r.refreshed&&!anonymous)return this.reply(chatId,t('lobby.need_dm'),undefined,replyTo);
+          return;
+        }
         const arg = c.args.toUpperCase() as GameMode;
         const preview=c.cmd==='game'&&c.args.toLowerCase().startsWith('v2');
         const v2Mode=c.args.slice(2).toUpperCase() as V2Mode;
@@ -622,7 +634,7 @@ export class Router {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const s = await this.d.registry.getSettings(chatId);
         const g = await this.d.registry.group(chatId);
-        const view = settingsView(s, chatId);
+        const view = this.d.v2SettingsMode?v2SettingsView(s,chatId):settingsView(s, chatId);
         const note = (s.silenceDead || s.silenceNight) && !g?.botIsAdmin ? `\n\n${t('gsettings.no_delete_rights')}` : '';
         return this.reply(chatId, view.text + note, view.keyboard, replyTo);
       }
@@ -777,15 +789,17 @@ export class Router {
         return this.answer(cb, r.ok ? undefined : this.errText(r), !r.ok);
       }
       case 'gs': {
-        if (!chat || chat.id !== data.chat || !(await this.isChatAdmin(chat.id, from.id))) return this.answer(cb, t('gsettings.only_admin'), true);
+        if (!chat || chat.id !== data.chat || (chat.type!=='group'&&chat.type!=='supergroup') || !(await this.isChatAdmin(chat.id, from.id))) return this.answer(cb, t('gsettings.only_admin'), true);
         if (data.op === 'close') {
           await this.d.tg.call('deleteMessage', { chat_id: chat.id, message_id: cb.message!.message_id }).catch(() => undefined);
           return this.answer(cb);
         }
         if (data.op === 'auto' || data.op === 'lobby') return this.answer(cb,t('cb.stale'));
         const cur = await this.d.registry.getSettings(chat.id);
-        const saved = await this.d.registry.saveSettings(chat.id, applySettingsOp(cur, data.op), String(from.id));
-        const view = settingsView(saved, chat.id);
+        const mode=data.op.startsWith('v2mode_')?data.op.slice(7) as V2Mode:undefined;
+        if(this.d.v2SettingsMode?(!mode||!V2_MODES.includes(mode)):mode!==undefined)return this.answer(cb,t('cb.stale'));
+        const saved = await this.d.registry.saveSettings(chat.id, this.d.v2SettingsMode?{...cur,v2Mode:mode!}:applySettingsOp(cur, data.op), String(from.id));
+        const view = this.d.v2SettingsMode?v2SettingsView(saved,chat.id):settingsView(saved, chat.id);
         await this.edit(cb, view.text, view.keyboard);
         return this.answer(cb, t('gsettings.saved'));
       }

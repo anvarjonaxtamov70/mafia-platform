@@ -446,6 +446,7 @@ function getRouter(env: Env): Router {
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
       v2Preview: env.V2_PREVIEW === 'true',
+      v2SettingsMode: env.STAGING_MODE==='true'&&env.V2_PREVIEW==='true'&&stagingAllowed(env),
       ...(v2LedgerEnabled(env)?{heroV2Shop:{view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
@@ -528,7 +529,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
     scope: { type: 'all_group_chats' },
     commands: [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
-      ...(env.V2_PREVIEW==='true' ? [
+      ...(env.V2_PREVIEW==='true'&&env.STAGING_MODE!=='true' ? [
         { command: 'game_v2classic', description: 'V2 Classic o‘yini (bot egasi)' },
         { command: 'game_v2zombie', description: 'V2 Zombi o‘yini (bot egasi)' },
         { command: 'game_v2hypernova', description: 'V2 Hypernova o‘yini (bot egasi)' },

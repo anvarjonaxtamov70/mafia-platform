@@ -37,8 +37,8 @@ describe('V2 active play through actual Telegram router and durable registry',()
   const yes=ids.filter(id=>id!==don);
   const verdictSeq=state().seq;
   const keyboard=w.tg.sent(GROUP).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]);
-  const rawYes=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='Y';})?.callback_data!;
-  const rawNo=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='N';})?.callback_data!;
+  const rawYes=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='Y';})?.callback_data??'';
+  const rawNo=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='N';})?.callback_data??'';
   expect(rawYes).toBeTruthy();expect(rawNo).toBeTruthy();
   const privateVerdict=w.tg.sent(yes[0]).some(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat().some(k=>k.callback_data===rawYes||k.callback_data===rawNo));
   expect(privateVerdict).toBe(false);

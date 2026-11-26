@@ -131,7 +131,7 @@ export class World {
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean; v2Ledger?:boolean } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean; v2Ledger?:boolean; v2SettingsMode?:boolean } = {}) {
     this.devFake = !!opts.devFake;
     this.visuals = !!opts.visuals;
     this.starsMode = opts.starsMode ?? 'admins';
@@ -154,6 +154,7 @@ export class World {
       admins: this.admins,
       devFake: this.devFake,
       v2Preview: !!opts.v2Preview,
+      v2SettingsMode: !!opts.v2SettingsMode,
       ...(opts.v2Ledger?{heroV2Shop:{view:async id=>this.registryCore.heroV2.view(id),quote:async (id,op,arg)=>this.registryCore.heroV2.quote(id,op,arg),confirm:async (id,quoteId)=>this.registryCore.heroV2.confirm(id,quoteId),cancel:async (id,quoteId)=>this.registryCore.heroV2.cancel(id,quoteId)}}:{}),
       visuals: this.visuals,
       starsMode: this.starsMode,
