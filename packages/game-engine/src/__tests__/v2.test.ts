@@ -122,6 +122,39 @@ describe('v2 independent engine',()=>{
   expect(b.state.players[2]).toMatchObject({hp:100,voteShield:false});
   expect(b.effects).toContainEqual({kind:'HANGING_PROTECTED',target:'2',reason:'ITEM'});
  });
+ it('arrival order cannot change night RNG, effects or item consumption',()=>{
+  const s=game(['DON','GRENCH','KLAUS','CITIZEN','CITIZEN']);
+  const a=act(act(act(s,0,4),1,3),2,3);
+  const b=act(act(act(s,2,3),1,3),0,4);
+  const x=night(a),y=night(b);
+  expect(x.effects).toEqual(y.effects);expect(x.state.players).toEqual(y.state.players);
+ });
+ it('Minior cannot trap another Minior, and Lawyer can protect only mafia',()=>{
+  let s=game(['DON','MINIOR','MINIOR','DOCTOR','CITIZEN']);
+  s=act(act(act(s,1,4),2,4),3,4);
+  const r=night(s);
+  expect(r.state.players[1]!.hp).toBe(100);expect(r.state.players[2]!.hp).toBe(100);expect(r.state.players[3]!.hp).toBe(0);
+  s=game(['DON','LAWYER','CITIZEN','CITIZEN']);
+  expect(()=>act(s,1,2)).toThrow();expect(()=>act(s,1,0)).not.toThrow();
+ });
+ it('Grench lethal HP and Wizard prompt remain deterministic across answers',()=>{
+  let s=game(['DON','GRENCH','WIZARD','CITIZEN','CITIZEN']);
+  s.players[2]!.hp=17;
+  s=act(act(s,0,2),1,2);
+  const preview=night(s);
+  expect(preview.effects.some(e=>e.kind==='WIZARD_CHOICE')).toBe(true);
+  const resolved=v2ResolveNight(s,30000,rng(),{wizard:new Map([['2','FORGIVE']]),grench:new Map([['1','HP']])});
+  expect(resolved.state.players[2]).toMatchObject({hp:0,death:'GRENCH'});
+  expect(resolved.state.players[0]!.hp).toBe(100);
+  expect(resolved.effects.filter(e=>e.kind==='DEATH'&&e.target==='2')).toHaveLength(1);
+  const refused=v2ResolveNight(s,30000,rng(),{wizard:new Map([['2','REFUSE']]),grench:new Map([['1','HP']])});
+  expect(refused.state.players[0]!.hp).toBe(0);
+  expect(refused.state.players[2]!.hp).toBe(0);
+ });
+ it('Zombies cannot waste conversion on another zombie',()=>{
+  const s=v2CreateFixed(['0','1','2','3'],['DON','ZOMBIE','ZOMBIE','COMMISSAR'],'ZOMBIE',0,rng());
+  expect(()=>act(s,1,2)).toThrow();
+ });
  it('all ordered role pairs accept or reject with immutable original state',()=>{
   for(const a of V2_ROLES)for(const b of V2_ROLES){
     const mode=a==='ZOMBIE'||b==='ZOMBIE'?'ZOMBIE':'CLASSIC';

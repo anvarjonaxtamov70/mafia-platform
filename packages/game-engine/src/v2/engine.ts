@@ -64,6 +64,8 @@ export function v2Submit(s:V2State,intent:V2Intent,seq:number):V2State{
     if(a.id===t.id&&!(a.role==='DOCTOR'&&a.selfHeal)&&a.role!=='KRAMPOUS')throw new Error('self target');
     if(a.role==='FROZEN'&&a.lastFrozen===t.id)throw new Error('repeated frozen target');
     if(a.role==='CHAMELEON'&&!['CITY','MAFIA','SOLO'].includes(faction(t)))throw new Error('invalid chameleon target');
+    if(a.role==='LAWYER'&&faction(t)!=='MAFIA')throw new Error('invalid lawyer target');
+    if(a.role==='ZOMBIE'&&t.role==='ZOMBIE')throw new Error('invalid zombie target');
     if(a.role==='KRAMPOUS'&&a.marks.includes(t.id))throw new Error('repeated mark');
     if((a.role==='DON'||a.role==='MAFIOSO')&&faction(t)==='MAFIA'&&s.mode!=='VS')throw new Error('mafia teammate');
   }else if(intent.target!==null)throw new Error('skip with target');
@@ -82,7 +84,8 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const initial=new Map(s.players.map(p=>[p.id,p.role]));
   for(const p of s.players)p.hangingProtection=false;
   for(const p of active)if(p.role==='FROZEN'&&!s.intents.some(i=>i.actor===p.id&&i.kind!=='SKIP'))p.lastFrozen=null;
-  const intents=s.intents.filter(i=>active.some(p=>p.id===i.actor)&&i.kind!=='SKIP'&&i.target!==null&&s.players.some(p=>p.id===i.target&&alive(p)));
+  // Stable seat order, independent of Telegram callback arrival order.
+  const intents=active.flatMap(p=>s.intents.filter(i=>i.actor===p.id&&i.kind!=='SKIP'&&i.target!==null&&s.players.some(t=>t.id===i.target&&alive(t))));
   // Proposed simultaneous freeze priority: all valid Frozen intents resolve together.
   const frozen=new Set<string>();
   for(const i of intents){const a=player(s,i.actor)!;if(a.role==='FROZEN'){frozen.add(i.target!);a.lastFrozen=i.target;}}
@@ -99,7 +102,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const trapped=new Set<string>();
   for(const i of visits.filter(i=>player(s,i.actor)!.role==='MINIOR')){
     const miner=player(s,i.actor)!;
-    for(const v of visits)if(v.target===i.target&&v.actor!==miner.id&&v.actor!==i.target&&player(s,v.actor)!.role!=='MERGAN'){
+    for(const v of visits)if(v.target===i.target&&v.actor!==miner.id&&v.actor!==i.target&&!['MINIOR','MERGAN'].includes(player(s,v.actor)!.role)){
       trapped.add(v.actor);hit(miner,v.actor,'MINIOR',true);
     }
   }
@@ -109,12 +112,13 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     const a=player(s,i.actor)!,t=player(s,i.target!)!;
     if(a.role==='DOCTOR'){protectedIds.add(t.id);if(a.id===t.id)a.selfHeal=false;}
     if(a.role==='CHEMIST'&&faction(t)==='MAFIA')protectedIds.add(t.id);
-    if(a.role==='LAWYER'){if(faction(t)==='MAFIA')masked.add(t.id);t.hangingProtection=true;}
+    if(a.role==='LAWYER'&&faction(t)==='MAFIA'){masked.add(t.id);t.hangingProtection=true;}
     if(a.role==='TENTAK'&&faction(t)==='CITY')t.hangingProtection=true;
   }
   if(don&&mafiaTarget&&!trapped.has(don.id))hit(don,mafiaTarget,'MAFIA');
   const conversions:{actor:string;target:string}[]=[];
   const detonations:V2Player[]=[];
+  const grenchHp:{actor:string;target:string}[]=[];
   for(const i of actions){
     const a=player(s,i.actor)!,t=player(s,i.target!)!;
     switch(a.role){
@@ -141,7 +145,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
         break;
       case 'GRENCH':{
         const amount=50+10*rng.int(11);
-        if(choices.grench?.get(a.id)==='HP'){t.hp=Math.max(0,t.hp-17);effects.push({kind:'HP',target:t.id,hp:t.hp});if(!t.hp){t.death='GRENCH';effects.push({kind:'DEATH',target:t.id,reason:'GRENCH',attackers:[a.id]});}}
+        if(choices.grench?.get(a.id)==='HP')grenchHp.push({actor:a.id,target:t.id});
         else if(!choices.paidGrench?.has(a.id))effects.push({kind:'GRENCH',actor:a.id,target:t.id,amount});
         break;
       }
@@ -174,6 +178,17 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     for(const a of residual)record(target.id,a);
   }
   for(const a of wizardRetaliations)record(a.target,a);
+  // Keep Wizard prompts stable across Grench answers. Percentage damage
+  // bypasses ordinary protection, but never damages an already lethal target.
+  const hpAfter=new Map<string,number>();
+  for(const g of grenchHp){
+    const target=player(s,g.target)!;
+    if(!alive(target)||deaths.has(target.id))continue;
+    const remaining=hpAfter.get(target.id)??target.hp;
+    if(!remaining)continue;
+    const hp=Math.max(0,remaining-17);hpAfter.set(target.id,hp);
+    if(!hp)record(target.id,{actor:g.actor,target:target.id,role:'GRENCH',cause:'GRENCH'});
+  }
   // Kamikaze chains are bounded by the number of players.
   const expanded=new Set<string>();
   while(true){
@@ -189,6 +204,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     const p=player(s,id)!;if(!alive(p))continue;
     p.hp=0;p.death=as[0]!.cause;effects.push({kind:'DEATH',target:id,reason:p.death,attackers:[...new Set(as.map(a=>a.actor))]});
   }
+  for(const [id,hp] of hpAfter){const p=player(s,id)!;if(p.hp>0){p.hp=hp;effects.push({kind:'HP',target:id,hp});}}
   for(const i of actions.filter(i=>initial.get(i.actor)==='DAYDI')){
     const a=player(s,i.actor)!;if(!alive(a))continue;
     const killers=deaths.get(i.target!);
