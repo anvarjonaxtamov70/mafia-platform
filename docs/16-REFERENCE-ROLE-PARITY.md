@@ -120,3 +120,7 @@ Explicit group /leave now forfeits the v2 participant, clears pending intents/vo
 
 ## Hero durable receipt checkpoint
 Replaced draft shot settlement with an exact replayable receipt keyed by game and actor. Trusted request binds phase sequence, target, pre-hit HP, hero charge, damage, persistent defense and shield. Registry requires a running game with both active members before a new settlement; same request returns original receipt even after cleanup, changed request conflicts. Added pure room preparation/finalization bridge with revision guard, receipt/state consistency checks and reload/replay tests. Live routing remains disabled: RoomCore must still durably freeze mutation around pending settlement, initialize hero snapshots, and retry the registry operation before publishing. No real balances or production settings changed.
+
+
+## Grench atomic night settlement checkpoint
+Added one atomic ordered batch per game/round for Grench money decisions, with full replay receipts and rollback on conflicts/unavailable participants. Prepared room plan binds game, round, phase sequence, revision and exact debit amounts; finalization rejects missing/mismatched receipts and uses a fresh dawn clock after successful settlement. Tests use the real test SQLite ledger and deterministic room snapshots. Explicit HP requires no debit. No live routing or wallet mutation in production; overlapping Grench/Wizard preview interactions and durable RoomCore operation scheduling still require resolution.

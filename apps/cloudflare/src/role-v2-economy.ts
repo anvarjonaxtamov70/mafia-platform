@@ -5,10 +5,16 @@ import type {Sql} from './sql';
 type Receipt='PAID'|'INSUFFICIENT'|'UNAVAILABLE'|'CONFLICT';
 type EventRow={actor:number;target:number;amount:number;status:Receipt};
 type Offer={id:number;game:number;round:number;seller:number;buyer:number;expires:number;item:string|null};
+export type GrenchDebit={actor:number;target:number;amount:number};
+export type GrenchBatchReceipt={status:'OK';game:number;round:number;entries:(GrenchDebit&{status:'PAID'|'INSUFFICIENT'})[]}|{status:'UNAVAILABLE'|'CONFLICT'};
+class GrenchBatchAbort extends Error{
+ constructor(readonly status:'UNAVAILABLE'|'CONFLICT'){super(status);}
+}
 export class RoleV2Economy {
  constructor(private readonly sql:Sql,private readonly eco:EconomyCore,private readonly clock:()=>number){}
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_receipts(game INTEGER NOT NULL,round INTEGER NOT NULL,kind TEXT NOT NULL,actor INTEGER NOT NULL,target INTEGER NOT NULL,amount INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(game,round,kind,actor))`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_grench_batches(game INTEGER NOT NULL,round INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,round))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_offers(id INTEGER PRIMARY KEY AUTOINCREMENT,game INTEGER NOT NULL,round INTEGER NOT NULL,seller INTEGER NOT NULL,buyer INTEGER NOT NULL,expires INTEGER NOT NULL,item TEXT,UNIQUE(game,round,seller))`);
  }
  private valid(game:number,round:number,actor:number,target:number){
@@ -36,6 +42,31 @@ export class RoleV2Economy {
    if(this.eco.credit(actor,amount,'GRENCH',String(game),key+':credit').duplicate)throw Error('missing transfer receipt');
    return this.receipt(game,round,'GRENCH',actor,target,amount,'PAID');
   });
+ }
+ /** Atomic settlement for the frozen night plan. Request ordering is preserved
+  * because multiple Grench actors can target the same finite balance.
+  * A conflicting or unavailable member aborts the entire transaction.
+  */
+ settleGrenchBatch(game:number,round:number,debits:readonly GrenchDebit[]):GrenchBatchReceipt{
+  if(!Number.isSafeInteger(game)||game<1||!Number.isSafeInteger(round)||round<1||debits.length>30||
+   new Set(debits.map(d=>d.actor)).size!==debits.length||
+   debits.some(d=>![d.actor,d.target,d.amount].every(Number.isSafeInteger)||d.actor<1||d.target<1||d.actor===d.target||d.amount<50||d.amount>150||d.amount%10!==0))return {status:'UNAVAILABLE'};
+  const canonical=debits.map(d=>({actor:d.actor,target:d.target,amount:d.amount}));
+  const key=JSON.stringify(canonical);
+  try{return this.sql.tx(()=>{
+   const prior=this.sql.exec<{request:string;receipt:string}>(`SELECT request,receipt FROM role_v2_grench_batches WHERE game=? AND round=?`,game,round)[0];
+   if(prior)return prior.request===key?JSON.parse(prior.receipt) as GrenchBatchReceipt:{status:'CONFLICT'};
+   if(!this.sql.exec(`SELECT 1 FROM games WHERE number=? AND status='RUNNING'`,game).length)return {status:'UNAVAILABLE'};
+   const entries:(GrenchDebit&{status:'PAID'|'INSUFFICIENT'})[]=[];
+   for(const d of canonical){
+    const status=this.grench(game,round,d.actor,d.target,d.amount);
+    if(status==='CONFLICT'||status==='UNAVAILABLE')throw new GrenchBatchAbort(status);
+    entries.push({...d,status});
+   }
+   const receipt={status:'OK' as const,game,round,entries};
+   this.sql.exec(`INSERT INTO role_v2_grench_batches(game,round,request,receipt) VALUES(?,?,?,?)`,game,round,key,JSON.stringify(receipt));
+   return receipt;
+  });}catch(error){if(error instanceof GrenchBatchAbort)return {status:error.status};throw error;}
  }
  /** Klaus creates a bounded in-game gift, separate from ordinary match rewards. */
  klaus(game:number,round:number,actor:number,target:number,amount:number):Receipt{
