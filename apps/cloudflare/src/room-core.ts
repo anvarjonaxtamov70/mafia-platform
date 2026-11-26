@@ -680,8 +680,9 @@ export class RoomCore {
     if(!g.v2Mode||g.players.length<4||(g.v2Mode==='VS'&&g.players.length%2))return {ok:false,error:'NOT_ENOUGH',details:{min:4,count:g.players.length}};
     const ledger=this.deps.v2Settlement;
     if(ledger&&g.players.some(p=>p.fake))return {ok:false,error:'NOT_LOBBY'};
-    const snapshots=ledger?await ledger.snapshots(g.players.map(p=>p.id)):{};
-    if(this.data.game!==g||g.status!=='LOBBY')return {ok:false,error:'NOT_LOBBY'};
+    const roster=g.players.map(p=>p.id),version=g.version;
+    const snapshots=ledger?await ledger.snapshots(roster):{};
+    if(this.data.game!==g||g.status!=='LOBBY'||g.version!==version||JSON.stringify(g.players.map(p=>p.id))!==JSON.stringify(roster))return {ok:false,error:'NOT_LOBBY'};
     const now=this.now;
     const next=createV2RoomSession(g.number,this.chatId,g.v2Mode,g.players,now,this.deps.rng);
     if(ledger){
@@ -745,7 +746,7 @@ export class RoomCore {
         const offer=g.v2Offers?.find(o=>o.id===button?.offer&&o.buyer===input.tgId);
         const living=(id:number)=>s.players.some(p=>p.id===String(id)&&p.hp>0&&!p.left);
         if(!g.v2Ledger||!this.deps.v2Settlement||!button||button.game!==g.number||input.privateChatId!==input.tgId||
-          !offer||offer.expires<=this.now||offer.round!==s.round||!['DAWN','DISCUSSION'].includes(s.phase)||
+          !offer||offer.expires<=this.now||offer.round!==s.round||!['DAWN','DISCUSSION'].includes(s.phase)||s.deadline===null||this.now>=s.deadline||
           !living(offer.buyer)||!living(offer.seller))return {ok:false,error:'STALE_PHASE'};
         this.addOp({type:'v2Buy',number:g.number,buyer:input.tgId,offer:offer.id,code:button.code});
         await this.commit();return {ok:true};

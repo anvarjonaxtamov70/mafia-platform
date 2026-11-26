@@ -21,6 +21,33 @@ describe('owner-only v2 preview in actual RoomCore',()=>{
   expect(w.registryCore.activeOf(1)?.number).toBe(n);
   expect(w.registryCore.eco.coins(2)).toBe(0);
  });
+ it('foreign, expired and previous-game callbacks cannot mutate a room',async()=>{
+  const w=new World({v2Preview:true}),other=GROUP-1;
+  for(const id of [1,2,3,4,5,6,7,8])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game v2classic'));
+  const a=await w.loaded(GROUP),n=a.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  // Create a second actual room directly, with non-overlapping registered users.
+  const b=await w.loaded(other);
+  const created=await b.createLobby({title:'Other',host:{id:5,name:'U5',dmAvailable:true,banned:false,badge:''},isAdmin:true,v2Mode:'CLASSIC'});
+  expect(created.ok).toBe(true);
+  const m=b.data.game!.number;
+  for(const id of [6,7,8])await w.send(callback(id,'l:j:'+m,other));
+  expect((await b.start({by:5,isAdmin:true})).ok).toBe(true);
+  const state=a.data.game!.v2Session!.state,don=state.players.find(p=>p.role==='DON')!;
+  const raw=encodeV2Button({game:n,seq:state.seq,op:'K',seat:0});
+  await w.send(callback(5,raw));
+  expect(a.data.game!.v2Session!.state.intents).toHaveLength(0);
+  expect(b.data.game!.v2Session!.state.intents).toHaveLength(0);
+  expect((await b.v2Button({tgId:Number(don.id),privateChatId:Number(don.id),number:n,raw})).ok).toBe(false);
+  await w.send(callback(Number(don.id),raw,GROUP));
+  expect(a.data.game!.v2Session!.state.intents).toHaveLength(0);
+  await w.advance(30001);
+  await w.send(callback(Number(don.id),raw));
+  expect(a.data.game!.v2Session!.state.phase).not.toBe('NIGHT');
+  expect(b.data.game!.number).toBe(m);
+ });
  it('native callbacks, durable phase progression, no wallet changes and /stop',async()=>{
   const w=new World({v2Preview:true});
   for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));

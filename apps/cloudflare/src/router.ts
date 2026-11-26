@@ -677,8 +677,10 @@ export class Router {
       const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):decodeV2Button(cb.data);
       if(!button||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
       if(!this.clicks.allow('cb:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
-      const room=await this.roomOfGame(button.game);
-      if(!room)return this.answer(cb,t('cb.stale'));
+      // Registry membership is authoritative; do not route old/foreign game buttons via cached chat mappings.
+      const active=await this.d.registry.activeOf(from.id);
+      if(!active||active.number!==button.game)return this.answer(cb,t('cb.stale'));
+      const room=this.d.room(active.chatId);
       const result=await room.v2Button({tgId:from.id,privateChatId:cb.message.chat.id,number:button.game,raw:cb.data});
       return this.answer(cb,result.ok?'Qabul qilindi':t('cb.stale'));
     }
