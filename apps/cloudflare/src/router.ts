@@ -853,7 +853,7 @@ export class Router {
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
-    if(section.startsWith('v2art_')){
+    if(section.startsWith('vportrait_')){
       const portrait=v2PortraitInfo(section);
       if(!portrait||!this.d.v2Preview)return this.reply(from.id,t('cb.stale'));
       if(!this.d.visuals)return this.reply(from.id,t('visual.unavailable'));

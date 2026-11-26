@@ -73,7 +73,7 @@ describe('reference catalogue draft',()=>{
   it('all 27 V2 portraits are distinct PNGs and private catalogue artwork can be opened',async()=>{
     const seen=new Set<string>();
     for(const role of REFERENCE_ROLES){
-      const section='v2art_'+role.id,art=v2PortraitInfo(section)!;
+      const section='vportrait_'+role.id,art=v2PortraitInfo(section)!;
       const blob=visualBlob(art.key)!;
       expect(blob.type).toBe('image/png');expect(blob.size).toBeLessThan(750000);
       const bytes=new Uint8Array(await blob.arrayBuffer());
@@ -82,13 +82,19 @@ describe('reference catalogue draft',()=>{
       expect(dimensions.getUint32(16)).toBe(448);expect(dimensions.getUint32(20)).toBe(560);
       seen.add(Buffer.from(bytes).toString('base64'));
       expect(v2CatalogueView('ref_'+role.id,true)?.keyboard.flat()).toContainEqual({text:'🖼 Personaj rasmi',callback_data:'m:'+section});
+      expect(decode('m:'+section)).toEqual({t:'menu',section});
     }
-    expect(seen.size).toBe(27);expect(v2PortraitInfo('v2art_unknown')).toBeNull();
+    expect(seen.size).toBe(27);expect(v2PortraitInfo('vportrait_unknown')).toBeNull();
     const w=new World({v2Preview:true,v2SettingsMode:true,visuals:true});
     await w.send(privateText(2,'/start'));
-    await w.send(callback(2,'m:v2art_don'));
+    await w.send(callback(2,'m:characters'));
+    await w.advance(3100);await w.send(callback(2,'m:ref_don'));
+    const detail=w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+    const raw=(detail.params.reply_markup as {inline_keyboard:{callback_data?:string}[][]}).inline_keyboard.flat().find(b=>b.callback_data==='m:vportrait_don')?.callback_data;
+    expect(raw).toBeTruthy();
+    await w.advance(3100);await w.send(callback(2,raw!));
     expect(w.tg.calls.filter(c=>c.method==='sendPhoto'&&c.params.chat_id===2)).toHaveLength(1);
-    await w.advance(3100);await w.send(callback(2,'m:v2art_don',GROUP));
+    await w.advance(3100);await w.send(callback(2,'m:vportrait_don',GROUP));
     expect(w.tg.calls.filter(c=>c.method==='sendPhoto')).toHaveLength(1);
   });
 

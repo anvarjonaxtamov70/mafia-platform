@@ -196,10 +196,10 @@ export function v2CatalogueView(section='characters',visuals=false):{text:string
  const def=V2_DEFS[role];
  const factions={CITY:'Tinch aholi',MAFIA:'Mafia',SOLO:'Yakka rol',NEUTRAL:'Betaraf',ZOMBIE:'Zombi'};
  const labels={CLASSIC:'Classic',ZOMBIE:'Zombi',HYPERNOVA:'Hypernova',VS:'VS'};
- return {text:entry.emoji+' <b>'+escapeHtml(entry.name)+'</b>\n\n'+escapeHtml(entry.description)+'\n\nTaraf: '+factions[def.faction]+'\nFaol tungi tanlov: '+(def.active?'Ha':'Yo‘q')+'\nRejimlar: '+V2_MODES.filter(m=>v2ModeAllows(role,m)).map(m=>labels[m]).join(', '),keyboard:[...(visuals?[[button('🖼 Personaj rasmi','v2art_'+entry.id)]]:[]),[button('⬅️ Personajlar','characters')],backRow()]};
+ return {text:entry.emoji+' <b>'+escapeHtml(entry.name)+'</b>\n\n'+escapeHtml(entry.description)+'\n\nTaraf: '+factions[def.faction]+'\nFaol tungi tanlov: '+(def.active?'Ha':'Yo‘q')+'\nRejimlar: '+V2_MODES.filter(m=>v2ModeAllows(role,m)).map(m=>labels[m]).join(', '),keyboard:[...(visuals?[[button('🖼 Personaj rasmi','vportrait_'+entry.id)]]:[]),[button('⬅️ Personajlar','characters')],backRow()]};
 }
 
 export function v2PortraitInfo(section:string):{key:string;caption:string}|null{
- const entry=REFERENCE_ROLES.find(r=>'v2art_'+r.id===section);
+ const entry=REFERENCE_ROLES.find(r=>'vportrait_'+r.id===section);
  return entry?{key:'v2portrait_'+entry.id,caption:entry.emoji+' '+entry.name+'\n\n'+entry.description}:null;
 }
