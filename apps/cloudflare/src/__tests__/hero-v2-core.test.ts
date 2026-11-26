@@ -18,14 +18,17 @@ describe('draft hero v2 persistent economy',()=>{
   expect(r.heroV2.view(2)).toMatchObject({points:1090,level:1,defense:8,charges:10});
   expect(r.heroV2.purchase(2,'BUY','duplicate-hero')).toBe('FULL');
   expect(r.eco.wallet(2)).toEqual(before);
+  expect(r.heroV2.purchase(2,'XP500','new-pack')).toBe('OK');
+  const afterPack=r.eco.wallet(2);
+  expect(r.eco.diamonds(2)).toBe(65);
   sql.exec(`UPDATE hero_v2_accounts SET defense=2,charges=4,name='Nova' WHERE telegram_id=2`);
   sql.exec(`UPDATE hero_accounts SET total_xp=1140 WHERE telegram_id=2`);
   r=new RegistryCore(sql,()=>now);r.migrate();
-  expect(r.heroV2.view(2)).toMatchObject({points:1140,level:2,defense:2,charges:4,name:'Nova'});
-  expect(r.heroV2.view(2)?.points).toBe(1140);
-  expect(r.eco.wallet(2)).toEqual(before);
+  expect(r.heroV2.view(2)).toMatchObject({points:1640,level:2,defense:2,charges:4,name:'Nova'});
+  expect(r.heroV2.view(2)?.points).toBe(1640);
+  expect(r.eco.wallet(2)).toEqual(afterPack);
   sql.exec(`UPDATE hero_accounts SET total_xp=1000 WHERE telegram_id=2`);
-  expect(r.heroV2.view(2)?.points).toBe(1140);
+  expect(r.heroV2.view(2)?.points).toBe(1640);
   expect(r.heroV2.migrationStatus()).toEqual({migrated:1,unverified:0});
  });
  it('pre-watermark draft accounts are preserved and flagged, never guessed or credited twice',()=>{
