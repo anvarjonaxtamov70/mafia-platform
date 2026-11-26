@@ -17,7 +17,7 @@ async function lobby(){
 }
 describe('v2 paid item lifecycle',()=>{
  it('reserved once on start replay, consumed only when used; unused returned even after cancellation',async()=>{
-  const {w,e,core,g}=await lobby();
+  const {w,e}=await lobby();
   const original=w.v2Settlement!.markRunning;let calls=0;
   w.v2Settlement!.markRunning=async (...args)=>{
    calls++;const items=await original(...args);
