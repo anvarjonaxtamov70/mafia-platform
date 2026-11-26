@@ -61,7 +61,7 @@ const wrangler = spawn(
   'npx',
   [
     'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', persist, '--show-interactive-dev-session=false',
-    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1,6', '--var', 'STARS_MODE:all',
+    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1,6', '--var', 'STARS_MODE:all', '--var', 'V2_PREVIEW:true', '--var', 'V2_LOCAL_LEDGER:true',
   ],
   { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
@@ -271,6 +271,30 @@ try {
   await pm(1, '/refund e2e-charge-1');
   check(calls.some((c) => c.method === 'refundStarPayment' && c.params.telegram_payment_charge_id === 'e2e-charge-1' && c.params.user_id === 2), 'owner refund targets actual payer');
 
+  // V2 through the actual Worker / Room DO / Registry DO (separate from unit harness).
+  await sleep(3100);
+  const v2Players=[1,11,12,13];
+  for(const p of v2Players.slice(1))await pm(p,'/start');
+  await pm(11,'/herov2');
+  check(texts(11).at(-1)?.includes('90 💎'),'local v2 shop RPC reads real Registry SQLite');
+  const beforeV2=texts(GROUP).length;
+  await gm(1,'/game v2classic');await sleep(1200);
+  const v2Lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+  const v2Join=v2Lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
+  if(!v2Join||v2Join===joinBtn)throw Error('new V2 lobby missing');
+  for(const p of v2Players.slice(1))await cb(p,v2Join,true);
+  await gm(1,'/startgame');await sleep(1800);
+  check(texts(GROUP).slice(beforeV2).some(t=>t.includes('V2 SINOV')&&t.includes('Ichki test hisobi')),'V2 real RoomCore uses local ledger');
+  for(const p of v2Players)check(texts(p).some(t=>t.includes('Sizning rolingiz:')),'V2 role privately delivered '+p);
+  for(let round=0;round<18;round++){
+    if(texts(GROUP).slice(beforeV2).some(t=>t.includes('🏁 O‘yin tugadi')))break;
+    const status=await force();if(!status.ok)throw Error('V2 force failed');
+    await sleep(500);
+  }
+  check(texts(GROUP).slice(beforeV2).some(t=>t.includes('🏁 O‘yin tugadi')),'V2 match ends through actual DO alarms');
+  await sleep(1800);
+  await pm(11,'/profile');
+  check(texts(11).at(-1)?.includes('Barcha o‘yinlar: 1'),'V2 result stored through Registry RPC');
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');

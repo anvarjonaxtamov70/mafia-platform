@@ -166,9 +166,7 @@ export interface RoomStore {
   setAlarm(at: number | null): Promise<void>;
 }
 
-/** Internal dependency only. Production Worker deliberately does not inject this
- * port until live rewards, item reservations and role settlement are complete.
- */
+/** Internal dependency only. Workerd injects this port exclusively in local fake-Telegram E2E. No production economy cutover. */
 export interface V2SettlementPort {
   snapshots(ids:number[]):Promise<Record<string,{defense:number;charges:number;damage:number}>>;
   settleNight(game:number,round:number,debits:readonly GrenchDebit[]):Promise<GrenchBatchReceipt>;

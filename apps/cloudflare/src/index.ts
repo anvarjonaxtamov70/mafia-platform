@@ -15,7 +15,10 @@ import { t } from '@mafia/localization';
 import type { PaymentInput } from './economy-core';
 import { RegistryCore, type Sql, type TgUserInput } from './registry-core';
 import { reentrantTx } from './sql';
-import { RoomCore, type RoomData, type RoomDeps } from './room-core';
+import { RoomCore, type RoomData, type RoomDeps,type V2SettlementPort } from './room-core';
+import type {HeroV2Purchase,HeroV2ShotRequest} from './hero-v2-core';
+import type {GrenchDebit,DawnRoleAction} from './role-v2-economy';
+import type {RecordGameInput} from './registry-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
 import { readTelegramUpdate } from './webhook-input';
@@ -30,6 +33,8 @@ export interface Env {
   DEV_FAKE_PLAYERS?: string;
   /** Explicit owner-only, no-economy v2 preview. Off by default. */
   V2_PREVIEW?: string;
+  /** Only local fake-Telegram workerd E2E. Never a production economy switch. */
+  V2_LOCAL_LEDGER?: string;
   VISUAL_MEDIA?: string;
   /** Telegram Stars: off | admins | all (standart: admins) */
   STARS_MODE?: string;
@@ -39,6 +44,11 @@ export interface Env {
   TEST_HOOKS?: string;
 }
 
+function localV2Ledger(env:Env):boolean{
+  if(env.V2_LOCAL_LEDGER!=='true'||env.V2_PREVIEW!=='true'||env.TEST_HOOKS!=='true'||!env.TELEGRAM_API)return false;
+  try{const url=new URL(env.TELEGRAM_API);return url.protocol==='http:'&&url.hostname==='127.0.0.1'&&!!url.port;}
+  catch{return false;}
+}
 function telegram(env: Env): Telegram {
   return new TelegramClient(env.BOT_TOKEN, env.TELEGRAM_API || 'https://api.telegram.org');
 }
@@ -220,6 +230,23 @@ export class Registry extends DurableObject<Env> {
   paraAnswer(target:number,id:number,accept:boolean){return this.core.paraAnswer(target,id,accept);}
   paraPair(user:number){return this.core.paraPair(user);}
   paraLeave(user:number,pair:number){return this.core.paraLeave(user,pair);}
+  // Private DO RPC only. No generic HTTP endpoint or Telegram command accepts these ledger parameters.
+  private requireLocalV2(){if(!localV2Ledger(this.env))throw Error('v2 ledger disabled');}
+  v2Snapshots(ids:number[]){
+    this.requireLocalV2();
+    if(ids.length<4||ids.length>30||new Set(ids).size!==ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<1))throw Error('invalid roster');
+    return Object.fromEntries(ids.flatMap(id=>{const h=this.core.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];}));
+  }
+  v2MarkRunning(game:number,chat:number,ids:readonly number[],allowItems:boolean){this.requireLocalV2();return this.core.markV2Running(game,chat,ids,allowItems);}
+  v2SettleNight(game:number,round:number,debits:readonly GrenchDebit[]){this.requireLocalV2();return this.core.roleV2Economy.settleGrenchBatch(game,round,debits);}
+  v2SettleDawn(game:number,round:number,actions:readonly DawnRoleAction[]){this.requireLocalV2();return this.core.roleV2Economy.settleDawn(game,round,actions);}
+  v2SettleHero(request:HeroV2ShotRequest){this.requireLocalV2();return this.core.heroV2.settleShot(request);}
+  v2BuyOffer(game:number,attempt:number,buyer:number,offer:number,code:string){this.requireLocalV2();return this.core.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code);}
+  v2RecordResult(input:RecordGameInput){this.requireLocalV2();return this.core.recordV2Game(input);}
+  v2HeroView(id:number){this.requireLocalV2();return this.core.heroV2.view(id);}
+  v2HeroQuote(id:number,op:HeroV2Purchase,arg?:string){this.requireLocalV2();return this.core.heroV2.quote(id,op,arg);}
+  v2HeroConfirm(id:number,quoteId:number){this.requireLocalV2();return this.core.heroV2.confirm(id,quoteId);}
+  v2HeroCancel(id:number,quoteId:number){this.requireLocalV2();return this.core.heroV2.cancel(id,quoteId);}
   singleHero(tgId: number) { return this.core.singleHero(tgId); }
   setOwnHeroLevel(tgId: number, level: number) { return this.core.setOwnHeroLevel(tgId, level); }
   buyHero(tgId: number, idem: string) { return this.core.eco.buyHero(tgId, idem); }
@@ -336,6 +363,7 @@ export class GameRoom extends DurableObject<Env> {
         },
       },
       registry: lazyRegistry(env),
+      ...(localV2Ledger(env)?{v2Settlement:localV2Settlement(env)}:{}),
       telegram: telegram(env),
       clock: Date.now,
       rng: cryptoRng,
@@ -407,6 +435,7 @@ function getRouter(env: Env): Router {
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
       v2Preview: env.V2_PREVIEW === 'true',
+      ...(localV2Ledger(env)?{heroV2Shop:{view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
@@ -416,6 +445,18 @@ function getRouter(env: Env): Router {
   );
 }
 
+/** Fresh stub per invocation, including after alarms/restarts. */
+function localV2Settlement(env:Env):V2SettlementPort{
+  return {
+    snapshots:ids=>registryStub(env).v2Snapshots(ids),
+    markRunning:(game,chat,ids,allowItems)=>registryStub(env).v2MarkRunning(game,chat,ids,allowItems),
+    settleNight:(game,round,debits)=>registryStub(env).v2SettleNight(game,round,debits),
+    settleDawn:(game,round,actions)=>registryStub(env).v2SettleDawn(game,round,actions),
+    settleHero:request=>registryStub(env).v2SettleHero(request),
+    buyOffer:(game,attempt,buyer,offer,code)=>registryStub(env).v2BuyOffer(game,attempt,buyer,offer,code),
+    recordResult:input=>registryStub(env).v2RecordResult(input),
+  };
+}
 /** Registry stubini har chaqiruvda yangidan oladi (DO ichida ham xavfsiz). */
 function lazyRegistry(env: Env) {
   return new Proxy({} as ReturnType<typeof registryStub>, {
