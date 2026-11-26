@@ -49,7 +49,7 @@ import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './reg
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import {V2_DEFS,v2CanEndNight,v2NightSessionReady,v2SameMafia,type V2Mode} from '@mafia/game-engine';
-import {decodeV2Button,v2PublicPhaseView} from '@mafia/bot-core';
+import {decodeV2Button,v2PublicPhaseView,v2GroupVerdictView} from '@mafia/bot-core';
 import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-hero-settlement';
 import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
 import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
@@ -646,6 +646,11 @@ export class RoomCore {
       await this.commit();return {ok:true};
     }
     if(g.status==='LOBBY')this.closeLobby(g);
+    if(g.v2Session?.state.phase==='VERDICT'){
+      const s=g.v2Session,ref='v2phase:'+g.number+':'+s.state.seq;
+      const view=v2GroupVerdictView(s.state,g.number,s.names,true);
+      this.enqueue([{chatId:BigInt(this.chatId),payload:{kind:'EDIT',refKey:ref,text:view.text+'\nO‘yin bekor qilindi.',keyboard:[]},dedupeKey:ref+':cancel',coalesceKey:ref+':verdict'}]);
+    }
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
     if(trigger!=='timeout')this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
     if(g.v2Ledger&&g.v2Session)this.addOp({type:'settleItems',number:g.number,used:usedV2Items(g)});
@@ -759,10 +764,15 @@ export class RoomCore {
       this.addOp({type:'v2Night',number:g.number,pending:prepareV2NightSettlement(next.room,this.now)});
     }
   }
-  async v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>{
+  async v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string;messageId?:number}):Promise<RoomResult>{
     const g=this.data.game;
     if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING'||g.v2DeferredStop||g.v2DeferredMigration!==undefined||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
     try{
+      const decoded=decodeV2Button(input.raw);
+      if(decoded?.op==='Y'||decoded?.op==='N'){
+        const ref=this.data.refs['v2phase:'+g.number+':'+g.v2Session.state.seq];
+        if(input.privateChatId!==this.chatId||g.v2Session.state.phase!=='VERDICT'||!ref||ref.chatId!==this.chatId||ref.messageId!==input.messageId)return {ok:false,error:'STALE_PHASE'};
+      }
       if(input.raw.startsWith('v2s:')){
         const button=decodeSellerButton(input.raw),s=g.v2Session.state;
         const offer=g.v2Offers?.find(o=>o.id===button?.offer&&o.buyer===input.tgId);

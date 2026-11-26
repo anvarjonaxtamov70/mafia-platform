@@ -250,9 +250,9 @@ export function groupText(from: number, text: string, chatId = GROUP): Omit<TgUp
   return { message: { message_id: msgId++, chat: { id: chatId, type: 'supergroup', title: 'Mafia guruh' }, from: user(from), text } };
 }
 
-export function callback(from: number, data: string, chatId?: number): Omit<TgUpdate, 'update_id'> {
+export function callback(from: number, data: string, chatId?: number, messageId=77): Omit<TgUpdate, 'update_id'> {
   const chat = chatId !== undefined ? { id: chatId, type: 'supergroup' as const, title: 'Mafia guruh' } : { id: from, type: 'private' as const };
-  return { callback_query: { id: String(msgId++), from: user(from), data, message: { message_id: 77, chat } } };
+  return { callback_query: { id: String(msgId++), from: user(from), data, message: { message_id: messageId, chat } } };
 }
 
 // ───────────────────────────── O'yin yordamchilari ─────────────────────────────

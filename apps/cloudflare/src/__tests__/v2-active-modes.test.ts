@@ -22,10 +22,11 @@ async function start(mode:V2Mode){
  const role=(role:V2Role)=>Number(players().find(p=>p.role===role)!.id);
  const seat=(id:number)=>players().findIndex(p=>p.id===String(id))+1;
  const press=async(id:number,op:string,target?:number)=>{
-  const raw=w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[])
+  const verdict=op==='Y'||op==='N';
+  const raw=w.tg.sent(verdict?GROUP:id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[])
    .map(b=>b.callback_data??'').find(raw=>{const b=decodeV2Button(raw);return b?.game===number&&b.seq===state().seq&&b.op===op&&b.seat===(target===undefined?0:seat(target));});
   expect(raw,mode+' '+state().phase+' '+id+' '+op).toBeTruthy();
-  await w.send(callback(id,raw!));
+  await w.send(verdict?callback(id,raw!,GROUP,core.data.refs['v2phase:'+number+':'+state().seq]!.messageId):callback(id,raw!));
   expect(w.tg.calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text).toBe('Qabul qilindi');
  };
  const advance=async(phase:string)=>{

@@ -163,7 +163,7 @@ export interface RoomApi {
   cancel(trigger: { by: number; isAdmin: boolean; commandMessageId?: number }, text?: string, number?: number): Promise<RoomResult>;
   cleanupCommand(messageId: number): Promise<void>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
-  v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>;
+  v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string;messageId?:number}):Promise<RoomResult>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
   mafiaVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>>;
@@ -692,14 +692,17 @@ export class Router {
       return this.answer(cb,heroV2Status(result),true);
     }
     if(cb.data?.startsWith('v2:')||cb.data?.startsWith('v2s:')){
-      const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):decodeV2Button(cb.data);
-      if(!button||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+      const v2=decodeV2Button(cb.data);
+      const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):v2;
+      const verdict=v2?.op==='Y'||v2?.op==='N';
+      const message=cb.message;
+      if(!button||from.is_bot||!message||(verdict?(message.chat.type!=='group'&&message.chat.type!=='supergroup'):(message.chat.type!=='private'||message.chat.id!==from.id)))return this.answer(cb,t('cb.stale'));
       if(!this.clicks.allow('cb:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
       // Registry membership is authoritative; do not route old/foreign game buttons via cached chat mappings.
       const active=await this.d.registry.activeOf(from.id);
-      if(!active||active.number!==button.game)return this.answer(cb,t('cb.stale'));
+      if(!active||active.number!==button.game||(verdict&&active.chatId!==message.chat.id))return this.answer(cb,t('cb.stale'));
       const room=this.d.room(active.chatId);
-      const result=await room.v2Button({tgId:from.id,privateChatId:cb.message.chat.id,number:button.game,raw:cb.data});
+      const result=await room.v2Button({tgId:from.id,privateChatId:message.chat.id,number:button.game,raw:cb.data,messageId:message.message_id});
       return this.answer(cb,result.ok?'Qabul qilindi':t('cb.stale'));
     }
     const data = cb.data ? decode(cb.data) : null;

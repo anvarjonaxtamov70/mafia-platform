@@ -3,7 +3,7 @@
  * is enabled yet: wallet and hero receipts must be coordinated with Registry.
  */
 import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
-import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,v2RoleLabel,type OutboxDraft,type V2Op} from '@mafia/bot-core';
+import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,v2RoleLabel,v2GroupVerdictView,type OutboxDraft,type V2Op} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number};
 export type V2RoomTransition={room:V2RoomSession;outbox:OutboxDraft[];effects:V2Effect[]};
@@ -17,7 +17,7 @@ function send(result:V2RoomTransition,chat:number,text:string,keyboard?:import('
 }
 function publishPhase(result:V2RoomTransition){
  const r=result.room;
- const v=v2PublicPhaseView(r.state,r.names);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
+ const v=r.state.phase==='VERDICT'?v2GroupVerdictView(r.state,r.game,r.names):v2PublicPhaseView(r.state,r.names);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
  for(const p of r.state.players){const view=v2PrivatePhaseView(r.state,r.game,p.id,r.names);if(view)send(result,Number(p.id),view.text,view.keyboard,choiceRef(r,p.id));}
 }
 function confirm(result:V2RoomTransition,source:V2RoomSession,actor:string,text:string,selection:string,key='phase'){
@@ -32,8 +32,13 @@ function publicActivity(result:V2RoomTransition,actor:string,op:V2Op){
  const line=role==='COMMISSAR'?(op==='I'?'yovuzlarni qidirishga ketdi!':'tungi nishonini tanladi.'):activity[role]??'tungi harakatini bajardi.';
  send(result,result.room.chatId,escapeHtml(v2RoleLabel(role))+' '+line);
 }
+function editVerdict(result:V2RoomTransition,source:V2RoomSession,closed=false){
+ const ref=groupRef(source),view=v2GroupVerdictView(source.state,source.game,source.names,closed);
+ result.outbox.push({chatId:BigInt(source.chatId),payload:{kind:'EDIT',refKey:ref,text:view.text,keyboard:view.keyboard??[]},dedupeKey:ref+':verdict:'+result.room.revision,coalesceKey:ref+':verdict'});
+}
 function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:number){
  const r=result.room,oldSeq=r.state.seq;
+ if(r.state.phase==='VERDICT'&&oldSeq!==state.seq)editVerdict(result,r,true);
  r.state=state;result.effects.push(...effects);
  result.outbox.push(...v2EffectDrafts(effects,BigInt(r.chatId),r.names,r.game,r.revision));
  for(const e of effects)if(e.kind==='DEATH'&&e.reason!=='AFK'&&e.reason!=='LEAVE'&&!r.lastWords[e.target]){
@@ -41,6 +46,7 @@ function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:numb
   send(result,Number(e.target),'Oxirgi so‘zingizni 29 soniya ichida yozing.');
  }
  if(oldSeq!==state.seq)publishPhase(result);
+ else if(state.phase==='VERDICT')editVerdict(result,r);
 }
 export function createV2RoomSession(game:number,chatId:number,mode:V2Mode,users:readonly {id:number;name:string}[],now:number,rng:Rng):V2RoomTransition{
  if(!Number.isSafeInteger(game)||game<1||!Number.isSafeInteger(chatId)||chatId>=0||users.some(u=>!Number.isSafeInteger(u.id)||u.id<=0))throw Error('invalid room');
@@ -53,7 +59,8 @@ export function createV2RoomSession(game:number,chatId:number,mode:V2Mode,users:
 const responseOps:V2Op[]=['F','X','P','M'];
 export function v2RoomButton(input:V2RoomSession,actorId:number,privateChatId:number,raw:string,now:number):V2RoomTransition{
  const b=decodeV2Button(raw);
- if(!b||b.game!==input.game||b.seq!==input.state.seq||privateChatId!==actorId||!input.state.players.some(p=>p.id===String(actorId)))throw Error('invalid or stale button');
+ const groupVote=b?.op==='Y'||b?.op==='N';
+ if(!b||b.game!==input.game||b.seq!==input.state.seq||(groupVote?privateChatId!==input.chatId:privateChatId!==actorId)||!input.state.players.some(p=>p.id===String(actorId)))throw Error('invalid or stale button');
  const room=copy(input);room.revision++;
  const result=empty(room),actor=String(actorId),s=room.state,target=s.players[b.seat-1]?.id;
  if(responseOps.includes(b.op)){
@@ -82,7 +89,7 @@ export function v2RoomButton(input:V2RoomSession,actorId:number,privateChatId:nu
   case 'V':if(!target||s.votes.some(v=>v.actor===actor))throw Error('invalid or repeated vote');room.state=v2Vote(s,actor,target,b.seq);
    if(view)confirm(result,input,actor,view.text,targetName);
    send(result,room.chatId,'🗳 '+escapeHtml(room.names[actor]??'O‘yinchi')+' — '+escapeHtml(targetName)+'ga ovoz berdi.');break;
-  case 'Y':case 'N':if(b.seat!==0||s.verdicts.some(v=>v.actor===actor))throw Error('invalid or repeated verdict');room.state=v2Verdict(s,actor,b.op==='Y',b.seq);if(view)confirm(result,input,actor,view.text,b.op==='Y'?'Ha':'Yo‘q');break;
+  case 'Y':case 'N':if(b.seat!==0||s.verdicts.some(v=>v.actor===actor))throw Error('invalid or repeated verdict');room.state=v2Verdict(s,actor,b.op==='Y',b.seq);editVerdict(result,room);break;
   case 'H':{
    if(!target)throw Error('invalid hero target');
    // Persistent hero receipt must be committed by trusted Registry before this

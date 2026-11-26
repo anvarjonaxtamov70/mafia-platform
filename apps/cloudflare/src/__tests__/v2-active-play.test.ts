@@ -17,10 +17,11 @@ describe('V2 active play through actual Telegram router and durable registry',()
   const commissar=Number(state().players.find(p=>p.role==='COMMISSAR')!.id);
   const donSeat=state().players.findIndex(p=>p.id===String(don))+1;
   const press=async(id:number,op:string,seat:number)=>{
-   const raw=w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[])
+   const verdict=op==='Y'||op==='N';
+   const raw=w.tg.sent(verdict?GROUP:id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[])
     .map(b=>b.callback_data??'').find(raw=>{const b=decodeV2Button(raw);return b?.game===number&&b.seq===state().seq&&b.op===op&&b.seat===seat;});
    expect(raw).toBeTruthy();
-   await w.send(callback(id,raw!));
+   await w.send(verdict?callback(id,raw!,GROUP,core.data.refs['v2phase:'+number+':'+state().seq]!.messageId):callback(id,raw!));
    expect(w.tg.calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text).toBe('Qabul qilindi');
   };
   const doctor=Number(state().players.find(p=>p.role==='DOCTOR')!.id);
@@ -32,8 +33,14 @@ describe('V2 active play through actual Telegram router and durable registry',()
   await w.advance(30001);expect(state().phase).toBe('VOTING');
   for(const id of ids.filter(id=>id!==don))await press(id,'V',donSeat);
   await w.advance(30001);expect(state().phase).toBe('VERDICT');expect(state().candidate).toBe(String(don));
-  for(const id of ids.filter(id=>id!==don))await press(id,'Y',0);
+  const verdictMessage=core.data.refs['v2phase:'+number+':'+state().seq]!.messageId;
+  const yes=ids.filter(id=>id!==don);
+  for(const id of yes)await press(id,'Y',0);
+  const live=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===GROUP&&c.params.message_id===verdictMessage).at(-1);
+  expect(JSON.stringify(live?.params.reply_markup)).toContain('👍 3');
   await w.advance(30001);expect(state().phase).toBe('ENDED');
+  const closed=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===GROUP&&c.params.message_id===verdictMessage).at(-1);
+  expect(closed?.params.text).toContain('Ha: 3');expect(JSON.stringify(closed?.params.reply_markup)).not.toContain('callback_data');
   expect(state().outcome).toEqual({reason:'CITY',winners:ids.filter(id=>id!==don).map(String)});
   expect(core.data.game!.v2Session!.lastWords[String(don)]?.sent).toBe(false);
   w.restart(GROUP);core=await w.loaded(GROUP);

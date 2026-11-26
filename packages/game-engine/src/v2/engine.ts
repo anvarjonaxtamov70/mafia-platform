@@ -318,6 +318,15 @@ export function v2Vote(input:V2State,actor:string,target:string,seq:number):V2St
 export function v2Verdict(input:V2State,actor:string,yes:boolean,seq:number):V2State{
   requireActor(input,actor,seq,'VERDICT');const s=clone(input);s.verdicts=s.verdicts.filter(v=>v.actor!==actor);s.verdicts.push({actor,yes});return s;
 }
+/** The exact same eligibility and Janob weight drive UI and resolution. */
+export function v2VerdictTally(s:V2State):{yes:number;no:number}{
+  const tally={yes:0,no:0};
+  for(const v of s.verdicts){
+    const p=player(s,v.actor);
+    if(p&&alive(p)&&!asleep(s,p))tally[v.yes?'yes':'no']+=p.role==='JANOB'?2:1;
+  }
+  return tally;
+}
 export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
   if(input.seq!==seq||input.outcome)throw new Error('stale phase');
   const s=clone(input),effects:V2Effect[]=[];
@@ -329,8 +338,8 @@ export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
     if(s.candidate)phase(s,'VERDICT',now);else nextNight();
   }else if(s.phase==='VERDICT'){
     const candidate=s.candidate?player(s,s.candidate):undefined;
-    let tally=0;for(const v of s.verdicts){const p=player(s,v.actor);if(p&&alive(p)&&!asleep(s,p))tally+=(v.yes?1:-1)*(p.role==='JANOB'?2:1);}
-    if(candidate&&alive(candidate)&&tally>0){
+    const tally=v2VerdictTally(s);
+    if(candidate&&alive(candidate)&&tally.yes>tally.no){
       if(candidate.hangingProtection)effects.push({kind:'HANGING_PROTECTED',target:candidate.id,reason:'LAWYER_OR_TENTAK'});
       else if(candidate.voteShield){candidate.voteShield=false;effects.push({kind:'HANGING_PROTECTED',target:candidate.id,reason:'ITEM'});}
       else{

@@ -1,7 +1,7 @@
 /** Native Telegram views for v2. The room adapter must enforce game/phase,
  * authenticated actor, audience and deadline again; callback data is untrusted.
  */
-import {V2_ROLES,V2_DEFS,v2Eligible,v2Submit,v2SameMafia,type V2State,type V2Role,type V2Action,type V2Effect,type V2NightSession} from '@mafia/game-engine';
+import {V2_ROLES,V2_DEFS,v2Eligible,v2Submit,v2SameMafia,v2VerdictTally,type V2State,type V2Role,type V2Action,type V2Effect,type V2NightSession} from '@mafia/game-engine';
 import {escapeHtml} from '@mafia/localization';
 import {REFERENCE_ROLES} from './reference-roles';
 import {rows,buttonLabel,type Button,type Keyboard,type OutboxDraft} from './outbox-types';
@@ -47,8 +47,14 @@ export function v2PrivatePhaseView(s:V2State,game:number,id:string,names:PlayerN
  }
  if(s.phase==='DAWN'&&['DON','COMMISSAR','MERGAN'].includes(p.role)&&p.heroCharges>0&&!p.heroUsed)return {text:'🥷 Geroy bilan hujum qilish',keyboard:rows(targetButtons('H',x=>x!==id))};
  if(s.phase==='VOTING')return {text:'🗳 Kimga ovoz berasiz?',keyboard:rows(targetButtons('V',x=>x!==id))};
- if(s.phase==='VERDICT'&&s.candidate)return {text:'⚖️ '+named(names,s.candidate)+' osilsinmi?',keyboard:[[make(game,s,'Y',0,'✅ Ha'),make(game,s,'N',0,'❌ Yo‘q')]]};
  return null;
+}
+export function v2GroupVerdictView(s:V2State,game:number,names:PlayerNames,closed=false):V2View{
+ if(s.phase!=='VERDICT'||!s.candidate)throw Error('not a verdict');
+ const {yes,no}=v2VerdictTally(s);
+ const question='⚖️ <b>Rostdan ham '+named(names,s.candidate)+'ni osmoqchimisiz?</b>';
+ if(closed)return {text:question+'\n\nOvoz berish yakunlandi.\n👍 Ha: '+yes+'   👎 Yo‘q: '+no,keyboard:[]};
+ return {text:question+'\n\n30 soniya. Har bir o‘yinchi bir marta ovoz beradi.',keyboard:[[make(game,s,'Y',0,'👍 '+yes),make(game,s,'N',0,'👎 '+no)]]};
 }
 export function v2PublicPhaseView(s:V2State,names:PlayerNames):V2View{
  const phases={NIGHT:'🌙 Tun boshlandi',DAWN:'🌅 Tong otdi',DISCUSSION:'☀️ Muhokama',VOTING:'🗳 Ovoz berish',VERDICT:'⚖️ Osishni tasdiqlash',REVENGE:'💣 Kamikaze tanlovi',ENDED:'🏁 O‘yin tugadi'};
