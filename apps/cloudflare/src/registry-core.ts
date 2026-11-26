@@ -174,6 +174,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS match_points_group_time ON match_points(chat_id, at, telegram_id)`,
   `CREATE INDEX IF NOT EXISTS match_points_time ON match_points(at, telegram_id)`,
   `CREATE INDEX IF NOT EXISTS match_points_user ON match_points(telegram_id)`,
+  `CREATE TABLE IF NOT EXISTS v2_role_stats(telegram_id INTEGER NOT NULL,role TEXT NOT NULL,played INTEGER NOT NULL DEFAULT 0,won INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(telegram_id,role))`,
+  `CREATE TABLE IF NOT EXISTS v2_match_modes(game_number INTEGER PRIMARY KEY,mode TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS v2_match_rosters(game_number INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, roster TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS v2_match_receipts(game_number INTEGER PRIMARY KEY, request TEXT NOT NULL, receipt TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS game_participation (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, afk INTEGER NOT NULL, left_game INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`,
@@ -455,6 +457,7 @@ export class RegistryCore {
       if(!roster||roster.chat_id!==input.chatId||roster.roster!==JSON.stringify(ids)||!game||game.status!=='RUNNING'||game.chat_id!==input.chatId||
         this.one(`SELECT 1 FROM game_results WHERE game_number=?`,input.number))throw Error('v2 result unavailable');
       const receipt=this.recordGameTx(input);
+      this.sql.exec(`INSERT INTO v2_match_modes(game_number,mode) VALUES(?,?)`,input.number,input.mode!);
       this.sql.exec(`INSERT INTO v2_match_receipts(game_number,request,receipt) VALUES(?,?,?)`,input.number,request,JSON.stringify(receipt));
       return receipt;
     });
@@ -462,7 +465,7 @@ export class RegistryCore {
 
   /** O'yin natijalarini bir marta yozadi (idempotent: game_results PRIMARY KEY). */
   recordGame(input: RecordGameInput): RecordResult {
-    if(input.engineVersion===2)throw Error('use trusted v2 result path');
+    if(input.engineVersion===2||this.one(`SELECT 1 FROM v2_match_rosters WHERE game_number=?`,input.number))throw Error('use trusted v2 result path');
     return this.sql.tx(() => this.recordGameTx(input));
   }
 
@@ -534,8 +537,9 @@ export class RegistryCore {
         Math.max(prof.best_win_streak, streak),
         p.tgId,
       );
+      const roleTable=input.engineVersion===2?'v2_role_stats':'role_stats';
       this.sql.exec(
-        `INSERT INTO role_stats (telegram_id, role, played, won) VALUES (?, ?, 1, ?)
+        `INSERT INTO ${roleTable} (telegram_id, role, played, won) VALUES (?, ?, 1, ?)
          ON CONFLICT (telegram_id, role) DO UPDATE SET played = played + 1, won = won + excluded.won`,
         p.tgId,
         p.role,
@@ -598,17 +602,18 @@ export class RegistryCore {
 
   /** Last ten completed games of the requester only; never expose other players' hidden roles. */
   gameHistory(tgId: number): string {
-    const rows = this.sql.exec<{ game_number: number; role: string; result: string; xp: number; rating_change: number; created_at: number; afk: number | null; left_game: number | null; points: number | null; dollars: number | null; v2: number | null }>(
-      `SELECT r.game_number, r.role, r.result, r.xp, r.rating_change, r.created_at, p.afk, p.left_game, m.points, m.dollars, CASE WHEN v.game_number IS NULL THEN NULL ELSE 2 END AS v2
+    const rows = this.sql.exec<{ game_number: number; role: string; result: string; xp: number; rating_change: number; created_at: number; afk: number | null; left_game: number | null; points: number | null; dollars: number | null; v2: number | null; mode: V2Mode | null }>(
+      `SELECT r.game_number, r.role, r.result, r.xp, r.rating_change, r.created_at, p.afk, p.left_game, m.points, m.dollars, CASE WHEN v.game_number IS NULL THEN NULL ELSE 2 END AS v2, vm.mode
        FROM game_results r LEFT JOIN game_participation p ON p.game_number = r.game_number AND p.telegram_id = r.telegram_id
        LEFT JOIN match_points m ON m.game_number = r.game_number AND m.telegram_id = r.telegram_id
        LEFT JOIN v2_match_receipts v ON v.game_number = r.game_number
+       LEFT JOIN v2_match_modes vm ON vm.game_number = r.game_number
        WHERE r.telegram_id = ? ORDER BY r.created_at DESC, r.game_number DESC LIMIT 10`, tgId);
     if (!rows.length) return t('history.title') + '\n\n' + t('history.empty');
     return t('history.title') + '\n\n' + rows.map((x) => t(x.points === null ? 'history.legacy_v7' : 'history.line_v7', {
       number: x.game_number, role: x.v2===2&&V2_ROLES.includes(x.role as V2Role)?v2RoleLabel(x.role as V2Role):t('role.' + x.role + '.name'), outcome: t('dm.outcome.' + x.result),
       date: formatDate(x.created_at), dollars: x.dollars ?? 0, points: (x.points !== null && x.points > 0 ? '+' : '') + (x.points ?? 0),
-      note: x.afk ? ' · AFK' : x.left_game ? ' · ' + t('history.left') : '',
+      note: (x.mode?' · '+x.mode:'')+(x.afk ? ' · AFK' : x.left_game ? ' · ' + t('history.left') : ''),
     })).join('\n\n');
   }
 

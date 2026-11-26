@@ -2,7 +2,18 @@ import {describe,it,expect} from 'vitest';
 import {World,privateText,groupText,callback,GROUP} from './harness';
 import {v2CreateFixed,seededRng} from '@mafia/game-engine';
 import {buildV2Result} from '../v2-match-result';
+import {matchReward} from '../match-rewards';
 describe('v2 result ledger',()=>{
+ it('keeps solo, team and personal caps distinct, and excludes unranked and fake matches',()=>{
+  const c={playerCount:30,days:8,durationMs:30*60000,activeRatio:1,ranked:true,practice:false};
+  const p={role:'MANYAK' as const,faction:'SOLO' as const,outcome:'WIN' as const,active:true,left:false,fake:false};
+  expect(matchReward(c,p)).toEqual({points:150,dollars:66});
+  expect(matchReward(c,{...p,teamWin:true})).toEqual({points:120,dollars:66});
+  expect(matchReward(c,{...p,outcome:'PERSONAL_WIN'})).toEqual({points:70,dollars:66});
+  expect(matchReward(c,{...p,afk:true})).toEqual({points:-8,dollars:0});
+  expect(matchReward({...c,ranked:false},p)).toEqual({points:0,dollars:0});
+  expect(matchReward({...c,practice:true},p)).toEqual({points:0,dollars:0});
+ });
  it('records once after a lost response, keeps left penalty and does not award ordinary hero points',async()=>{
   const w=new World({v2Preview:true,v2Ledger:true});
   for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
@@ -32,7 +43,8 @@ describe('v2 result ledger',()=>{
   expect(r.heroV2.view(2)?.points).toBe(0);
   expect(r.recordV2Game(expected).players).toHaveLength(4);
   expect(()=>r.recordV2Game({...expected,days:2})).toThrow();
-  expect(r.gameHistory(2)).toContain('Komissar');
+  expect(r.gameHistory(2)).toContain('Komissar');expect(r.gameHistory(2)).toContain('CLASSIC');
+  expect(r.eco.roleStats(2)).toEqual([{role:'COMMISSAR',played:1,won:1,engineVersion:2}]);
   w.restart(GROUP);await w.advance(2100);
   expect(calls).toBe(2);expect((await w.loaded(GROUP)).data.game).toBeNull();
   expect(r.points(2)).toBe(points);expect(r.eco.coins(2)).toBe(coins);
