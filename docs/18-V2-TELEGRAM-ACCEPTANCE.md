@@ -27,3 +27,22 @@ Complete a separately approved isolated economy trial, including persistent hero
 
 ## Fail-closed staging identity
 Staging requires `STAGING_BOT_ID`, `PRODUCTION_BOT_ID` (public numeric bot IDs, not owner IDs), `STAGING_ORIGIN` (the exact `https://hypernova-v2-staging.<account-subdomain>.workers.dev`), explicit ADMIN_IDS and a matching separate BOT_TOKEN. Defaults are deliberately blank and block Telegram actions. Runtime refuses mismatched token prefix/identity, origin, unsafe flags or an existing webhook belonging to another origin before `setWebhook`. Leave production config unchanged. The guard is defense-in-depth, not proof that operator-supplied production ID is correct.
+
+## Windows / local launch helper
+The helper `apps/cloudflare/scripts/staging-launch.mjs` runs **read-only** Telegram identity/webhook checks without arguments. It only deploys with explicit `--apply` and `STAGING_CONFIRM=hypernova-v2-staging`. Use the PR branch, not main, and require green CI first. Install Node 22 and run `npm ci` from the repo root. Authenticate Wrangler to the intended Cloudflare account separately (`npx wrangler login`). In PowerShell, set these environment variables in the same terminal (substitute actual values):
+```powershell
+$env:STAGING_BOT_ID = "NEW_BOT_NUMERIC_ID"
+$env:PRODUCTION_BOT_ID = "LIVE_BOT_NUMERIC_ID"
+$env:STAGING_ORIGIN = "https://hypernova-v2-staging.YOUR_SUBDOMAIN.workers.dev"
+$env:STAGING_ADMIN_IDS = "YOUR_TELEGRAM_USER_ID"
+$secret = Read-Host "Staging bot token (not production)" -AsSecureString
+$env:STAGING_BOT_TOKEN = [System.Net.NetworkCredential]::new("", $secret).Password
+node apps/cloudflare/scripts/staging-launch.mjs
+```
+Check the displayed bot username and worker before approving. Only after verification, run:
+```powershell
+$env:STAGING_CONFIRM = "hypernova-v2-staging"
+node apps/cloudflare/scripts/staging-launch.mjs --apply
+Remove-Item Env:STAGING_BOT_TOKEN, Env:STAGING_CONFIRM -ErrorAction SilentlyContinue
+```
+The script never deploys by default, never takes a token as an argument, checks existing webhook, deploys only using staging config, verifies reported origin before secret upload, and validates the setup response. If a deploy partially succeeds, inspect the staging Worker and retry only with the same staging identity. No automatic cleanup of any Worker or webhook. The helper has not been executed against a real Telegram or Cloudflare account.
