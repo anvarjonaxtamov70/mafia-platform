@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {heroV2Threshold,heroV2Level,heroV2Stats,heroV2Hit,heroV2CanShoot,HERO_V2_PRICE,HERO_V2_XP_PACKS} from '@mafia/bot-core';
+import {heroV2Threshold,heroV2Level,heroV2Stats,heroV2Hit,heroV2CanShoot,heroV2ShotPoints,HERO_V2_PRICE,HERO_V2_XP_PACKS} from '@mafia/bot-core';
 describe('v16 proposed hero rules',()=>{
   it('matches the two observed thresholds, defense and price examples',()=>{
     expect(heroV2Level(2423)).toBe(3);
@@ -31,6 +31,15 @@ describe('v16 proposed hero rules',()=>{
     expect(heroV2Hit(first.hp,first.defense,45)).toMatchObject({hp:10,killed:false});
     expect(heroV2Hit(10,0,45)).toMatchObject({hp:0,killed:true});
     expect(heroV2Hit(0,10,45)).toMatchObject({hp:0,defense:10,killed:false});
+  });
+  it('awards partial XP for real nonlethal damage, full XP for a kill, no XP for blocked hits',()=>{
+    expect(heroV2ShotPoints(1,heroV2Hit(100,0,45))).toBe(7);
+    expect(heroV2ShotPoints(1,heroV2Hit(100,40,45))).toBe(1);
+    expect(heroV2ShotPoints(1,heroV2Hit(100,45,45))).toBe(0);
+    expect(heroV2ShotPoints(1,heroV2Hit(40,0,45))).toBe(30);
+    expect(heroV2ShotPoints(47,heroV2Hit(100,0,100))).toBe(34);
+    expect(heroV2ShotPoints(47,heroV2Hit(100,40,100))).toBe(10);
+    expect(heroV2ShotPoints(47,heroV2Hit(0,0,100))).toBe(0);
   });
   it('only three role codes may shoot',()=>{
     for(const role of ['DON','COMMISSAR','MERGAN'])expect(heroV2CanShoot(role)).toBe(true);

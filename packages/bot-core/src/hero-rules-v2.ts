@@ -49,3 +49,14 @@ export function heroV2Hit(hp: number, defense: number, damage: number) {
   const lostHp = hp === 0 ? 0 : Math.min(hp, damage - absorbed);
   return { hp: hp - lostHp, defense: defense - absorbed, absorbed, lostHp, killed: hp > 0 && lostHp === hp };
 }
+
+/** Reward actual HP damage, not attempted damage or absorbed defense. A lethal hit
+ * gets the full kill award instead of stacking damage and kill awards. The caller
+ * must settle once per authoritative accepted shot, with a persistent unique event key.
+ */
+export function heroV2ShotPoints(level: number, hit: ReturnType<typeof heroV2Hit>): number {
+  const { killPoints } = heroV2Stats(level);
+  if (hit.lostHp <= 0) return 0;
+  if (hit.killed) return killPoints;
+  return Math.max(1, Math.round(killPoints * hit.lostHp / 200));
+}

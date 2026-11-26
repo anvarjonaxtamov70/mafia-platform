@@ -67,7 +67,7 @@ export const REFERENCE_ROLES = [
     "id": "suidsid",
     "emoji": "🪦",
     "name": "Suidsid",
-    "description": "Faqat kunduzgi osish orqali o‘yindan chiqarilsangiz g‘alaba qozonasiz. O‘zingizga ovoz bera olmaysiz."
+    "description": "Kunduzgi osish orqali o‘yindan chiqarilsangiz, g‘alaba qozonasiz va butun o‘yin tugaydi. O‘zingizga ovoz bera olmaysiz."
   },
   {
     "id": "killer",
@@ -157,7 +157,7 @@ export const REFERENCE_ROLES = [
     "id": "mergan",
     "emoji": "🎯",
     "name": "Mergan",
-    "description": "Har tun hujum qilasiz. Yakka rollar sizni o‘ldira olmaydi; boshqa yakka rollar kabi yakka g‘alaba uchun kurashasiz."
+    "description": "Har tun hujum qilasiz. Yakka rollar sizni o‘ldira olmaydi. Don, Komissar, geroy hujumi va kunduzgi osish sizni o‘yindan chiqarishi mumkin. Yakka g‘alaba uchun kurashasiz."
   },
   {
     "id": "janob",
