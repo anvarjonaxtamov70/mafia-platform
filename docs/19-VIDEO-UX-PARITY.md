@@ -68,3 +68,6 @@ Death effects carry victim role and actual attack-time role labels, independent 
 
 ### E2E presentation regression correction
 Run 45816641240 passed 303 unit and 31 integration tests, staging bundle and persisted result checks for all four modes. Four workerd E2E terminal-message checks failed because the old literal `🏁 O‘yin tugadi` no longer matches the new HTML title `🏁 <b>O‘yin tugadi!</b>`. Updated the predicate for all four modes to require the actual new title, winners, other participants and duration, while retaining independent Registry profile checks. No runtime behavior changed. Exact new head CI pending.
+
+## Expired action controls and abstention
+V2 nomination now has an explicit one-time skip (seat 0), stored separately from target votes; it never nominates anyone. Public skip notice and private confirmation use the existing durable path. On phase transitions, night-response lock and admin stop, queued and delivered obsolete private action controls are retired through the outbox. Accepted edits take precedence; expiry edits markup only and retain real return-to-group URL where available. No change to timer or reward rules. Seller offer handling remains a separate step; CI pending.

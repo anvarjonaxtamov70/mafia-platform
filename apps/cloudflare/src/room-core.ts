@@ -647,6 +647,7 @@ export class RoomCore {
       await this.commit();return {ok:true};
     }
     if(g.status==='LOBBY')this.closeLobby(g);
+    if(g.v2Session)this.retireV2Prompts(g.number,()=>false);
     if(g.v2Session?.state.phase==='VERDICT'){
       const s=g.v2Session,ref='v2phase:'+g.number+':'+s.state.seq;
       const view=v2GroupVerdictView(s.state,g.number,s.names,true);
@@ -738,11 +739,34 @@ export class RoomCore {
     if(!s.night&&v2CanEndNight(s.state))return this.now;
     return v2RoomDeadline(s);
   }
+  /** Retire only unconfirmed prompts. Pending confirmations must win over cleanup. */
+  private retireV2Prompts(number:number,keep:(key:string)=>boolean){
+    const prefix='v2choice:'+number+':';
+    const keys=new Map<string,number>();
+    for(const [key,ref] of Object.entries(this.data.refs))if(key.startsWith(prefix))keys.set(key,ref.chatId);
+    for(const item of this.data.outbox)if(item.storeRefAs?.startsWith(prefix))keys.set(item.storeRefAs,item.chatId);
+    for(const [key,chat] of keys){
+      if(keep(key)||this.data.outbox.some(o=>o.payload.kind!=='SEND'&&o.payload.refKey===key))continue;
+      this.enqueue([{chatId:BigInt(chat),payload:{kind:'CLEAR_KEYBOARD',refKey:key},dedupeKey:key+':expired'}]);
+    }
+  }
   private acceptV2(g:RoomGame,next:V2RoomTransition){
+    const previous=g.v2Session;
     g.v2Session=next.room;g.version++;
     if(next.room.state.phase==='ENDED'&&g.v2FinishedAt===undefined)g.v2FinishedAt=this.now;
     const fakes=new Set(g.players.filter(p=>p.fake).map(p=>p.id));
     this.enqueue(next.outbox.filter(o=>!fakes.has(Number(o.chatId))));
+    if(previous){
+      const room=next.room;
+      this.retireV2Prompts(g.number,key=>{
+        const [, ,seq,id,kind]=key.split(':');
+        if(seq!==String(room.state.seq))return false;
+        const player=room.state.players.find(p=>p.id===id);
+        if(!player||player.left)return false;
+        if(kind==='phase')return !room.night&&(player.hp>0||room.state.phase==='REVENGE'&&room.state.revenge===id);
+        return !!room.night;
+      });
+    }
   }
   private finishV2(g:RoomGame){
     if(g.v2Ledger){
@@ -1381,7 +1405,7 @@ export class RoomCore {
   private drop(id: number): void {
     const item=this.data.outbox.find(o=>o.id===id);
     const payload=item?.payload;
-    if(payload?.kind==='EDIT'&&payload.refKey.startsWith('v2choice:'))delete this.data.refs[payload.refKey];
+    if((payload?.kind==='EDIT'||payload?.kind==='CLEAR_KEYBOARD')&&payload.refKey.startsWith('v2choice:'))delete this.data.refs[payload.refKey];
     this.data.outbox = this.data.outbox.filter((o) => o.id !== id);
   }
 
@@ -1437,7 +1461,10 @@ export class RoomCore {
         ...(p.keyboard ? { reply_markup: { inline_keyboard: p.keyboard } } : {}),
       });
     } else if (p.kind === 'CLEAR_KEYBOARD') {
-      await this.deps.telegram.call('editMessageReplyMarkup', { chat_id: ref.chatId, message_id: ref.messageId, reply_markup: { inline_keyboard: [] } });
+      const [,game,seq]=p.refKey.split(':');
+      const group=p.refKey.startsWith('v2choice:')?this.data.refs['v2phase:'+game+':'+seq]:undefined;
+      const keyboard=group&&String(group.chatId).startsWith('-100')?[[{text:'Guruhga o‘tish',url:'https://t.me/c/'+String(group.chatId).slice(4)+'/'+group.messageId}]]:[];
+      await this.deps.telegram.call('editMessageReplyMarkup', { chat_id: ref.chatId, message_id: ref.messageId, reply_markup: { inline_keyboard: keyboard } });
     } else {
       await this.deps.telegram.call('deleteMessage', { chat_id: ref.chatId, message_id: ref.messageId });
     }

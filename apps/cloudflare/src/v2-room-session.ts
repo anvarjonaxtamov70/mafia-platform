@@ -2,7 +2,7 @@
  * room snapshot before delivery, using the existing durable outbox. No live routing
  * is enabled yet: wallet and hero receipts must be coordinated with Registry.
  */
-import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
+import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Abstain,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
 import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,v2RoleLabel,v2GroupVerdictView,type OutboxDraft,type V2Op} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number;startedAt?:number;finishedAt?:number};
@@ -86,9 +86,12 @@ export function v2RoomButton(input:V2RoomSession,actorId:number,privateChatId:nu
    if(view)confirm(result,input,actor,view.text,b.op==='K'?'O‘tkazib yuborish':(b.op==='I'?'Tekshirish: ':b.op==='S'?'Hujum: ':'')+targetName);
    publicActivity(result,actor,b.op);break;
   }
-  case 'V':if(!target||s.votes.some(v=>v.actor===actor))throw Error('invalid or repeated vote');room.state=v2Vote(s,actor,target,b.seq);
-   if(view)confirm(result,input,actor,view.text,targetName);
-   send(result,room.chatId,'🗳 '+escapeHtml(room.names[actor]??'O‘yinchi')+' — '+escapeHtml(targetName)+'ga ovoz berdi.');break;
+  case 'V':{
+   if(s.votes.some(v=>v.actor===actor)||s.abstentions?.includes(actor)||(!target&&b.seat!==0))throw Error('invalid or repeated vote');
+   room.state=b.seat===0?v2Abstain(s,actor,b.seq):v2Vote(s,actor,target!,b.seq);
+   if(view)confirm(result,input,actor,view.text,b.seat===0?'O‘tkazib yuborish':targetName);
+   send(result,room.chatId,'🗳 '+escapeHtml(room.names[actor]??'O‘yinchi')+(b.seat===0?' — ovoz berishni o‘tkazib yubordi.':' — '+escapeHtml(targetName)+'ga ovoz berdi.'));break;
+  }
   case 'Y':case 'N':if(b.seat!==0||s.verdicts.some(v=>v.actor===actor))throw Error('invalid or repeated verdict');room.state=v2Verdict(s,actor,b.op==='Y',b.seq);editVerdict(result,room);break;
   case 'H':{
    if(!target)throw Error('invalid hero target');

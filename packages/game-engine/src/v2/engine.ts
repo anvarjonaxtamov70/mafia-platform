@@ -29,7 +29,7 @@ export type V2Effect=
   |{kind:'HP';target:string;hp:number}
   |{kind:'HANGING_PROTECTED';target:string;reason:'LAWYER_OR_TENTAK'|'ITEM'};
 export type V2Outcome={reason:string;winners:string[]};
-export type V2State={version:2;mode:V2Mode;phase:V2Phase;seq:number;deadline:number|null;round:number;players:V2Player[];intents:V2Intent[];votes:{actor:string;target:string}[];verdicts:{actor:string;yes:boolean}[];candidate:string|null;revenge:string|null;outcome:V2Outcome|null};
+export type V2State={version:2;mode:V2Mode;phase:V2Phase;seq:number;deadline:number|null;round:number;players:V2Player[];intents:V2Intent[];votes:{actor:string;target:string}[];abstentions?:string[];verdicts:{actor:string;yes:boolean}[];candidate:string|null;revenge:string|null;outcome:V2Outcome|null};
 export type V2Resolution={state:V2State;effects:V2Effect[]};
 export type V2NightChoices={wizard?:ReadonlyMap<string,'FORGIVE'|'REFUSE'>;grench?:ReadonlyMap<string,'HP'|'MONEY'>;/** Ledger adapter must attest that a debit was actually committed; absent means pending effect, not free debit. */paidGrench?:ReadonlySet<string>};
 const alive=(p:V2Player)=>p.hp>0&&!p.left;
@@ -310,8 +310,13 @@ export function v2HeroShot(input:V2State,actor:string,target:string,seq:number):
   if(!victim.hp){victim.death='HERO';if(victim.role==='KAMIKAZE')victim.personal='WIN';effects.push({kind:'DEATH',target,reason:'HERO',attackers:[actor],victimRole:victim.role,attackerRoles:[player(s,actor)!.role]});promote(s,effects);}
   return {state:s,effects};
 }
+export function v2Abstain(input:V2State,actor:string,seq:number):V2State{
+  requireActor(input,actor,seq,'VOTING');
+  if(input.abstentions?.includes(actor)||input.votes.some(v=>v.actor===actor))throw Error('already voted');
+  const s=clone(input);s.abstentions=[...(s.abstentions??[]),actor];return s;
+}
 export function v2Vote(input:V2State,actor:string,target:string,seq:number):V2State{
-  requireActor(input,actor,seq,'VOTING');const t=player(input,target);
+  requireActor(input,actor,seq,'VOTING');if(input.abstentions?.includes(actor))throw Error('already abstained');const t=player(input,target);
   if(!t||!alive(t)||actor===target)throw new Error('invalid vote');
   const s=clone(input);s.votes=s.votes.filter(v=>v.actor!==actor);s.votes.push({actor,target});return s;
 }
@@ -330,7 +335,7 @@ export function v2VerdictTally(s:V2State):{yes:number;no:number}{
 export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
   if(input.seq!==seq||input.outcome)throw new Error('stale phase');
   const s=clone(input),effects:V2Effect[]=[];
-  function nextNight(){s.intents=[];s.votes=[];s.verdicts=[];s.candidate=null;s.revenge=null;const outcome=v2Victory(s);if(outcome){s.outcome=outcome;phase(s,'ENDED',now);}else{s.round++;phase(s,'NIGHT',now);}}
+  function nextNight(){s.intents=[];s.votes=[];s.abstentions=[];s.verdicts=[];s.candidate=null;s.revenge=null;const outcome=v2Victory(s);if(outcome){s.outcome=outcome;phase(s,'ENDED',now);}else{s.round++;phase(s,'NIGHT',now);}}
   if(s.phase==='DAWN')finishOr(s,'DISCUSSION',now);
   else if(s.phase==='DISCUSSION')phase(s,'VOTING',now);
   else if(s.phase==='VOTING'){

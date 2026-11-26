@@ -47,7 +47,7 @@ export function v2PrivatePhaseView(s:V2State,game:number,id:string,names:PlayerN
   return {text:'🌙 <b>'+escapeHtml(v2RoleLabel(p.role))+'</b>\nHarakatingizni tanlang.',keyboard:[...rows(buttons),[make(game,s,'K',0,'O‘tkazib yuborish')]]};
  }
  if(s.phase==='DAWN'&&['DON','COMMISSAR','MERGAN'].includes(p.role)&&p.heroCharges>0&&!p.heroUsed)return {text:'🥷 Geroy bilan hujum qilish',keyboard:rows(targetButtons('H',x=>x!==id))};
- if(s.phase==='VOTING')return {text:'🗳 Kimga ovoz berasiz?',keyboard:rows(targetButtons('V',x=>x!==id))};
+ if(s.phase==='VOTING')return {text:'🗳 Kimga ovoz berasiz?',keyboard:[...rows(targetButtons('V',x=>x!==id)),[make(game,s,'V',0,'O‘tkazib yuborish')]]};
  return null;
 }
 export function v2GroupVerdictView(s:V2State,game:number,names:PlayerNames,closed=false):V2View{
