@@ -71,3 +71,6 @@ Run 45816641240 passed 303 unit and 31 integration tests, staging bundle and per
 
 ## Expired action controls and abstention
 V2 nomination now has an explicit one-time skip (seat 0), stored separately from target votes; it never nominates anyone. Public skip notice and private confirmation use the existing durable path. On phase transitions, night-response lock and admin stop, queued and delivered obsolete private action controls are retired through the outbox. Accepted edits take precedence; expiry edits markup only and retain real return-to-group URL where available. No change to timer or reward rules. Seller offer handling remains a separate step; CI pending.
+
+## Seller confirmation and expiry
+Seller offers now track their original DM in the durable outbox. A PAID receipt edits that message with selected item and displayed price, removes purchase buttons and notifies seller; insufficient funds do not close a valid offer. Expiry, phase change, participant elimination/leave and admin cancel retire offers; unresolved purchases remain protected by pending-operation reconciliation. Older untracked offers receive a separate confirmation. Existing receipt replay and balance assertions retained, with new exact-message edit assertions. CI pending. Group migration cleanup is not expanded in this change.

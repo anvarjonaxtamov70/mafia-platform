@@ -55,7 +55,7 @@ import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-
 import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
 import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
 import type {GrenchBatchReceipt,GrenchDebit,DawnRoleAction,DawnRoleReceipt,Receipt} from './role-v2-economy';
-import {decodeSellerButton,sellerKeyboard,type V2SellerOffer} from './v2-seller';
+import {decodeSellerButton,sellerKeyboard,sellerRef,sellerChoiceLabel,SELLER_OFFER_TEXT,type V2SellerOffer} from './v2-seller';
 import {buildV2Result} from './v2-match-result';
 import {applyV2Loadout,usedV2Items} from './v2-items';
 import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
@@ -270,6 +270,7 @@ export class RoomCore {
     if(g?.status==='RUNNING'&&g.v2Session&&!this.v2Pending(g.number)){
       const deadline=g.v2DeferredMigration!==undefined||g.v2DeferredStop?this.now:this.v2Due(g.v2Session);
       if(deadline!==null)candidates.push(deadline);
+      for(const offer of g.v2Offers??[])candidates.push(Math.max(this.now,offer.expires));
     }
     const next = candidates.length ? Math.min(...candidates) : null;
     if (next !== this.data.alarmAt) {
@@ -647,7 +648,7 @@ export class RoomCore {
       await this.commit();return {ok:true};
     }
     if(g.status==='LOBBY')this.closeLobby(g);
-    if(g.v2Session)this.retireV2Prompts(g.number,()=>false);
+    if(g.v2Session){this.retireV2Prompts(g.number,()=>false);this.retireSellerOffers(g,true);}
     if(g.v2Session?.state.phase==='VERDICT'){
       const s=g.v2Session,ref='v2phase:'+g.number+':'+s.state.seq;
       const view=v2GroupVerdictView(s.state,g.number,s.names,true);
@@ -750,12 +751,30 @@ export class RoomCore {
       this.enqueue([{chatId:BigInt(chat),payload:{kind:'CLEAR_KEYBOARD',refKey:key},dedupeKey:key+':expired'}]);
     }
   }
+  private closeSellerOffer(g:RoomGame,offer:V2SellerOffer,text:string){
+    const ref=sellerRef(g.number,offer.id);
+    // Old snapshots may contain offers whose message was never tracked.
+    if(this.data.refs[ref]||this.data.outbox.some(o=>o.storeRefAs===ref)){
+      this.enqueue([{chatId:BigInt(offer.buyer),payload:{kind:'EDIT',refKey:ref,text:SELLER_OFFER_TEXT+'\n\n'+text,keyboard:[]},dedupeKey:ref+':closed'}]);
+    }else this.send(offer.buyer,text);
+    g.v2Offers=(g.v2Offers??[]).filter(o=>o.id!==offer.id);
+  }
+  private retireSellerOffers(g:RoomGame,all=false){
+    const state=g.v2Session?.state;if(!state)return;
+    const living=(id:number)=>state.players.some(p=>p.id===String(id)&&p.hp>0&&!p.left);
+    for(const offer of g.v2Offers??[]){
+      if(all||offer.expires<=this.now||offer.round!==state.round||!['DAWN','DISCUSSION'].includes(state.phase)||!living(offer.buyer)||!living(offer.seller)){
+        this.closeSellerOffer(g,offer,all?'Taklif bekor qilindi.':'⌛ Taklif muddati tugadi.');
+      }
+    }
+  }
   private acceptV2(g:RoomGame,next:V2RoomTransition){
     const previous=g.v2Session;
     g.v2Session=next.room;g.version++;
     if(next.room.state.phase==='ENDED'&&g.v2FinishedAt===undefined)g.v2FinishedAt=this.now;
     const fakes=new Set(g.players.filter(p=>p.fake).map(p=>p.id));
     this.enqueue(next.outbox.filter(o=>!fakes.has(Number(o.chatId))));
+    this.retireSellerOffers(g);
     if(previous){
       const room=next.room;
       this.retireV2Prompts(g.number,key=>{
@@ -1114,6 +1133,7 @@ export class RoomCore {
     this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
     if(g2?.status==='RUNNING'&&g2.v2Session&&!this.v2Pending(g2.number)){
+      this.retireSellerOffers(g2);
       const due=this.v2Due(g2.v2Session);
       if(due!==null&&due<=this.now){this.tickV2(g2);await this.deps.store.save(this.data);}
     }
@@ -1244,8 +1264,8 @@ export class RoomCore {
                     this.send(entry.actor,'🎁 '+entry.amount+' Dollar sovg‘angiz yetkazildi.');
                   }else if(entry.expires>this.now){
                     const offer={id:entry.offer,seller:entry.actor,buyer:entry.target,expires:entry.expires,round:p.round};
-                    g.v2Offers=[...(g.v2Offers??[]).filter(o=>o.expires>this.now&&o.id!==offer.id),offer];
-                    this.send(entry.target,'🛒 Sotuvchidan 50% chegirmali taklif. Bitta buyum tanlang. Xarid keyingi o‘yinlar inventariga qo‘shiladi.',sellerKeyboard(g.number,offer.id));
+                    g.v2Offers=[...(g.v2Offers??[]).filter(o=>o.id!==offer.id),offer];
+                    this.send(entry.target,SELLER_OFFER_TEXT,sellerKeyboard(g.number,offer.id),{storeRefAs:sellerRef(g.number,offer.id)});
                   }
                 }
                 break;
@@ -1263,14 +1283,12 @@ export class RoomCore {
             const status=await ledger.buyOffer(op.number,op.id,op.buyer,op.offer,op.code);
             if(this.data.game!==g)throw Error('settlement room changed');
             if(status==='PAID'){
-              g.v2Offers=(g.v2Offers??[]).filter(o=>o.id!==offer.id);
-              this.send(op.buyer,'✅ Chegirmali xarid bajarildi.');
+              this.closeSellerOffer(g,offer,'✅ Chegirmali xarid bajarildi.\n<b>Sizning tanlovingiz:</b> '+escapeHtml(sellerChoiceLabel(g.number,offer.id,op.code)));
               this.send(offer.seller,'✅ Sotuvchi taklifingiz xarid qilindi. Komissiya hisoblandi.');
             }else if(status==='INSUFFICIENT'){
               this.send(op.buyer,'Mablag‘ yetarli emas. Taklif muddati tugamagan bo‘lsa, qayta urinishingiz mumkin.');
             }else if(status==='UNAVAILABLE'||status==='CONFLICT'){
-              g.v2Offers=(g.v2Offers??[]).filter(o=>o.id!==offer.id);
-              this.send(op.buyer,'Bu taklif endi mavjud emas.');
+              this.closeSellerOffer(g,offer,'Bu taklif endi mavjud emas.');
             }else throw Error('unknown purchase receipt');
             break;
           }
@@ -1393,6 +1411,10 @@ export class RoomCore {
     // Once all edits have drained, discard obsolete v2 message references.
     if(!this.data.outbox.length){
       const room=this.data.game?.v2Session;
+      for(const key of Object.keys(this.data.refs))if(key.startsWith('v2seller:')){
+        const g=this.data.game;
+        if(!g||!(g.v2Offers??[]).some(o=>sellerRef(g.number,o.id)===key))delete this.data.refs[key];
+      }
       for(const key of Object.keys(this.data.refs))if(key.startsWith('v2choice:')||key.startsWith('v2phase:')){
         const [,game,seq]=key.split(':');
         if(!room||game!==String(room.game)||seq!==String(room.state.seq))delete this.data.refs[key];
@@ -1405,7 +1427,7 @@ export class RoomCore {
   private drop(id: number): void {
     const item=this.data.outbox.find(o=>o.id===id);
     const payload=item?.payload;
-    if((payload?.kind==='EDIT'||payload?.kind==='CLEAR_KEYBOARD')&&payload.refKey.startsWith('v2choice:'))delete this.data.refs[payload.refKey];
+    if((payload?.kind==='EDIT'||payload?.kind==='CLEAR_KEYBOARD')&&(payload.refKey.startsWith('v2choice:')||payload.refKey.startsWith('v2seller:')))delete this.data.refs[payload.refKey];
     this.data.outbox = this.data.outbox.filter((o) => o.id !== id);
   }
 

@@ -16,3 +16,9 @@ export function sellerKeyboard(game:number,offer:number):Keyboard{
   return [{text:i.emoji+' '+names[i.code]+' — '+Math.ceil(i.price!/2)+(i.currency==='DIAMOND'?' 💎':' $'),callback_data:data}];
  });
 }
+
+export const SELLER_OFFER_TEXT='🛒 Sotuvchidan 50% chegirmali taklif. Bitta buyum tanlang. Xarid keyingi o‘yinlar inventariga qo‘shiladi.';
+export const sellerRef=(game:number,offer:number)=>'v2seller:'+game+':'+offer;
+export function sellerChoiceLabel(game:number,offer:number,code:string):string{
+ return sellerKeyboard(game,offer).flat().find(b=>'callback_data'in b&&b.callback_data==='v2s:'+game+':'+offer+':'+code)?.text??'Tanlangan buyum';
+}
