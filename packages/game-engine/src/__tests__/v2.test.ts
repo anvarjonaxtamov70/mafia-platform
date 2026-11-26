@@ -13,12 +13,18 @@ describe('v2 independent engine',()=>{
    for(let seed=0;seed<100;seed++){
     const roles=distributeV2(n,mode,seededRng(seed));
     expect(roles).toHaveLength(n);expect(roles.filter(r=>r==='DON')).toHaveLength(1);
+    expect(roles.filter(r=>r==='DOCTOR')).toHaveLength(1);
+    expect(roles.filter(r=>r==='COMMISSAR')).toHaveLength(1);
     expect(roles.every(r=>v2ModeAllows(r,mode))).toBe(true);
     expect(roles.filter(r=>V2_DEFS[r].faction==='MAFIA').length).toBeLessThan(n/2);
     expect(roles.filter(r=>r==='ZOMBIE')).toHaveLength(mode==='ZOMBIE'?1:0);
    }
   }
  },60000);
+ it('uses approved four-player rosters in every mode',()=>{
+  const expected={CLASSIC:['DON','COMMISSAR','DOCTOR','CITIZEN'],ZOMBIE:['DON','COMMISSAR','DOCTOR','ZOMBIE'],HYPERNOVA:['DON','COMMISSAR','DOCTOR','DAYDI'],VS:['DON','COMMISSAR','DOCTOR','DAYDI']};
+  for(const mode of V2_MODES)for(let seed=0;seed<100;seed++)expect(distributeV2(4,mode,seededRng(seed)).sort()).toEqual([...expected[mode]].sort());
+ });
  it('Don override, fallback responsibility and Kamikaze',()=>{
   let s=game(['DON','MAFIOSO','KAMIKAZE','CITIZEN','CITIZEN']);
   s=act(s,1,2);const r=night(s);

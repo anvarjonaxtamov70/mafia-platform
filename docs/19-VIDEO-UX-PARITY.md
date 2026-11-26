@@ -44,3 +44,10 @@ D. Death cause/victim role, last words, remaining role roster, original phase an
 E. Test all four modes via synthetic Telegram and workerd using emitted buttons; 4/8/30 players, lost response/restart, concurrent clicks, 429 and outbox ordering, live staging smoke with a small real group when available.
 
 Video acceptance is independent of previous green unit tests. This document is a source-grounded audit; no implementation changes or new production deployment in this commit. User's reported live defects remain open.
+
+## Owner decisions confirmed
+- Four-seat Hypernova: Don, Commissar, Doctor, Daydi (approved). Exactly one initial Doctor in every mode.
+- Verdict is one-time; no vote change.
+- `/game` immediately starts a Classic lobby by default. Only group admins and bot superadmins may change the group mode in settings, not ordinary users. Mode persists for future lobbies, never changes an existing match.
+
+Role allocation updated first: one Doctor at all legal counts; Daydi is the small active support and can repeat at larger sizes when other eligible active support roles cannot fill the roster. Four-seat VS uses same roles as Hypernova (proposed), two equal teams; Classic uses Citizen; Zombie uses Zombie. The 100-seed matrix and active tests reflect these decisions. Remaining: group verdict/confirmation UI and settings-based admission, event feed and animation. New CI pending; do not deploy/merge until verified.

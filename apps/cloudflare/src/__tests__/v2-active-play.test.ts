@@ -23,7 +23,8 @@ describe('V2 active play through actual Telegram router and durable registry',()
    await w.send(callback(id,raw!));
    expect(w.tg.calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text).toBe('Qabul qilindi');
   };
-  await press(don,'K',0);await press(commissar,'I',donSeat);
+  const doctor=Number(state().players.find(p=>p.role==='DOCTOR')!.id);
+  await press(don,'K',0);await press(commissar,'I',donSeat);await press(doctor,'K',0);
   expect(state().phase).toBe('DAWN');
   expect(w.tg.texts(commissar).some(x=>x.includes('🔎')&&x.includes('Don'))).toBe(true);
   expect(w.tg.texts(GROUP).some(x=>x.includes('🔎'))).toBe(false);

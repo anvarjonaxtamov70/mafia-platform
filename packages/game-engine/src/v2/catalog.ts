@@ -11,7 +11,7 @@ type Definition = { faction: V2Faction; active:boolean; min:number };
 export const V2_DEFS: Record<V2Role,Definition> = {
   CITIZEN:{faction:'CITY',active:false,min:4}, DON:{faction:'MAFIA',active:true,min:4},
   MAFIOSO:{faction:'MAFIA',active:true,min:6}, MANYAK:{faction:'SOLO',active:true,min:12},
-  COMMISSAR:{faction:'CITY',active:true,min:4}, DOCTOR:{faction:'CITY',active:true,min:7},
+  COMMISSAR:{faction:'CITY',active:true,min:4}, DOCTOR:{faction:'CITY',active:true,min:4},
   SERGEANT:{faction:'CITY',active:false,min:10}, DAYDI:{faction:'CITY',active:true,min:8},
   FROZEN:{faction:'CITY',active:true,min:8}, LAWYER:{faction:'MAFIA',active:true,min:11},
   SUIDSID:{faction:'NEUTRAL',active:false,min:10}, KILLER:{faction:'MAFIA',active:true,min:19},
@@ -41,8 +41,9 @@ export function v2FactionPlan(n:number,mode:V2Mode){
   return {mafia,neutral,zombie,city:n-mafia-neutral-zombie};
 }
 /** Proposed allocation; not evidence of Bloody internals. For active-only/no-citizen
- * modes, repeat the least numerous eligible support roles, never duplicate Don or
- * Commissar. Special lethal roles are unique and at most two initial solo attackers.
+ * modes, repeat eligible active support roles, never duplicate Don, Commissar or
+ * Doctor. Daydi is available at small counts as an active filler. Special lethal
+ * roles are unique and at most two initial solo attackers.
  */
 export function distributeV2(n:number,mode:V2Mode,rng:Rng):V2Role[]{
   const plan=v2FactionPlan(n,mode);
@@ -65,11 +66,13 @@ export function distributeV2(n:number,mode:V2Mode,rng:Rng):V2Role[]{
   if(plan.zombie)others.push('ZOMBIE');
   const cityCount=n-mafia.length-others.length;
   const city:V2Role[]=['COMMISSAR'];
-  if((n>=7||mode!=='CLASSIC')&&city.length<cityCount)city.push('DOCTOR');
+  if(city.length<cityCount)city.push('DOCTOR');
   const cityPool=shuffle(eligible.filter(r=>V2_DEFS[r].faction==='CITY'&&r!=='CITIZEN'&&!city.includes(r)),rng);
+  // Four-player active modes have Don, Commissar, Doctor and Daydi.
+  if(mode!=='CLASSIC'&&city.length<cityCount&&n<8)city.push('DAYDI');
   const maxSpecial=mode==='CLASSIC'?Math.max(city.length,Math.ceil(cityCount*0.65)):cityCount;
   city.push(...cityPool.slice(0,Math.max(0,maxSpecial-city.length)));
-  const repeatPool:V2Role[]=mode==='CLASSIC'?['CITIZEN']:['DOCTOR',...eligible.filter(r=>r==='DAYDI'||r==='FROZEN')];
+  const repeatPool:V2Role[]=mode==='CLASSIC'?['CITIZEN']:['DAYDI',...eligible.filter(r=>r==='FROZEN')];
   while(city.length<cityCount){
     const min=Math.min(...repeatPool.map(r=>city.filter(x=>x===r).length));
     const least=repeatPool.filter(r=>city.filter(x=>x===r).length===min);

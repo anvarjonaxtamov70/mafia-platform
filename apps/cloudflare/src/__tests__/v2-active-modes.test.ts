@@ -74,12 +74,13 @@ describe('active multiplayer V2 scenarios without real Telegram users',()=>{
  });
  it('Hypernova: active-only roles, protected target and Commissar defeats Don',async()=>{
   const g=await start('HYPERNOVA');
-  const don=g.role('DON'),comm=g.role('COMMISSAR'),docs=g.players().filter(p=>p.role==='DOCTOR').map(p=>Number(p.id));
-  expect(docs).toHaveLength(2);
-  await g.press(don,'C',docs[0]);await g.press(comm,'S',don);await g.press(docs[0]!,'C',docs[1]);await g.press(docs[1]!,'C',docs[0]);
+  const don=g.role('DON'),comm=g.role('COMMISSAR'),doc=g.role('DOCTOR'),daydi=g.role('DAYDI');
+  expect(g.players().filter(p=>p.role==='DOCTOR')).toHaveLength(1);
+  await g.press(don,'C',daydi);await g.press(comm,'S',don);await g.press(doc,'C',daydi);await g.press(daydi,'C',don);
   expect(g.state().phase).toBe('DAWN');
   expect(g.players().find(p=>p.id===String(don))?.hp).toBe(0);
-  expect(g.players().filter(p=>p.role==='DOCTOR').every(p=>p.hp===100)).toBe(true);
+  expect(g.players().find(p=>p.id===String(doc))?.hp).toBe(100);
+  expect(g.players().find(p=>p.id===String(daydi))?.hp).toBe(100);
   await g.advance('ENDED');await g.finish('CITY',g.ids.filter(id=>id!==don));
  });
  it('VS: equal colours, opposite-colour attack and final vote decide the team',async()=>{
@@ -89,7 +90,7 @@ describe('active multiplayer V2 scenarios without real Telegram users',()=>{
   const enemies=g.players().filter(p=>p.colour!==colour).map(p=>Number(p.id));
   expect(allies).toHaveLength(2);expect(enemies).toHaveLength(2);
   await g.press(don,'C',enemies[0]);await g.press(comm,'K');
-  for(const p of g.players().filter(p=>p.role==='DOCTOR'))await g.press(Number(p.id),'K');
+  await g.press(g.role('DOCTOR'),'K');await g.press(g.role('DAYDI'),'K');
   expect(g.state().phase).toBe('DAWN');
   expect(g.players().find(p=>p.id===String(enemies[0]))?.hp).toBe(0);
   await g.advance('DISCUSSION');await g.advance('VOTING');
