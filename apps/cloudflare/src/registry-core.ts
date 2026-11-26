@@ -588,7 +588,7 @@ export class RegistryCore {
   // ───────────────────────────── Ko'rinishlar ─────────────────────────────
 
   singleHero(tgId: number) { return this.heroes.single(tgId, this.eco.hasHero(tgId)); }
-  setOwnHeroLevel(tgId: number, level: number) { return this.heroes.setOwnLevel(tgId, level); }
+  setOwnHeroLevel(tgId: number, level: number) { return !this.activeOf(tgId)&&this.heroes.setOwnLevel(tgId, level); }
   heroAccount(tgId: number) { return this.heroes.view(tgId); }
   selectHero(tgId: number, code: string) { return this.heroes.select(tgId, code); }
   heroTop() { return this.heroes.top(); }
@@ -734,7 +734,8 @@ export class RegistryCore {
     const e = this.recentErrors();
     const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
     const security = { ...this.security.stats(), ...this.security.abuseStats() };
-    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}\nV2 — tekshiruv talab qiladigan bekor qilingan o‘yin sovg‘alari: ${this.roleV2Economy.suspiciousCancelledRecipients()}`;
+    const migration=this.heroV2.migrationStatus();
+    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}\nV2 — tekshiruv talab qiladigan bekor qilingan o‘yin sovg‘alari: ${this.roleV2Economy.suspiciousCancelledRecipients()}\nGeroy V2 migratsiyasi: ${migration.migrated}; tekshirish kerak: ${migration.unverified}`;
   }
 
   /** Ichki xatolar jurnali (oxirgi 200 ta saqlanadi) — /admin_stats va /telegram/diag da ko'rinadi */

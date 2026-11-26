@@ -19,6 +19,7 @@ export class HeroV2Core {
  constructor(private readonly sql:Sql,private readonly eco:EconomyCore,private readonly clock:()=>number){}
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_accounts(telegram_id INTEGER PRIMARY KEY,name TEXT NOT NULL,points INTEGER NOT NULL CHECK(points>=0),defense INTEGER NOT NULL CHECK(defense>=0),charges INTEGER NOT NULL CHECK(charges>=0 AND charges<=10))`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_legacy_import(telegram_id INTEGER PRIMARY KEY,legacy_points INTEGER NOT NULL CHECK(legacy_points>=0),imported_at INTEGER NOT NULL,unverified INTEGER NOT NULL DEFAULT 0)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_purchases(idem TEXT PRIMARY KEY,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,created INTEGER NOT NULL)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_quotes(id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,price INTEGER NOT NULL,currency TEXT NOT NULL,expires INTEGER NOT NULL,result TEXT)`);
   this.sql.exec(`CREATE INDEX IF NOT EXISTS hero_v2_quotes_user ON hero_v2_quotes(telegram_id,id)`);
@@ -35,14 +36,44 @@ export class HeroV2Core {
   const override=this.eco.isOwner(row.telegram_id)?this.sql.exec<{level:number}>(`SELECT level FROM hero_owner_levels WHERE telegram_id=?`,row.telegram_id)[0]?.level:undefined;
   return heroV2Stats(override??level);
  }
+ private legacyPoints(id:number):number{
+  const points=this.sql.exec<{total_xp:number}>(`SELECT total_xp FROM hero_accounts WHERE telegram_id=?`,id)[0]?.total_xp??0;
+  if(!Number.isSafeInteger(points)||points<0)throw Error('invalid legacy hero points');
+  return points;
+ }
+ /** Called inside the same transaction as view/quote/purchase/shot. No wallet
+  * mutations, no level-based XP conversion and no repeated resource refills. */
  private ensure(id:number):HeroRow|undefined{
   if(!this.eco.hasHero(id)||!this.eligible(id))return undefined;
-  const row=this.account(id);if(row)return row;
-  const points=this.sql.exec<{total_xp:number}>(`SELECT total_xp FROM hero_accounts WHERE telegram_id=?`,id)[0]?.total_xp??0;
-  const initial:HeroRow={telegram_id:id,name:'Hypernova',points,defense:0,charges:HERO_V2_MAX_CHARGES};
+  const legacy=this.legacyPoints(id),row=this.account(id);
+  const mark=this.sql.exec<{legacy_points:number;unverified:number}>(`SELECT legacy_points,unverified FROM hero_v2_legacy_import WHERE telegram_id=?`,id)[0];
+  if(row){
+   if(!mark){
+    // Older draft rows may already contain some or all legacy XP. Never guess
+    // the overlap: preserve the row and flag for operator reconciliation.
+    this.sql.exec(`INSERT INTO hero_v2_legacy_import(telegram_id,legacy_points,imported_at,unverified) VALUES(?,?,?,1)`,id,legacy,this.clock());
+    return row;
+   }
+   if(mark.unverified||legacy<=mark.legacy_points)return row;
+   // V1 remains live during coexistence. Only new legacy XP is imported, once;
+   // V2 matches themselves never grant the old ordinary-win hero award.
+   const points=row.points+(legacy-mark.legacy_points);
+   if(!Number.isSafeInteger(points))throw Error('hero migration overflow');
+   this.sql.exec(`UPDATE hero_v2_accounts SET points=? WHERE telegram_id=?`,points,id);
+   this.sql.exec(`UPDATE hero_v2_legacy_import SET legacy_points=?,imported_at=? WHERE telegram_id=?`,legacy,this.clock(),id);
+   return {...row,points};
+  }
+  if(mark)throw Error('missing migrated hero account');
+  const initial:HeroRow={telegram_id:id,name:'Hypernova',points:legacy,defense:0,charges:HERO_V2_MAX_CHARGES};
   initial.defense=this.stats(initial).maxDefense;
   this.sql.exec(`INSERT INTO hero_v2_accounts(telegram_id,name,points,defense,charges) VALUES(?,?,?,?,?)`,id,initial.name,initial.points,initial.defense,initial.charges);
+  this.sql.exec(`INSERT INTO hero_v2_legacy_import(telegram_id,legacy_points,imported_at) VALUES(?,?,?)`,id,legacy,this.clock());
   return initial;
+ }
+ /** Read-only counts. Does not migrate an entire database during an alarm. */
+ migrationStatus():{migrated:number;unverified:number}{
+  const row=this.sql.exec<{migrated:number;unverified:number}>(`SELECT COUNT(*) AS migrated,COALESCE(SUM(unverified),0) AS unverified FROM hero_v2_legacy_import`)[0]!;
+  return row;
  }
  view(id:number){
   return this.sql.tx(()=>{

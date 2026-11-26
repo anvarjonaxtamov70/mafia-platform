@@ -1,9 +1,50 @@
 import {describe,it,expect} from 'vitest';
-import {World,privateText,GROUP} from './harness';
+import {World,privateText,GROUP,sqliteSql,user} from './harness';
+import {RegistryCore} from '../registry-core';
 import type {HeroV2ShotRequest} from '../hero-v2-core';
 function running(w:World,ids:number[]){const r=w.registryCore,n=r.allocateGame(GROUP);for(const id of ids)r.claim(id,GROUP,n);r.markRunning(n,ids.length);return n;}
 function request(game:number,targetDefense=0):HeroV2ShotRequest{return {game,seq:2,actor:2,target:3,targetHp:100,blocked:false,actorCharges:10,damage:45,targetDefense};}
 describe('draft hero v2 persistent economy',()=>{
+ it('imports legacy ownership and points once, preserves balance and resources across reopen',()=>{
+  const sql=sqliteSql(),now=1800000000000;
+  let r=new RegistryCore(sql,()=>now);r.migrate();
+  r.upsertUser(user(2),true);r.upsertUser(user(3),true);
+  r.eco.creditDiamonds(2,200,'TEST','old-diamonds');
+  expect(r.eco.buyHero(2,'legacy-buy').ok).toBe(true);
+  r.eco.credit(2,1000,'TEST',null,'cash');
+  sql.exec(`INSERT INTO hero_accounts(telegram_id,total_xp) VALUES(2,1090),(3,500)`);
+  expect(r.heroV2.view(3)).toBeNull(); // free cosmetic XP is not paid ownership
+  const before=r.eco.wallet(2);
+  expect(r.heroV2.view(2)).toMatchObject({points:1090,level:1,defense:8,charges:10});
+  expect(r.heroV2.purchase(2,'BUY','duplicate-hero')).toBe('FULL');
+  expect(r.eco.wallet(2)).toEqual(before);
+  sql.exec(`UPDATE hero_v2_accounts SET defense=2,charges=4,name='Nova' WHERE telegram_id=2`);
+  sql.exec(`UPDATE hero_accounts SET total_xp=1140 WHERE telegram_id=2`);
+  r=new RegistryCore(sql,()=>now);r.migrate();
+  expect(r.heroV2.view(2)).toMatchObject({points:1140,level:2,defense:2,charges:4,name:'Nova'});
+  expect(r.heroV2.view(2)?.points).toBe(1140);
+  expect(r.eco.wallet(2)).toEqual(before);
+  sql.exec(`UPDATE hero_accounts SET total_xp=1000 WHERE telegram_id=2`);
+  expect(r.heroV2.view(2)?.points).toBe(1140);
+  expect(r.heroV2.migrationStatus()).toEqual({migrated:1,unverified:0});
+ });
+ it('pre-watermark draft accounts are preserved and flagged, never guessed or credited twice',()=>{
+  const sql=sqliteSql(),r=new RegistryCore(sql,()=>1800000000000);r.migrate();
+  r.upsertUser(user(2),true);r.eco.creditDiamonds(2,100,'TEST','legacy');expect(r.eco.buyHero(2,'buy').ok).toBe(true);
+  sql.exec(`INSERT INTO hero_accounts(telegram_id,total_xp) VALUES(2,1100)`);
+  sql.exec(`INSERT INTO hero_v2_accounts(telegram_id,name,points,defense,charges) VALUES(2,'Nova',1600,3,4)`);
+  expect(r.heroV2.view(2)).toMatchObject({points:1600,defense:3,charges:4});
+  sql.exec(`UPDATE hero_accounts SET total_xp=1200 WHERE telegram_id=2`);
+  expect(r.heroV2.view(2)?.points).toBe(1600);
+  expect(r.heroV2.migrationStatus()).toEqual({migrated:1,unverified:1});
+ });
+ it('owner cannot change hero level while in an active game',async()=>{
+  const w=new World({ownerBenefits:true});await w.send(privateText(1,'/start'));
+  const r=w.registryCore;expect(r.setOwnHeroLevel(1,10)).toBe(true);
+  const game=running(w,[1]);expect(r.setOwnHeroLevel(1,20)).toBe(false);
+  expect(r.heroV2.view(1)?.level).toBe(10);
+  r.releaseGame(game,'CANCELLED');expect(r.setOwnHeroLevel(1,20)).toBe(true);
+ });
  it('purchase charges 90 gems once; packs, recharge, defense and rename are transactional',async()=>{
   const w=new World();await w.send(privateText(2,'/start'));await w.send(privateText(3,'/start'));
   const r=w.registryCore,h=r.heroV2,e=r.eco;
