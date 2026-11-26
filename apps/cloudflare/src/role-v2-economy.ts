@@ -35,6 +35,15 @@ export class RoleV2Economy {
   this.sql.exec(`INSERT INTO role_v2_receipts(game,round,kind,actor,target,amount,status) VALUES(?,?,?,?,?,?,?)`,game,round,kind,actor,target,amount,status);
   return status;
  }
+ /** Review-only: count recipients repeatedly collecting Klaus gifts in cancelled
+  * matches across all groups. No automatic ban or change to legitimate balances. */
+ suspiciousCancelledRecipients():number{
+  return this.sql.exec<{c:number}>(`SELECT COUNT(*) AS c FROM (
+   SELECT r.target FROM games g JOIN role_v2_receipts r ON r.game=g.number
+   WHERE g.status='CANCELLED' AND g.finished_at>=? AND r.kind='KLAUS' AND r.status='PAID'
+   GROUP BY r.target HAVING COUNT(DISTINCT g.number)>=5 AND SUM(r.amount)>=500
+  )`,this.clock()-3600000)[0]!.c;
+ }
  /** A transfer of real earned virtual dollars, never a transfer of unlimited owner allowance. */
  grench(game:number,round:number,actor:number,target:number,amount:number):Receipt{
   if(!Number.isSafeInteger(amount)||amount<50||amount>150||amount%10!==0)return 'UNAVAILABLE';

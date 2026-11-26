@@ -164,6 +164,7 @@ const SCHEMA = [
     number INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'LOBBY',
     created_at INTEGER NOT NULL, finished_at INTEGER, outcome TEXT, players INTEGER, days INTEGER
   )`,
+  `CREATE INDEX IF NOT EXISTS games_status_finished ON games(status,finished_at)`,
   `CREATE TABLE IF NOT EXISTS game_results (
     game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, role TEXT NOT NULL, faction TEXT NOT NULL,
     result TEXT NOT NULL, survived INTEGER NOT NULL, xp INTEGER NOT NULL, rating_change INTEGER NOT NULL, created_at INTEGER NOT NULL,
@@ -733,7 +734,7 @@ export class RegistryCore {
     const e = this.recentErrors();
     const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
     const security = { ...this.security.stats(), ...this.security.abuseStats() };
-    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}`;
+    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}\nV2 — tekshiruv talab qiladigan bekor qilingan o‘yin sovg‘alari: ${this.roleV2Economy.suspiciousCancelledRecipients()}`;
   }
 
   /** Ichki xatolar jurnali (oxirgi 200 ta saqlanadi) — /admin_stats va /telegram/diag da ko'rinadi */

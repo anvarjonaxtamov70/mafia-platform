@@ -61,6 +61,19 @@ describe('v2 role economy',()=>{
   expect(roles.settleOfferPurchase(n,2,2,offer,'FAKE_DOC')).toBe('CONFLICT');
   expect(e.coins(2)).toBe(50);expect(e.coins(1)).toBe(15);
  });
+ it('flags repeated cancelled-match gifts across groups for review, never confiscates',async()=>{
+  const {w,n,e,roles,r}=await fixture();
+  expect(roles.klaus(n,1,1,2,100)).toBe('PAID');r.releaseGame(n,'CANCELLED');
+  for(let i=0;i<4;i++){
+   const chat=GROUP-i-1,game=r.allocateGame(chat);
+   for(const id of [1,2,3])r.claim(id,chat,game);
+   r.markRunning(game,3);expect(roles.klaus(game,1,1,2,100)).toBe('PAID');
+   r.releaseGame(game,'CANCELLED');
+  }
+  expect(roles.suspiciousCancelledRecipients()).toBe(1);expect(e.coins(2)).toBe(500);
+  expect(r.isBanned(2)).toBe(false);
+  w.now+=3600001;expect(roles.suspiciousCancelledRecipients()).toBe(0);
+ });
  it('Klaus pays once, seller half-price purchase and commission atomic',async()=>{
   const {n,e,roles}=await fixture();
   expect(roles.klaus(n,1,1,2,200)).toBe('PAID');
