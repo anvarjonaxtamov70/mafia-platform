@@ -79,6 +79,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const active=s.players.filter(p=>v2Eligible(s,p));
   const initial=new Map(s.players.map(p=>[p.id,p.role]));
   for(const p of s.players)p.hangingProtection=false;
+  for(const p of active)if(p.role==='FROZEN'&&!s.intents.some(i=>i.actor===p.id&&i.kind!=='SKIP'))p.lastFrozen=null;
   const intents=s.intents.filter(i=>active.some(p=>p.id===i.actor)&&i.kind!=='SKIP'&&i.target!==null&&s.players.some(p=>p.id===i.target&&alive(p)));
   // Proposed simultaneous freeze priority: all valid Frozen intents resolve together.
   const frozen=new Set<string>();
@@ -139,7 +140,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
       case 'GRENCH':{
         const amount=50+10*rng.int(11);
         if(choices.grench?.get(a.id)==='HP'){t.hp=Math.max(0,t.hp-17);effects.push({kind:'HP',target:t.id,hp:t.hp});if(!t.hp){t.death='GRENCH';effects.push({kind:'DEATH',target:t.id,reason:'GRENCH',attackers:[a.id]});}}
-        else effects.push({kind:'GRENCH',actor:a.id,target:t.id,amount});
+        else if(!choices.paidGrench?.has(a.id))effects.push({kind:'GRENCH',actor:a.id,target:t.id,amount});
         break;
       }
       case 'KLAUS':effects.push({kind:'KLAUS',actor:a.id,target:t.id,amount:50+rng.int(151)});break;
@@ -281,13 +282,13 @@ export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
       }
     }
     nextNight();
-  }else if(s.phase==='REVENGE')nextNight();else throw new Error('use night resolver');
+  }else if(s.phase==='REVENGE'){promote(s,effects);nextNight();}else throw new Error('use night resolver');
   return {state:s,effects};
 }
 export function v2Revenge(input:V2State,actor:string,target:string,seq:number,now:number):V2Resolution{
   if(input.phase!=='REVENGE'||input.seq!==seq||input.revenge!==actor||!player(input,target)||!alive(player(input,target)!))throw new Error('invalid revenge');
   const s=clone(input),t=player(s,target)!;t.hp=0;t.death='KAMIKAZE';
   const result=v2Advance(s,now,seq);
-  result.effects.unshift({kind:'DEATH',target,reason:'KAMIKAZE',attackers:[actor]});promote(result.state,result.effects);return result;
+  result.effects.unshift({kind:'DEATH',target,reason:'KAMIKAZE',attackers:[actor]});return result;
 }
 export function v2LastWordUntil(deathAt:number){return deathAt+V2_LAST_WORD_SECONDS*1000;}

@@ -42,7 +42,7 @@ describe('v2 independent engine',()=>{
  });
  it('Mergan immune to solo; natural luck precedes purchased shield',()=>{
   let s=game(['DON','MANYAK','MERGAN','LUCKY','CITIZEN']);
-  s.players[3]!.shield=1;s=act(act(s,0,3),1,2);let r=night(s);
+  s.players[3]!.shield=1;s=act(act(s,0,3),1,2);const r=night(s);
   expect(r.state.players[2]!.hp).toBe(100);expect(r.state.players[3]!.lucky).toBe(false);expect(r.state.players[3]!.shield).toBe(1);
  });
  it('minior removes visiting doctor before healing',()=>{
@@ -80,7 +80,8 @@ describe('v2 independent engine',()=>{
     const filler=mode==='ZOMBIE'?'DOCTOR':'CITIZEN';
     const s=v2CreateFixed(['a','b','c','d'],[a,b,'DON',filler],mode,0,rng());
     const before=JSON.stringify(s);
-    try{const next=v2Submit(s,{actor:'a',target:'b',kind:a==='COMMISSAR'?'CHECK':'CHOOSE'},s.seq);const resolved=night(next);expect(resolved.state.players.every(p=>p.hp>=0&&p.hp<=100)).toBe(true);}catch(e){expect(e).toBeInstanceOf(Error);}
+    let next:V2State|undefined;try{next=v2Submit(s,{actor:'a',target:'b',kind:a==='COMMISSAR'?'CHECK':'CHOOSE'},s.seq);}catch(e){expect(e).toBeInstanceOf(Error);}
+    if(next){const resolved=night(next);expect(resolved.state.players.every(p=>p.hp>=0&&p.hp<=100)).toBe(true);}
     expect(JSON.stringify(s)).toBe(before);
   }
  });
