@@ -24,3 +24,6 @@ For each scenario record commit, group, game number, result, short description a
 
 ## After interaction acceptance
 Complete a separately approved isolated economy trial, including persistent hero shots, Seller, Klaus, Grench, shields, reward retries, migration and recovery. Then follow the cutover checklist. Human staging acceptance is not automated and has not yet been performed.
+
+## Fail-closed staging identity
+Staging requires `STAGING_BOT_ID`, `PRODUCTION_BOT_ID` (public numeric bot IDs, not owner IDs), `STAGING_ORIGIN` (the exact `https://hypernova-v2-staging.<account-subdomain>.workers.dev`), explicit ADMIN_IDS and a matching separate BOT_TOKEN. Defaults are deliberately blank and block Telegram actions. Runtime refuses mismatched token prefix/identity, origin, unsafe flags or an existing webhook belonging to another origin before `setWebhook`. Leave production config unchanged. The guard is defense-in-depth, not proof that operator-supplied production ID is correct.

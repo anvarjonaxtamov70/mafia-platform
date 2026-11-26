@@ -31,6 +31,11 @@ command = "node scripts/generate-visuals.mjs"
 enabled = true
 
 [vars]
+STAGING_MODE = "true"
+# These must be provided at deployment; blank values fail closed.
+STAGING_BOT_ID = ""
+PRODUCTION_BOT_ID = ""
+STAGING_ORIGIN = ""
 # Explicitly set staging owner IDs at deployment. No owners by default.
 ADMIN_IDS = ""
 DEV_FAKE_PLAYERS = "false"

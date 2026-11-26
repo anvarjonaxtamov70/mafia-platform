@@ -21,6 +21,7 @@ import type {GrenchDebit,DawnRoleAction} from './role-v2-economy';
 import type {RecordGameInput} from './registry-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
+import {stagingAllowed,stagingWebhookAllowed} from './staging-guard';
 import { readTelegramUpdate } from './webhook-input';
 import { reconcileRefunds } from './refund-reconcile';
 
@@ -28,6 +29,10 @@ export interface Env {
   ROOMS: DurableObjectNamespace<GameRoom>;
   REGISTRY: DurableObjectNamespace<Registry>;
   BOT_TOKEN: string;
+  STAGING_MODE?:string;
+  STAGING_BOT_ID?:string;
+  PRODUCTION_BOT_ID?:string;
+  STAGING_ORIGIN?:string;
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
@@ -50,6 +55,7 @@ function localV2Ledger(env:Env):boolean{
   catch{return false;}
 }
 function telegram(env: Env): Telegram {
+  if(!stagingAllowed(env))throw Error('staging configuration rejected');
   return new TelegramClient(env.BOT_TOKEN, env.TELEGRAM_API || 'https://api.telegram.org');
 }
 
@@ -472,8 +478,12 @@ function lazyRegistry(env: Env) {
 
 async function setup(env: Env, origin: string): Promise<Response> {
   const tg = telegram(env);
-  const me = await tg.call<{ username: string }>('getMe');
+  const me = await tg.call<{ username: string;id:number }>('getMe');
   const url = `${origin}/telegram/webhook`;
+  if(env.STAGING_MODE==='true'){
+    const existing=await tg.call<{url:string}>('getWebhookInfo');
+    if(!stagingAllowed(env,origin)||!stagingWebhookAllowed(env,me.id,existing.url))return Response.json({ok:false,error:'staging identity or existing webhook rejected'},{status:403});
+  }
   await tg.call('setWebhook', {
     url,
     secret_token: await webhookSecret(env.BOT_TOKEN),
@@ -573,7 +583,7 @@ async function diag(env: Env): Promise<Response> {
 
 export default {
   async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    if (!env.BOT_TOKEN) return;
+    if (!env.BOT_TOKEN||!stagingAllowed(env)) return;
     const reg = registryStub(env);
     try {
       const info = await telegram(env).call<{ url: string; pending_update_count: number; last_error_date?: number }>('getWebhookInfo');
@@ -595,6 +605,7 @@ export default {
   },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if(!stagingAllowed(env,url.origin))return new Response('staging configuration rejected',{status:503});
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
       return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token' });
     }
