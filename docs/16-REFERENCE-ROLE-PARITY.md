@@ -96,3 +96,7 @@ Cloudflare registry and router now implement reply-only group /para, DM-only acc
 
 ## Hero persistent economy checkpoint
 New isolated HeroV2Core preserves historical total points on first migration, stores one permanent hero name/points/defense/charges, validates purchases, uses atomic existing Dollar/diamond ledgers and unique receipts, and has a trusted one-shot-per-game settlement helper. 90-diamond initial purchase, 500/1000-point packs, restore/reload/rename are implemented at storage level. Active-game purchases blocked. Existing production /hero remains legacy until v2 room adapter can safely synchronize charge/HP/defense with durable game state. No public RPC exposes settlement. Do not merge. Tests cover price, replay, conflicts, partial points and persistent defense. The adapter must still reserve/settle with durable game outbox, protect against role/phase abuse and recover failed room writes.
+
+
+## Night response checkpoint
+Added serializable deterministic preview/answer/finalize session for Wizard and Grench. One private answer per intended recipient, 30-second proposed timeout, missing Wizard answer kills Wizard, Grench defaults to money and requires a real ledger receipt; insufficient funds gives 17 HP damage. Preview is not a final public result. Still requires durable Room/Registry integration and conflict handling (e.g. overlapping Grench and Wizard effects). Fixed hero lint findings.

@@ -20,6 +20,7 @@ export type V2Effect=
   |{kind:'CHECK';recipient:string;target:string;role:V2Role}
   |{kind:'WITNESS';recipient:string;target:string;attackers:{id:string;role:V2Role}[]}
   |{kind:'GRENCH';actor:string;target:string;amount:number}
+  |{kind:'WIZARD_CHOICE';recipient:string;attackers:string[]}
   |{kind:'KLAUS';actor:string;target:string;amount:number}
   |{kind:'SELLER';actor:string;target:string}
   |{kind:'DEATH';target:string;reason:string;attackers:string[]}
@@ -62,6 +63,7 @@ export function v2Submit(s:V2State,intent:V2Intent,seq:number):V2State{
     if(a.role==='COMMISSAR'? !['CHECK','SHOOT'].includes(intent.kind):intent.kind!=='CHOOSE')throw new Error('invalid action');
     if(a.id===t.id&&!(a.role==='DOCTOR'&&a.selfHeal)&&a.role!=='KRAMPOUS')throw new Error('self target');
     if(a.role==='FROZEN'&&a.lastFrozen===t.id)throw new Error('repeated frozen target');
+    if(a.role==='CHAMELEON'&&!['CITY','MAFIA','SOLO'].includes(faction(t)))throw new Error('invalid chameleon target');
     if(a.role==='KRAMPOUS'&&a.marks.includes(t.id))throw new Error('repeated mark');
     if((a.role==='DON'||a.role==='MAFIOSO')&&faction(t)==='MAFIA'&&s.mode!=='VS')throw new Error('mafia teammate');
   }else if(intent.target!==null)throw new Error('skip with target');
@@ -165,6 +167,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     if(!residual.length)continue;
     if(target.role==='WIZARD'&&!residual.some(a=>a.force)){
       const choice=choices.wizard?.get(target.id);
+      if(!choice)effects.push({kind:'WIZARD_CHOICE',recipient:target.id,attackers:[...new Set(residual.map(a=>a.actor))]});
       if(choice==='FORGIVE')continue;
       if(choice==='REFUSE'){for(const a of residual)wizardRetaliations.push({actor:target.id,target:a.actor,role:'WIZARD',cause:'WIZARD'});continue;}
     }

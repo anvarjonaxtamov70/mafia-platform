@@ -48,7 +48,7 @@ export class HeroV2Core {
    if(this.busy(id))return 'UNAVAILABLE';
    const owner=this.eco.isOwner(id);
    const row=this.ensure(id);
-   let currency:'DOLLAR'|'DIAMOND'='DOLLAR',price=0;
+   let currency:'DOLLAR'|'DIAMOND'='DOLLAR';let price:number;
    let deliver:()=>void;
    if(op==='BUY'){
     if(row)return 'FULL';
@@ -72,7 +72,7 @@ export class HeroV2Core {
      if(row.charges>=HERO_V2_MAX_CHARGES)return 'FULL';
      price=stats.reloadPrice;deliver=()=>{this.sql.exec(`UPDATE hero_v2_accounts SET charges=? WHERE telegram_id=?`,HERO_V2_MAX_CHARGES,id);};
     }else if(op==='RENAME'){
-     const name=argument.trim();if(!name||Array.from(name).length>32||/[\u0000-\u001f\u007f]/.test(name)||name===row.name)return 'INVALID';
+     const name=argument.trim();if(!name||Array.from(name).length>32||Array.from(name).some(c=>{const n=c.charCodeAt(0);return n<32||n===127;})||name===row.name)return 'INVALID';
      price=HERO_V2_RENAME_PRICE;deliver=()=>{this.sql.exec(`UPDATE hero_v2_accounts SET name=? WHERE telegram_id=?`,name,id);};
     }else return 'INVALID';
    }
