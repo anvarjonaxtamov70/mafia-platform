@@ -55,3 +55,6 @@ Manual run 45797311078 passed full CI and Telegram preflight, but the apply step
 
 ## Telegram command menu aliases
 The four V2 commands are now `/game_v2classic`, `/game_v2zombie`, `/game_v2hypernova`, `/game_v2vs`, advertised by setup only when V2_PREVIEW is true. The previous space-argument syntax still works; `/game` remains V1. All aliases use the existing owner-only gate. The local workerd E2E uses the new aliases in all four modes and verifies their registration in the group command menu. Deploy the updated staging branch to refresh Telegram commands; no merge.
+
+## No-audience automated acceptance
+Added three deterministic active-mode scenarios via real Router, RoomCore and SQLite Registry harness using emitted callback buttons and normal randomly assigned roles: Zombie conversion with healing, Hypernova protected target and Commissar shot, VS opposing-team kill and vote. Each checks no AFK, final history, released membership and stable balance after extra alarms. This is synthetic Telegram traffic, not human acceptance; CI pending. Existing local workerd smoke covers all four modes.
