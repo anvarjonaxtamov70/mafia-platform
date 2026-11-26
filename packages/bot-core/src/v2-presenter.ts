@@ -37,7 +37,7 @@ export function v2PrivateRoleView(s:V2State,id:string,names:PlayerNames):V2View|
 }
 export function v2PrivatePhaseView(s:V2State,game:number,id:string,names:PlayerNames):V2View|null{
  const p=s.players.find(x=>x.id===id);if(!p||p.left)return null;
- const targetButtons=(op:V2Op,valid:(target:string)=>boolean,prefix='')=>s.players.flatMap((x,i)=>x.hp>0&&!x.left&&valid(x.id)?[make(game,s,op,i+1,prefix+short(names,x.id))]:[]);
+ const targetButtons=(op:V2Op,valid:(target:string)=>boolean,prefix='')=>s.players.flatMap((x,i)=>x.hp>0&&!x.left&&valid(x.id)?[make(game,s,op,i+1,prefix+(i+1)+'. '+short(names,x.id))]:[]);
  if(s.phase==='REVENGE'&&s.revenge===id)return {text:'💣 O‘zingiz bilan olib ketadigan o‘yinchini tanlang.',keyboard:rows(targetButtons('R',x=>x!==id))};
  if(p.hp===0||p.blockedUntil>=s.round)return null;
  if(s.phase==='NIGHT'&&v2Eligible(s,p)){

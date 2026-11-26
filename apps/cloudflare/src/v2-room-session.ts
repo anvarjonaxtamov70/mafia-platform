@@ -3,20 +3,34 @@
  * is enabled yet: wallet and hero receipts must be coordinated with Registry.
  */
 import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
-import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,type OutboxDraft,type V2Op} from '@mafia/bot-core';
+import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,v2RoleLabel,type OutboxDraft,type V2Op} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number};
 export type V2RoomTransition={room:V2RoomSession;outbox:OutboxDraft[];effects:V2Effect[]};
 const copy=(room:V2RoomSession):V2RoomSession=>JSON.parse(JSON.stringify(room)) as V2RoomSession;
 function empty(room:V2RoomSession):V2RoomTransition{return {room,outbox:[],effects:[]};}
-function send(result:V2RoomTransition,chat:number,text:string,keyboard?:import('@mafia/bot-core').Keyboard){
+const choiceRef=(r:V2RoomSession,id:string,key='phase')=>'v2choice:'+r.game+':'+r.state.seq+':'+id+':'+key;
+const groupRef=(r:V2RoomSession)=>'v2phase:'+r.game+':'+r.state.seq;
+function send(result:V2RoomTransition,chat:number,text:string,keyboard?:import('@mafia/bot-core').Keyboard,ref?:string){
  const r=result.room;
- result.outbox.push({chatId:BigInt(chat),payload:{kind:'SEND',text,...(keyboard?{keyboard}:{})},dedupeKey:'v2room:'+r.game+':'+r.revision+':'+result.outbox.length});
+ result.outbox.push({chatId:BigInt(chat),payload:{kind:'SEND',text,...(keyboard?{keyboard}:{})},dedupeKey:'v2room:'+r.game+':'+r.revision+':'+result.outbox.length,...(ref?{storeRefAs:ref}:{})});
 }
 function publishPhase(result:V2RoomTransition){
  const r=result.room;
- const v=v2PublicPhaseView(r.state,r.names);send(result,r.chatId,v.text,v.keyboard);
- for(const p of r.state.players){const view=v2PrivatePhaseView(r.state,r.game,p.id,r.names);if(view)send(result,Number(p.id),view.text,view.keyboard);}
+ const v=v2PublicPhaseView(r.state,r.names);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
+ for(const p of r.state.players){const view=v2PrivatePhaseView(r.state,r.game,p.id,r.names);if(view)send(result,Number(p.id),view.text,view.keyboard,choiceRef(r,p.id));}
+}
+function confirm(result:V2RoomTransition,source:V2RoomSession,actor:string,text:string,selection:string,key='phase'){
+ const ref=choiceRef(source,actor,key);
+ result.outbox.push({chatId:BigInt(actor),payload:{kind:'EDIT',refKey:ref,text:text+'\n\n✅ <b>Sizning tanlovingiz:</b> '+escapeHtml(selection),keyboard:[]},dedupeKey:ref+':accepted'});
+}
+function publicActivity(result:V2RoomTransition,actor:string,op:V2Op){
+ if(op==='K')return;
+ const role=result.room.state.players.find(p=>p.id===actor)?.role;
+ if(!role)return;
+ const activity:Partial<Record<string,string>>={DON:'o‘z o‘ljasini tanladi.',MAFIOSO:'tungi harakatini bajardi.',DOCTOR:'tungi navbatchilikka ketdi!',DAYDI:'kimnikigadir mehmonga ketdi.',FROZEN:'kimnikigadir mehmonga ketdi.',MERGAN:'nishonini tanladi.',MINIOR:'tuzog‘ini joylashtirdi.',ZOMBIE:'tungi harakatini bajardi.'};
+ const line=role==='COMMISSAR'?(op==='I'?'yovuzlarni qidirishga ketdi!':'tungi nishonini tanladi.'):activity[role]??'tungi harakatini bajardi.';
+ send(result,result.room.chatId,escapeHtml(v2RoleLabel(role))+' '+line);
 }
 function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:number){
  const r=result.room,oldSeq=r.state.seq;
@@ -46,24 +60,36 @@ export function v2RoomButton(input:V2RoomSession,actorId:number,privateChatId:nu
   if(!room.night||!target)throw Error('no pending response');
   const wizard=b.op==='F'||b.op==='X';
   const answer:V2NightAnswer=b.op==='F'?'FORGIVE':b.op==='X'?'REFUSE':b.op==='P'?'HP':'MONEY';
-  room.night=v2AnswerNightSession(room.night,actor,(wizard?'w:':'g:')+target,answer,now);return result;
+  const key=(wizard?'w:':'g:')+target;
+  const prompt=room.night.prompts.find(p=>p.key===key);
+  const view=v2PromptViews(room.night,room.game,room.names).find(p=>p.recipient===actor&&p.view.keyboard?.flat().some(button=>'callback_data'in button&&button.callback_data===raw));
+  room.night=v2AnswerNightSession(room.night,actor,key,answer,now);
+  if(prompt&&view)confirm(result,input,actor,view.view.text,b.op==='F'?'Kechirish':b.op==='X'?'Kechirmaslik':b.op==='P'?'17% jon':'Dollar to‘lash (hisob-kitob kutilmoqda)',key);
+  return result;
  }
  if(room.night||s.deadline===null||now>=s.deadline)throw Error('phase expired');
+ const view=v2PrivatePhaseView(s,room.game,actor,room.names);
+ const targetName=target?room.names[target]??'O‘yinchi':'';
  switch(b.op){
   case 'C':case 'I':case 'S':case 'K':{
+   if(s.intents.some(i=>i.actor===actor))throw Error('already selected');
    if(b.op!=='K'&&!target)throw Error('invalid target');
    if(b.op==='K'&&b.seat!==0)throw Error('invalid skip');
-   room.state=v2Submit(s,{actor,target:b.op==='K'?null:target!,kind:b.op==='C'?'CHOOSE':b.op==='I'?'CHECK':b.op==='S'?'SHOOT':'SKIP'},b.seq);break;
+   room.state=v2Submit(s,{actor,target:b.op==='K'?null:target!,kind:b.op==='C'?'CHOOSE':b.op==='I'?'CHECK':b.op==='S'?'SHOOT':'SKIP'},b.seq);
+   if(view)confirm(result,input,actor,view.text,b.op==='K'?'O‘tkazib yuborish':(b.op==='I'?'Tekshirish: ':b.op==='S'?'Hujum: ':'')+targetName);
+   publicActivity(result,actor,b.op);break;
   }
-  case 'V':if(!target)throw Error('invalid vote');room.state=v2Vote(s,actor,target,b.seq);break;
-  case 'Y':case 'N':if(b.seat!==0)throw Error('invalid verdict');room.state=v2Verdict(s,actor,b.op==='Y',b.seq);break;
+  case 'V':if(!target||s.votes.some(v=>v.actor===actor))throw Error('invalid or repeated vote');room.state=v2Vote(s,actor,target,b.seq);
+   if(view)confirm(result,input,actor,view.text,targetName);
+   send(result,room.chatId,'🗳 '+escapeHtml(room.names[actor]??'O‘yinchi')+' — '+escapeHtml(targetName)+'ga ovoz berdi.');break;
+  case 'Y':case 'N':if(b.seat!==0||s.verdicts.some(v=>v.actor===actor))throw Error('invalid or repeated verdict');room.state=v2Verdict(s,actor,b.op==='Y',b.seq);if(view)confirm(result,input,actor,view.text,b.op==='Y'?'Ha':'Yo‘q');break;
   case 'H':{
    if(!target)throw Error('invalid hero target');
    // Persistent hero receipt must be committed by trusted Registry before this
    // proposed transition can be applied to a real room.
-   const shot=v2HeroShot(s,actor,target,b.seq);apply(result,shot.state,shot.effects,now);break;
+   const shot=v2HeroShot(s,actor,target,b.seq);if(view)confirm(result,input,actor,view.text,targetName);apply(result,shot.state,shot.effects,now);break;
   }
-  case 'R':if(!target)throw Error('invalid revenge');{const next=v2Revenge(s,actor,target,b.seq,now);apply(result,next.state,next.effects,now);break;}
+  case 'R':if(!target)throw Error('invalid revenge');{const next=v2Revenge(s,actor,target,b.seq,now);if(view)confirm(result,input,actor,view.text,targetName);apply(result,next.state,next.effects,now);break;}
   default:throw Error('invalid operation');
  }
  return result;
@@ -93,7 +119,7 @@ export function v2RoomTick(input:V2RoomSession,now:number,rng:Rng,receipts:Reado
  if(state.phase==='NIGHT'&&!room.night){
   if(!v2CanEndNight(state)&&(state.deadline===null||now<state.deadline))return result;
   room.night=v2BeginNightSession(state,now,rng.int(0x7fffffff));
-  for(const p of v2PromptViews(room.night,room.game,room.names))send(result,Number(p.recipient),p.view.text,p.view.keyboard);
+  for(const [i,p] of v2PromptViews(room.night,room.game,room.names).entries())send(result,Number(p.recipient),p.view.text,p.view.keyboard,choiceRef(room,p.recipient,room.night.prompts[i]!.key));
  }
  if(room.night){
   if(!v2NightSessionReady(room.night,now))return result;

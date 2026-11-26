@@ -1355,17 +1355,35 @@ export class RoomCore {
         break;
       }
     }
+    // Once all edits have drained, discard obsolete v2 message references.
+    if(!this.data.outbox.length){
+      const room=this.data.game?.v2Session;
+      for(const key of Object.keys(this.data.refs))if(key.startsWith('v2choice:')||key.startsWith('v2phase:')){
+        const [,game,seq]=key.split(':');
+        if(!room||game!==String(room.game)||seq!==String(room.state.seq))delete this.data.refs[key];
+      }
+    }
     await this.deps.store.save(this.data);
     return sent;
   }
 
   private drop(id: number): void {
+    const item=this.data.outbox.find(o=>o.id===id);
+    const payload=item?.payload;
+    if(payload?.kind==='EDIT'&&payload.refKey.startsWith('v2choice:'))delete this.data.refs[payload.refKey];
     this.data.outbox = this.data.outbox.filter((o) => o.id !== id);
   }
 
   private async deliver(item: OutItem): Promise<boolean> {
     let p = item.payload;
     const key=item.storeRefAs;
+    // Real group-message link, not a guessed chat URL. Only supergroup IDs have t.me/c links.
+    const choice=p.kind==='SEND'?key:p.kind==='EDIT'?p.refKey:undefined;
+    if(choice?.startsWith('v2choice:')&&(p.kind==='SEND'||p.kind==='EDIT')){
+      const [,game,seq]=choice.split(':');
+      const ref=this.data.refs['v2phase:'+game+':'+seq];
+      if(ref&&String(ref.chatId).startsWith('-100'))p={...p,keyboard:[...(p.keyboard??[]),[{text:'Guruhga o‘tish',url:'https://t.me/c/'+String(ref.chatId).slice(4)+'/'+ref.messageId}]]};
+    }
     const lobbySend=p.kind==='SEND'&&key?.startsWith('lobby:');
     const lobby=lobbySend?this.data.game:null;
     if(lobbySend){
