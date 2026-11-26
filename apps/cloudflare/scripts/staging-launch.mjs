@@ -35,6 +35,7 @@ try{
  check(typeof origin==='string'&&/^https:\/\/hypernova-v2-staging\.[a-z0-9-]+\.workers\.dev$/.test(origin),'Invalid staging worker origin.');
  check(typeof admins==='string'&&admins.split(',').every(x=>id(x.trim())),'Explicit staging admin IDs required.');
  const me=await telegram('getMe'),hook=await telegram('getWebhookInfo');
+ if(e.STAGING_EXPECTED_USERNAME)check(typeof me.username==='string'&&me.username.toLowerCase()===e.STAGING_EXPECTED_USERNAME.toLowerCase(),'Unexpected staging bot username.');
  check(String(me.id)===bot&&String(me.id)!==prod&&me.is_bot===true,'Wrong Telegram bot identity.');
  check(hook.url===''||hook.url===origin+'/telegram/webhook','Existing webhook points elsewhere. No change made.');
  console.log('Preflight OK: @'+me.username+' → '+origin);
