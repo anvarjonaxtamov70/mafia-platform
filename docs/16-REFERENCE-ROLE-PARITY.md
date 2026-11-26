@@ -112,3 +112,7 @@ Added standalone v2 room transitions with native Telegram outbox drafts, phase/d
 
 ## Owner-only real Telegram preview checkpoint
 Cloudflare RoomCore now optionally runs the v2 room session inside the existing lobby, durable storage, alarms and Telegram outbox. Off by default; enabled only by V2_PREVIEW=true, with owner-only explicit /game v2classic, v2zombie, v2hypernova, v2vs. Normal /game remains v1. Preview is clearly announced, no real wallet, hero or rating changes, Grench money path simulates insufficient funds; Klaus/Seller effects are not delivered as live purchases. Existing /stop, membership claim, DM probes and stale callback checks are preserved. Added integration tests for disabled gate, real router/lobby/callback/timer and cancellation. Production integration remains blocked on real economy/hero reconciliation and result migration, not solved by preview. Do not merge.
+
+
+## Preview departure checkpoint
+Explicit group /leave now forfeits the v2 participant, clears pending intents/votes and last-word eligibility, promotes a missing leader, and releases only the departing player's registry claim. This is preview-only; v1 behavior and balances remain unchanged. A locked Wizard/Grench night-response snapshot must resolve before departure is accepted; immediate exit during that window remains pending work. Added adapter and router regression tests. No production enablement or merge.

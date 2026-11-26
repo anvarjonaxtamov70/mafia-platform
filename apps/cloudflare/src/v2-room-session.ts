@@ -2,7 +2,7 @@
  * room snapshot before delivery, using the existing durable outbox. No live routing
  * is enabled yet: wallet and hero receipts must be coordinated with Registry.
  */
-import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
+import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
 import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,type OutboxDraft,type V2Op} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number};
@@ -22,7 +22,7 @@ function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:numb
  const r=result.room,oldSeq=r.state.seq;
  r.state=state;result.effects.push(...effects);
  result.outbox.push(...v2EffectDrafts(effects,BigInt(r.chatId),r.names,r.game,r.revision));
- for(const e of effects)if(e.kind==='DEATH'&&e.reason!=='AFK'&&!r.lastWords[e.target]){
+ for(const e of effects)if(e.kind==='DEATH'&&e.reason!=='AFK'&&e.reason!=='LEAVE'&&!r.lastWords[e.target]){
   r.lastWords[e.target]={until:now+29000,sent:false};
   send(result,Number(e.target),'Oxirgi so‘zingizni 29 soniya ichida yozing.');
  }
@@ -66,6 +66,16 @@ export function v2RoomButton(input:V2RoomSession,actorId:number,privateChatId:nu
   case 'R':if(!target)throw Error('invalid revenge');{const next=v2Revenge(s,actor,target,b.seq,now);apply(result,next.state,next.effects,now);break;}
   default:throw Error('invalid operation');
  }
+ return result;
+}
+/** The locked night response snapshot must finish before departures can mutate it. */
+export function v2RoomLeave(input:V2RoomSession,actorId:number,now:number):V2RoomTransition{
+ if(input.night)throw Error('night responses pending');
+ const room=copy(input);room.revision++;
+ const result=empty(room),id=String(actorId);
+ const next=v2Leave(room.state,id,now);
+ delete room.lastWords[id];
+ apply(result,next.state,next.effects,now);
  return result;
 }
 export function v2RoomDeadline(room:V2RoomSession):number|null{

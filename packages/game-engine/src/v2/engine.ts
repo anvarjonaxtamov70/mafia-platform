@@ -242,6 +242,24 @@ export function v2Victory(s:V2State):V2Outcome|null{
   return {reason,winners:s.players.filter(p=>all.has(p.id)&&!p.left&&p.personal!=='LOSS'&&(p.role!=='KAMIKAZE'||p.personal==='WIN')).map(p=>p.id)};
 }
 function finishOr(s:V2State,next:V2Phase,now:number){s.outcome=v2Victory(s);phase(s,s.outcome?'ENDED':next,now);}
+/** Explicit departure forfeits the player's result and all pending actions. */
+export function v2Leave(input:V2State,id:string,now:number):V2Resolution{
+  const original=player(input,id);
+  if(!original||original.left||input.outcome||input.phase==='ENDED')throw Error('invalid departure');
+  const s=clone(input),p=player(s,id)!,effects:V2Effect[]=[];
+  const wasAlive=alive(p);
+  p.left=true;p.hp=0;p.personal='LOSS';p.death='LEAVE';
+  s.intents=s.intents.filter(i=>i.actor!==id&&i.target!==id);
+  s.votes=s.votes.filter(v=>v.actor!==id&&v.target!==id);
+  s.verdicts=s.verdicts.filter(v=>v.actor!==id);
+  if(wasAlive)effects.push({kind:'DEATH',target:id,reason:'LEAVE',attackers:[]});
+  promote(s,effects);
+  if(s.phase==='REVENGE'&&s.revenge===id){
+    const next=v2Advance(s,now,s.seq);
+    return {state:next.state,effects:[...effects,...next.effects]};
+  }
+  return {state:s,effects};
+}
 export function v2HeroShot(input:V2State,actor:string,target:string,seq:number):V2Resolution{
   const a=requireActor(input,actor,seq,'DAWN'),t=player(input,target);
   if(!t||!alive(t)||a.id===t.id||!['DON','COMMISSAR','MERGAN'].includes(a.role)||a.heroUsed||a.heroCharges<1||!Number.isInteger(a.heroDamage)||a.heroDamage<45||a.heroDamage>100)throw new Error('invalid hero shot');

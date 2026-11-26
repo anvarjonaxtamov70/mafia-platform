@@ -50,7 +50,7 @@ import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import {V2_DEFS,v2CanEndNight,v2NightSessionReady,type V2Mode} from '@mafia/game-engine';
 import {v2PublicPhaseView} from '@mafia/bot-core';
-import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
+import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
 
@@ -437,6 +437,16 @@ export class RoomCore {
       this.lobbyEdit(g);
       await this.commit();
       return { ok: true };
+    }
+    if(g.v2Session&&g.status==='RUNNING'){
+      if(g.v2Session.night)return {ok:false,error:'STALE_PHASE'};
+      let next:V2RoomTransition;
+      try{next=v2RoomLeave(g.v2Session,tgId,this.now);}catch{return {ok:false,error:'NOT_JOINED'};}
+      this.acceptV2(g,next);
+      this.addOp({type:'release',tgId,number:g.number});
+      const due=this.v2Due(next.room);
+      if(due!==null&&due<=this.now)this.tickV2(g);
+      await this.commit();return {ok:true};
     }
     return {ok:false,error:'NOT_LOBBY',details:{running:1}};
   }

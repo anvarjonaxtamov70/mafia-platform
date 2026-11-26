@@ -8,6 +8,19 @@ describe('owner-only v2 preview in actual RoomCore',()=>{
   const on=new World({v2Preview:true});await on.send(privateText(2,'/start'));await on.send(groupText(2,'/game v2classic'));
   expect((await on.loaded(GROUP)).data.game).toBeNull();
  });
+ it('running preview /leave forfeits participation and releases only that player',async()=>{
+  const w=new World({v2Preview:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game v2classic'));
+  const core=await w.loaded(GROUP),n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  await w.send(groupText(2,'/leave'));
+  expect(core.data.game!.v2Session!.state.players.find(p=>p.id==='2')).toMatchObject({left:true,hp:0,personal:'LOSS'});
+  expect(w.registryCore.activeOf(2)).toBeNull();
+  expect(w.registryCore.activeOf(1)?.number).toBe(n);
+  expect(w.registryCore.eco.coins(2)).toBe(0);
+ });
  it('native callbacks, durable phase progression, no wallet changes and /stop',async()=>{
   const w=new World({v2Preview:true});
   for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
