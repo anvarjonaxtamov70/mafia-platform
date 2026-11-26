@@ -19,6 +19,9 @@ function publishPhase(result:V2RoomTransition){
  const r=result.room;
  const v=r.state.phase==='VERDICT'?v2GroupVerdictView(r.state,r.game,r.names):v2PublicPhaseView(r.state,r.names,r.startedAt!==undefined&&r.finishedAt!==undefined?r.finishedAt-r.startedAt:undefined);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
  for(const p of r.state.players){const view=v2PrivatePhaseView(r.state,r.game,p.id,r.names);if(view)send(result,Number(p.id),view.text,view.keyboard,choiceRef(r,p.id));}
+ // Media is optional decoration, queued after required text and controls.
+ const visual=({NIGHT:'v2_night',DAWN:'v2_dawn',VOTING:'v2_vote',ENDED:'v2_end'} as Partial<Record<V2State['phase'],string>>)[r.state.phase];
+ if(visual)result.outbox.push({chatId:BigInt(r.chatId),payload:{kind:'SEND',text:'',visual},dedupeKey:groupRef(r)+':visual',storeRefAs:'v2visual:'+r.game+':'+r.state.seq});
 }
 function confirm(result:V2RoomTransition,source:V2RoomSession,actor:string,text:string,selection:string,key='phase'){
  const ref=choiceRef(source,actor,key);

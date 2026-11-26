@@ -1450,7 +1450,14 @@ export class RoomCore {
     }
     if (p.kind === 'SEND') {
       if (p.visual) {
-        if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual, undefined, p.keyboard);
+        if(key?.startsWith('v2visual:')){
+          const [,game,seq]=key.split(':');const room=this.data.game?.v2Session;
+          // A terminal decoration may remain after successful result cleanup;
+          // other phase art must never arrive during a later phase.
+          if(room?(String(room.game)!==game||String(room.state.seq)!==seq):p.visual!=='v2_end')return false;
+          if(p.visual==='v2_end'&&this.data.game&&!room)return false;
+        }
+        if (this.deps.visuals) await sendVisual(this.deps.telegram, item.chatId, p.visual, undefined, key?.startsWith('v2visual:')?undefined:p.keyboard);
         return false;
       }
       const res = await this.deps.telegram.call<{ message_id: number }>('sendMessage', {

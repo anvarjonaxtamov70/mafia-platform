@@ -74,3 +74,6 @@ V2 nomination now has an explicit one-time skip (seat 0), stored separately from
 
 ## Seller confirmation and expiry
 Seller offers now track their original DM in the durable outbox. A PAID receipt edits that message with selected item and displayed price, removes purchase buttons and notifies seller; insufficient funds do not close a valid offer. Expiry, phase change, participant elimination/leave and admin cancel retire offers; unresolved purchases remain protected by pending-operation reconciliation. Older untracked offers receive a separate confirmation. Existing receipt replay and balance assertions retained, with new exact-message edit assertions. CI pending. Group migration cleanup is not expanded in this change.
+
+## Original V2 phase animation integration
+Added four deterministic, original 192×108 eight-frame GIF loops (night moon, sunrise, vote ballot, ending crown), using the existing dependency-free generator and media transport. Existing legacy role cards/intro unchanged. V2 phase art is group-only and queued after mandatory text and private controls. Delivery drops stale phase art, respects the visual flag, and uses the existing short-timeout best-effort media path. No per-player uploads, no game timing changes, no copied reference assets. Final decoration is neutral (YAKUN) for wins and draws. CI and actual Telegram rendering pending.
