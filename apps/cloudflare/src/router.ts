@@ -57,7 +57,7 @@ import { heroView, heroTopView } from './hero-views';
 import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
 import {heroV2TopView,heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
 import {decodeV2Button} from '@mafia/bot-core';
-import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView,v2HomeView,v2RulesView,v2ParaView,v2ParaConfirm} from './v2-economy-views';
+import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView,v2HomeView,v2RulesView,v2ParaView,v2ParaConfirm,v2SceneInfo,withV2Scene} from './v2-economy-views';
 import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
@@ -409,17 +409,17 @@ export class Router {
         return this.reply(chatId,view.text,view.keyboard);
       }
       case 'mypara': {
-        if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(from.id));return this.reply(chatId,v.text,v.keyboard);}
+        if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(from.id)),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
         return this.reply(chatId,await this.paraText(from.id));
       }
       case 'qpara': {
         const pair=await this.d.registry.paraPair(from.id);
-        if(this.d.v2SettingsMode){const v=pair?v2ParaConfirm(pair):v2ParaView(null);return this.reply(chatId,v.text,v.keyboard);}
+        if(this.d.v2SettingsMode){const v=pair?v2ParaConfirm(pair):withV2Scene(v2ParaView(null),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
         if(!pair)return this.reply(chatId,'Sizda para mavjud emas.');
         return this.reply(chatId,'Parangizni bekor qilasizmi?',[[{text:'✅ Ha',callback_data:encode({t:'eco',op:'paraq',arg:String(pair.id)})},{text:'❌ Yo‘q',callback_data:encode({t:'eco',op:'paranop',arg:String(pair.id)})}]]);
       }
       case 'para':{
-        if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(from.id));return this.reply(chatId,v.text,v.keyboard);}
+        if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(from.id)),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
         return this.reply(chatId,'Guruhda foydalanuvchining xabariga javob qilib /para yozing.');
       }
       case 'help':
@@ -872,11 +872,20 @@ export class Router {
     }
   }
 
-  private homeView(name:string){return this.d.v2SettingsMode?v2HomeView(name):{text:t('menu.welcome',{name:escapeHtml(name||'do‘st')}),keyboard:mainMenu(true,!!this.d.visuals,true)};}
+  private homeView(name:string){return this.d.v2SettingsMode?withV2Scene(v2HomeView(name),'home',!!this.d.visuals):{text:t('menu.welcome',{name:escapeHtml(name||'do‘st')}),keyboard:mainMenu(true,!!this.d.visuals,true)};}
 
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
+    if(section.startsWith('vscene_')){
+      if(!this.d.v2SettingsMode||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return;
+      const scene=v2SceneInfo(section.slice('vscene_'.length));
+      if(!scene)return this.reply(from.id,t('cb.stale'));
+      if(!this.d.visuals)return this.reply(from.id,t('visual.unavailable'));
+      if(!this.media.allow(String(from.id),this.d.now()))return this.reply(from.id,t('common.rate_limited'));
+      if(!(await sendVisual(this.d.tg,from.id,scene.key,scene.caption)))await this.reply(from.id,t('visual.unavailable'));
+      return;
+    }
     if(section.startsWith('vportrait_')){
       const portrait=v2PortraitInfo(section);
       if(!portrait||!this.d.v2Preview)return this.reply(from.id,t('cb.stale'));
@@ -898,7 +907,7 @@ export class Router {
     if(this.d.v2SettingsMode&&section==='guide'){const v=v2RulesView();return this.edit(cb,v.text,v.keyboard);}
     if(this.d.v2SettingsMode&&(section==='para'||section==='paraconfirm')){
       const pair=await this.d.registry.paraPair(from.id);
-      const v=section==='paraconfirm'&&pair?v2ParaConfirm(pair):v2ParaView(pair);return this.edit(cb,v.text,v.keyboard);
+      const v=section==='paraconfirm'&&pair?v2ParaConfirm(pair):withV2Scene(v2ParaView(pair),'para',!!this.d.visuals);return this.edit(cb,v.text,v.keyboard);
     }
     const learning = learningView(section, !!this.d.visuals);
     if (learning) return this.edit(cb, learning.text, learning.keyboard);
@@ -987,19 +996,19 @@ export class Router {
         await this.d.registry.upsertUser(from, dmOpened);
         const inv=await this.d.registry.inventory(id);
         if(this.d.v2SettingsMode){
-          if(section==='inventory')return v2InventoryView(inv);
+          if(section==='inventory')return withV2Scene(v2InventoryView(inv),'inventory',!!this.d.visuals);
           const p=await this.d.registry.v2ProfileSummary(id);
           if(!p)return {text:t('common.error'),keyboard:[backRow()]};
           const pair=await this.d.registry.paraPair(id);
           const hero=this.d.heroV2Shop?await this.d.heroV2Shop.view(id):null;
-          return v2ProfileView(p,inv,hero,pair?.partner??null);
+          return withV2Scene(v2ProfileView(p,inv,hero,pair?.partner??null),'profile',!!this.d.visuals);
         }
         const menu=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
         const arm=(code:string,label:string)=>({text:label+' · '+(inv.items.find(i=>i.code===code)?.armed?'ON':'OFF'),callback_data:encode({t:'eco',op:'arm',arg:code})});
         return {text:await this.d.registry.profileText(id),keyboard:[[arm('SHIELD','🛡'),arm('FAKE_DOC','📁')],[arm('VOTE_SHIELD','⚖️'),arm('HERO_SHIELD','Geroy himoyasi')],[menu('Do‘kon','shop')],[menu('Xarid qilish 💎','buy_diamonds'),menu('Xarid qilish 💵','buy_dollars')],[menu('Mening geroyim','hero')],backRow()]};
       }
       case 'shop': {
-        if(this.d.v2SettingsMode)return v2ShopView(await this.d.registry.inventory(id),!!this.d.heroV2Shop);
+        if(this.d.v2SettingsMode)return withV2Scene(v2ShopView(await this.d.registry.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals);
         const w = await this.d.registry.wallet(id);
         return shopHomeView(w.coins, w.diamonds ?? 0);
       }
@@ -1028,12 +1037,12 @@ export class Router {
     const id=Number(arg);
     if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
     if(op==='paranop'){
-      if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(cb.from.id),'Bekor qilinmadi.');await this.edit(cb,v.text,v.keyboard);}
+      if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(cb.from.id),'Bekor qilinmadi.'),'para',!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);}
       else await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);
     }
     const result=op==='paraq'?await this.d.registry.paraLeave(cb.from.id,id):await this.d.registry.paraAnswer(cb.from.id,id,op==='parayes');
     if(result!=='OK')return this.answer(cb,this.paraError(result),true);
-    if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(cb.from.id),op==='parayes'?'Taklif qabul qilindi.':op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');await this.edit(cb,v.text,v.keyboard);}
+    if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(cb.from.id),op==='parayes'?'Taklif qabul qilindi.':op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.'),'para',!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);}
     else await this.edit(cb,op==='parayes'?await this.paraText(cb.from.id):op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');return this.answer(cb);
   }
 
@@ -1043,12 +1052,12 @@ export class Router {
     switch (op) {
       case 'shop': {
         const w = await reg.wallet(id);
-        const v = this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins, w.diamonds ?? 0);
+        const v = this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
       case 'cat': {
-        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb,v.text,v.keyboard); return this.answer(cb);
       }
       case 'buy': {
@@ -1075,7 +1084,7 @@ export class Router {
                   : t('shop.unknown');
           return this.answer(cb, msg, true);
         }
-        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb, t(item!.currency === 'DIAMOND' ? 'shop.diamond_bought' : 'shop.bought', { name: itemName(arg), coins: r.balance }), true);
       }

@@ -56,3 +56,22 @@ export function v2ParaView(pair:ParaPair|null,notice?:string):View{
 export function v2ParaConfirm(pair:ParaPair):View{
  return {text:title('💔','PARANI BEKOR QILISH')+'\n<b>'+escapeHtml(pair.partner)+'</b> bilan parani bekor qilasizmi?\n\nTasdiqlashdan keyin ikkala foydalanuvchining parasi olib tashlanadi.',keyboard:[[eco('✅ Ha','paraq',String(pair.id)),eco('❌ Yo‘q','paranop',String(pair.id))],[menu('⬅️ Para','para')]]};
 }
+
+/** Curated art is separate from live balances and controls. Never display generated fake stats. */
+const SCENE_ART:Readonly<Record<string,{key:string;caption:string}>>={
+ home:{key:'v2home',caption:'HYPERNOVA MAFIA'},
+ profile:{key:'v2profile',caption:'HYPERNOVA — PROFIL'},
+ shop:{key:'v2shop',caption:'HYPERNOVA — DO‘KON'},
+ inventory:{key:'v2inventory',caption:'HYPERNOVA — INVENTAR'},
+ para:{key:'v2para',caption:'HYPERNOVA — PARA'},
+};
+export function v2SceneInfo(section:string){return Object.hasOwn(SCENE_ART,section)?SCENE_ART[section]!:null;}
+export function withV2Scene(view:View,section:string,enabled:boolean):View{
+ if(!enabled||!v2SceneInfo(section))return view;
+ const keyboard=[...view.keyboard];
+ const art=[menu('🖼 Bo‘lim rasmi','vscene_'+section)];
+ const last=keyboard.at(-1);
+ const back=last?.length===1&&last.some(b=>'callback_data'in b&&b.callback_data==='m:home');
+ keyboard.splice(back?keyboard.length-1:keyboard.length,0,art);
+ return {...view,keyboard};
+}

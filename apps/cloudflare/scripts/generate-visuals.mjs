@@ -1,6 +1,6 @@
-// Deterministic original vector-style artwork. No network, font, image or npm dependency.
+// Deterministic vector fallback artwork plus checked-in cinematic JPEG/GIF overrides. No network.
 import { deflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const W=512,H=320;
@@ -272,6 +272,26 @@ for(const key of ['v2_night','v2_dawn','v2_vote','v2_end'])assets[key]=gif(key);
 v2Portraits.forEach(([id,title,faction,costume,symbol],i)=>{assets['v2portrait_'+id]=noirPortrait(title,faction,costume,symbol,i);});
 assets.v2hero=noirPortrait('SHAXSIY GEROY','NEUTRAL','helmet','medal',27);
 if(v2Portraits.length!==27||Object.keys(assets).length!==68||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==68)throw new Error('visual manifest incomplete or duplicated');
+// Curated premium assets are actual Git binaries, not remote links or generated placeholders.
+const premium=JSON.parse(readFileSync(new URL('../assets/premium/manifest.json',import.meta.url),'utf8'));
+const premiumPhases=new Set(['v2_night','v2_dawn','v2_vote','v2_end']);
+const premiumMenus=new Set(['v2home','v2profile','v2hero','v2shop','v2inventory','v2para']);
+const premiumKeys=new Set();
+let premiumBytes=0;
+for(const [file,expected] of Object.entries(premium)){
+ const m=/^(v2[a-z_]+)\.(jpg|gif)$/.exec(file);if(!m)throw Error('invalid premium filename '+file);
+ const [,key,ext]=m;
+ if(premiumKeys.has(key))throw Error('duplicate premium key '+key);
+ if(ext==='gif'?!premiumPhases.has(key):!premiumMenus.has(key)&&!(key.startsWith('v2portrait_')&&Object.hasOwn(assets,key)))throw Error('unknown premium asset '+file);
+ const bytes=readFileSync(new URL('../assets/premium/'+file,import.meta.url));
+ const actual=createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+ if(actual!==expected)throw Error('premium integrity mismatch '+file);
+ const valid=ext==='gif'?bytes.subarray(0,6).toString()==='GIF89a'&&bytes.at(-1)===0x3b:bytes[0]===0xff&&bytes[1]===0xd8&&bytes.at(-2)===0xff&&bytes.at(-1)===0xd9;
+ if(!valid||bytes.length<100||bytes.length>(ext==='gif'?160000:110000))throw Error('invalid premium media '+file);
+ assets[key]=bytes;premiumKeys.add(key);premiumBytes+=bytes.length;
+}
+if(premiumKeys.size!==24||premiumBytes>2000000||Object.keys(assets).length!==73)throw Error('premium asset inventory or size budget mismatch');
+if(new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==Object.keys(assets).length)throw Error('duplicate final media');
 for(const [name,bytes] of Object.entries(assets))if(bytes.length>750000||bytes.length<100)throw new Error('bad asset size '+name);
 const dest=new URL('../src/generated/',import.meta.url);mkdirSync(dest,{recursive:true});
 writeFileSync(new URL('visual-assets.ts',dest),'// Generated deterministically by scripts/generate-visuals.mjs. Do not edit.\nexport const VISUAL_ASSETS: Readonly<Record<string, string>> = '+JSON.stringify(Object.fromEntries(Object.entries(assets).map(([k,b])=>[k,b.toString('base64')])) )+';\n');

@@ -11,19 +11,21 @@ describe('V2 optional phase animations',()=>{
    const data=new Uint8Array(await blob.arrayBuffer());
    expect(new TextDecoder().decode(data.slice(0,6))).toBe('GIF89a');
    expect(data.at(-1)).toBe(0x3b);
-   expect(new DataView(data.buffer).getUint16(6,true)).toBe(192);
-   expect(new DataView(data.buffer).getUint16(8,true)).toBe(108);
-   // Count real graphic-control blocks, not arbitrary byte matches in compressed pixels.
-   let offset=13+16*3,frames=0;
+   const dimensions=new DataView(data.buffer);
+   const width=dimensions.getUint16(6,true),height=dimensions.getUint16(8,true);
+   expect(width).toBeGreaterThanOrEqual(192);expect(width).toBeLessThanOrEqual(256);expect(width*9).toBe(height*16);
+   // Walk actual GIF blocks, respecting global and local colour tables.
+   const global=data[10]!;
+   let offset=13+((global&0x80)?3*(1<<((global&7)+1)):0),frames=0;
    while(offset<data.length&&data[offset]!==0x3b){
     const kind=data[offset++]!;
     if(kind===0x21){const extension=data[offset++]!;if(extension===0xf9)frames++;}
-    else if(kind===0x2c){offset+=9;offset++;}
+    else if(kind===0x2c){const flags=data[offset+8]!;offset+=9;if(flags&0x80)offset+=3*(1<<((flags&7)+1));offset++;}
     else throw Error('invalid GIF block');
     while(data[offset])offset+=1+data[offset]!;
     offset++;
    }
-   expect(frames).toBe(12);
+   expect(frames).toBe(16);
    bytes.push(Buffer.from(data).toString('base64'));
   }
   expect(new Set(bytes).size).toBe(4);

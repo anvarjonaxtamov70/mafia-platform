@@ -39,7 +39,7 @@ describe('private v2 hero test shop',()=>{
   const buttons=(edit().params.reply_markup as {inline_keyboard:{callback_data:string}[][]}).inline_keyboard.flat();
   const art=buttons.find(b=>b.callback_data==='hv2:art')?.callback_data;
   expect(art).toBeTruthy();expect(decodeHeroV2Button(art!)).toEqual({kind:'ART'});
-  expect(visualBlob('v2hero')?.type).toBe('image/png');
+  expect(visualBlob('v2hero')?.type).toBe('image/jpeg');
   await w.send(callback(2,art!,GROUP));expect(w.tg.calls.filter(c=>c.method==='sendPhoto')).toHaveLength(0);
   await w.send(callback(2,art!));expect(w.tg.calls.filter(c=>c.method==='sendPhoto'&&c.params.chat_id===2)).toHaveLength(1);
   await w.send(callback(2,'hv2:rename'));expect(edit().params.text).toContain('/herov2name Nova');

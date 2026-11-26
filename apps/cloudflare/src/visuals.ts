@@ -8,7 +8,8 @@ export function visualBlob(key: string): Blob | null {
   const raw = VISUAL_ASSETS[key];
   if (!raw) return null;
   const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-  return new Blob([bytes.buffer], { type: animations.has(key) ? 'image/gif' : 'image/png' });
+  const type=animations.has(key)?'image/gif':bytes[0]===0xff&&bytes[1]===0xd8?'image/jpeg':'image/png';
+  return new Blob([bytes.buffer], { type });
 }
 
 /** Decorative only: never retry or prevent text/game delivery on media failure. */

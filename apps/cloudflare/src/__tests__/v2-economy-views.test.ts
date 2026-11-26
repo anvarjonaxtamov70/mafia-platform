@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {World,privateText,callback,GROUP} from './harness';
-import {v2BuyView,v2InventoryView} from '../v2-economy-views';
+import {v2BuyView,v2InventoryView,v2SceneInfo} from '../v2-economy-views';
+import {visualBlob} from '../visuals';
 import {catalogItem,decode} from '@mafia/bot-core';
 describe('integrated staging V2 profile, shop, inventory and hero ranking',()=>{
  it('routes live private balances, buys and arms items, then shows the actual V2 hero leaderboard',async()=>{
@@ -44,4 +45,30 @@ describe('integrated staging V2 profile, shop, inventory and hero ranking',()=>{
   expect(v2InventoryView(depleted).text).toContain('1 dona');
   expect(r.heroV2.top().map(row=>row.points)).toEqual([1000,500]);
  });
+ it('opens curated section art only in private staging and preserves authoritative menu messages',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true,v2Ledger:true,visuals:true});
+  await w.send(privateText(2,'/start'));
+  const sections=['home','profile','shop','inventory','para'];
+  const distinct=new Set<string>();
+  for(const section of sections){
+    const info=v2SceneInfo(section)!;
+    expect(info).toBeTruthy();
+    const blob=visualBlob(info.key)!;expect(blob.type).toBe('image/jpeg');expect(blob.size).toBeLessThanOrEqual(110000);
+    distinct.add(Buffer.from(await blob.arrayBuffer()).toString('base64'));
+    await w.advance(5100);await w.send(callback(2,'m:'+section));
+    const edit=w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+    const buttons=(edit.params.reply_markup as {inline_keyboard:{callback_data?:string}[][]}).inline_keyboard.flat();
+    const art=buttons.find(b=>b.callback_data==='m:vscene_'+section)?.callback_data;
+    expect(art).toBeTruthy();expect(decode(art!)).not.toBeNull();
+    const before=w.tg.calls.filter(c=>c.method==='sendPhoto').length;
+    await w.advance(5100);await w.send(callback(2,art!,GROUP));
+    expect(w.tg.calls.filter(c=>c.method==='sendPhoto')).toHaveLength(before);
+    await w.advance(5100);await w.send(callback(2,art!));
+    const photos=w.tg.calls.filter(c=>c.method==='sendPhoto');expect(photos).toHaveLength(before+1);
+    expect(photos.at(-1)?.params.chat_id).toBe(2);
+    expect((photos.at(-1)?.params.photo as Blob).type).toBe('image/jpeg');
+  }
+  expect(distinct.size).toBe(5);expect(v2SceneInfo('unknown')).toBeNull();
+ });
+
 });

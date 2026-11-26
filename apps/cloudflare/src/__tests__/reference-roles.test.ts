@@ -70,21 +70,27 @@ describe('reference catalogue draft',()=>{
     expect(buttons(legacy.params).some(b=>b.callback_data==='m:roles_city')).toBe(true);
   });
 
-  it('all 27 V2 portraits are distinct PNGs and private catalogue artwork can be opened',async()=>{
+  it('all 27 V2 portraits are distinct, with 14 curated JPEGs and fallback PNGs',async()=>{
     const seen=new Set<string>();
+    const premium=new Set(['daydi','doktor','don','janob','killer','komissar','mafia','manyak','mergan','sehrgar','serjant','shpion','sotuvchi','zombi']);
+    let jpegCount=0;
     for(const role of REFERENCE_ROLES){
       const section='vportrait_'+role.id,art=v2PortraitInfo(section)!;
       const blob=visualBlob(art.key)!;
-      expect(blob.type).toBe('image/png');expect(blob.size).toBeLessThan(750000);
+      expect(blob.type).toBe(premium.has(role.id)?'image/jpeg':'image/png');expect(blob.size).toBeLessThan(750000);
       const bytes=new Uint8Array(await blob.arrayBuffer());
-      expect(Array.from(bytes.slice(0,8))).toEqual([137,80,78,71,13,10,26,10]);
-      const dimensions=new DataView(bytes.buffer);
-      expect(dimensions.getUint32(16)).toBe(448);expect(dimensions.getUint32(20)).toBe(560);
+      if(blob.type==='image/jpeg'){
+        jpegCount++;expect(Array.from(bytes.slice(0,2))).toEqual([255,216]);expect(Array.from(bytes.slice(-2))).toEqual([255,217]);expect(blob.size).toBeLessThanOrEqual(110000);
+      }else{
+        expect(Array.from(bytes.slice(0,8))).toEqual([137,80,78,71,13,10,26,10]);
+        const dimensions=new DataView(bytes.buffer);
+        expect(dimensions.getUint32(16)).toBe(448);expect(dimensions.getUint32(20)).toBe(560);
+      }
       seen.add(Buffer.from(bytes).toString('base64'));
       expect(v2CatalogueView('ref_'+role.id,true)?.keyboard.flat()).toContainEqual({text:'🖼 Personaj rasmi',callback_data:'m:'+section});
       expect(decode('m:'+section)).toEqual({t:'menu',section});
     }
-    expect(seen.size).toBe(27);expect(v2PortraitInfo('vportrait_unknown')).toBeNull();
+    expect(seen.size).toBe(27);expect(jpegCount).toBe(14);expect(v2PortraitInfo('vportrait_unknown')).toBeNull();
     const w=new World({v2Preview:true,v2SettingsMode:true,visuals:true});
     await w.send(privateText(2,'/start'));
     await w.send(callback(2,'m:characters'));
