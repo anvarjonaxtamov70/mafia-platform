@@ -181,9 +181,11 @@ const SCHEMA = [
 ];
 
 import {ParaCore} from './para-core';
+import {HeroV2Core} from './hero-v2-core';
 
 export class RegistryCore {
   readonly para: ParaCore;
+  readonly heroV2: HeroV2Core;
   readonly eco: EconomyCore;
   readonly security: SecurityCore;
   readonly heroes: HeroCore;
@@ -197,6 +199,7 @@ export class RegistryCore {
     this.security = new SecurityCore(sql, clock);
     this.heroes = new HeroCore(sql, clock, (id) => this.eco.isOwner(id));
     this.para = new ParaCore(sql,clock);
+    this.heroV2 = new HeroV2Core(sql,this.eco,clock);
   }
 
   migrate(): void {
@@ -205,6 +208,7 @@ export class RegistryCore {
     this.security.migrate();
     this.heroes.migrate();
     this.para.migrate();
+    this.heroV2.migrate();
   }
 
   paraRequest(sender:number,target:number){return this.para.request(sender,target);}

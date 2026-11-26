@@ -92,3 +92,7 @@ Added separate v2 registry, allocation, snapshot, night resolver, voting, victor
 
 ## Para implementation checkpoint
 Cloudflare registry and router now implement reply-only group /para, DM-only acceptance/rejection and breakup confirmation, /mypara in both contexts, expiry, transactional unique membership, failed delivery cancellation, and deletion cleanup. Added router and storage tests; alternate Node runtime does not yet have Para. New v2 engine is still isolated from real game rooms. Do not merge until integration is complete.
+
+
+## Hero persistent economy checkpoint
+New isolated HeroV2Core preserves historical total points on first migration, stores one permanent hero name/points/defense/charges, validates purchases, uses atomic existing Dollar/diamond ledgers and unique receipts, and has a trusted one-shot-per-game settlement helper. 90-diamond initial purchase, 500/1000-point packs, restore/reload/rename are implemented at storage level. Active-game purchases blocked. Existing production /hero remains legacy until v2 room adapter can safely synchronize charge/HP/defense with durable game state. No public RPC exposes settlement. Do not merge. Tests cover price, replay, conflicts, partial points and persistent defense. The adapter must still reserve/settle with durable game outbox, protect against role/phase abuse and recover failed room writes.
