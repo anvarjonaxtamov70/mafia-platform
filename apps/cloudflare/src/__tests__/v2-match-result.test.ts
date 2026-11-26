@@ -1,0 +1,41 @@
+import {describe,it,expect} from 'vitest';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+import {v2CreateFixed,seededRng} from '@mafia/game-engine';
+import {buildV2Result} from '../v2-match-result';
+describe('v2 result ledger',()=>{
+ it('records once after a lost response, keeps left penalty and does not award ordinary hero points',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  const r=w.registryCore;
+  r.eco.creditDiamonds(2,90,'TEST','seedhero');expect(r.heroV2.purchase(2,'BUY','buy')).toBe('OK');
+  await w.send(groupText(1,'/game v2classic'));
+  const core=await w.loaded(GROUP),g=core.data.game!,n=g.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const s=g.v2Session!;
+  s.state=v2CreateFixed(['1','2','3','4'],['DON','COMMISSAR','CITIZEN','CITIZEN'],'CLASSIC',w.now,seededRng(1));
+  s.state.players[0]!.hp=0;s.state.players[3]!.hp=0;s.state.players[3]!.left=true;s.state.players[3]!.death='AFK';
+  s.state.phase='ENDED';s.state.deadline=null;s.state.outcome={reason:'CITY',winners:['2','3']};
+  g.v2FinishedAt=w.now+30000;w.now+=30000;
+  const expected=buildV2Result(g,GROUP,w.now);
+  expect(expected.players[3]).toMatchObject({outcome:'LOSS',left:true,afk:true});
+  const original=w.v2Settlement!.recordResult;let calls=0;
+  w.v2Settlement!.recordResult=async input=>{
+    calls++;expect(w.stores.get(GROUP)!.data?.ops.some(o=>o.type==='v2Record')).toBe(true);
+    const receipt=await original(input);
+    if(calls===1)throw Error('lost response');
+    return receipt;
+  };
+  await core.alarm();
+  expect(calls).toBe(1);expect(r.points(2)).toBeGreaterThan(0);expect(r.points(4)).toBe(-8);
+  const coins=r.eco.coins(2),points=r.points(2);
+  expect(r.heroV2.view(2)?.points).toBe(0);
+  expect(r.recordV2Game(expected).players).toHaveLength(4);
+  expect(()=>r.recordV2Game({...expected,days:2})).toThrow();
+  expect(r.gameHistory(2)).toContain('Komissar');
+  w.restart(GROUP);await w.advance(2100);
+  expect(calls).toBe(2);expect((await w.loaded(GROUP)).data.game).toBeNull();
+  expect(r.points(2)).toBe(points);expect(r.eco.coins(2)).toBe(coins);
+  expect(r.activeOf(2)).toBeNull();
+ });
+});

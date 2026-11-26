@@ -11,7 +11,7 @@ export type V2Player={
   id:string; role:V2Role; colour:V2Colour|null; hp:number; left:boolean;
   shield:number; document:boolean; voteShield:boolean; heroShield:boolean;
   heroDefense:number; heroCharges:number; heroDamage:number; heroUsed:boolean;
-  missed:number; lucky:boolean; selfHeal:boolean; blockedUntil:number;
+  missed:number; missedTotal?:number; lucky:boolean; selfHeal:boolean; blockedUntil:number;
   lastFrozen:string|null; changed:boolean; marks:string[]; hangingProtection:boolean;
   personal:'WIN'|'LOSS'|null; death:string|null;
 };
@@ -202,7 +202,9 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   for(const a of detonations)if(a.marks.filter(id=>player(s,id)?.hp===0).length>=3)a.personal='WIN';
   for(const p of active){
     if(!alive(p)||frozen.has(p.id))continue;
-    p.missed=s.intents.some(i=>i.actor===p.id)?0:p.missed+1;
+    const acted=s.intents.some(i=>i.actor===p.id);
+    if(!acted)p.missedTotal=(p.missedTotal??0)+1;
+    p.missed=acted?0:p.missed+1;
     if(p.missed>=2){p.hp=0;p.left=true;p.personal='LOSS';p.death='AFK';effects.push({kind:'DEATH',target:p.id,reason:'AFK',attackers:[]});}
   }
   promote(s,effects);phase(s,'DAWN',now);return {state:s,effects};
