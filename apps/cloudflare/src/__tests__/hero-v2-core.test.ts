@@ -44,6 +44,9 @@ describe('draft hero v2 persistent economy',()=>{
   expect(h.confirm(2,a.quote.id)).toBe('UNAVAILABLE');
   expect(h.confirm(2,b.quote.id)).toBe('OK');expect(h.confirm(2,b.quote.id)).toBe('OK');
   expect(e.diamonds(2)).toBe(45);
+  const canceled=h.quote(2,'XP500');if(canceled.status!=='OK')throw Error('quote missing');
+  h.cancel(3,canceled.quote.id);h.cancel(2,canceled.quote.id);
+  expect(h.confirm(2,canceled.quote.id)).toBe('UNAVAILABLE');expect(e.diamonds(2)).toBe(45);
   const exp=h.quote(2,'XP500');if(exp.status!=='OK')throw Error('quote missing');
   w.now+=120001;expect(h.confirm(2,exp.quote.id)).toBe('UNAVAILABLE');
   const poor=h.quote(2,'RENAME','Nova');if(poor.status!=='OK')throw Error('quote missing');

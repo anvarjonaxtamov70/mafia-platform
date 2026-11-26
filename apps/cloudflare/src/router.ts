@@ -182,6 +182,7 @@ export interface HeroV2ShopPort{
  view(id:number):Promise<ReturnType<HeroV2Core['view']>>;
  quote(id:number,op:HeroV2Purchase,argument?:string):Promise<HeroV2QuoteResult>;
  confirm(id:number,quoteId:number):Promise<HeroV2BuyResult>;
+ cancel(id:number,quoteId:number):Promise<void>;
 }
 export interface RouterDeps {
   heroV2Shop?:HeroV2ShopPort;
@@ -663,6 +664,10 @@ export class Router {
         const result=await shop.quote(from.id,b.op);
         if(result.status!=='OK')return this.answer(cb,heroV2Status(result.status),true);
         const v=heroV2Confirm(result.quote);await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      if(b.kind==='CANCEL'){
+        await shop.cancel(from.id,b.id);
+        const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);return this.answer(cb,'Bekor qilindi.');
       }
       const result=await shop.confirm(from.id,b.id);
       const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);

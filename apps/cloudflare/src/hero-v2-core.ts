@@ -84,6 +84,10 @@ export class HeroV2Core {
    return {status:'OK',quote:{id:q.id,op,argument:arg,price,currency:cost.currency,expires}};
   });
  }
+ cancel(id:number,quoteId:number):void{
+  if(!Number.isSafeInteger(quoteId)||quoteId<1)return;
+  this.sql.exec(`UPDATE hero_v2_quotes SET result='UNAVAILABLE' WHERE id=? AND telegram_id=? AND result IS NULL`,quoteId,id);
+ }
  confirm(id:number,quoteId:number):HeroV2BuyResult{
   if(!Number.isSafeInteger(quoteId)||quoteId<1||!this.eligible(id))return 'UNAVAILABLE';
   return this.sql.tx(()=>{

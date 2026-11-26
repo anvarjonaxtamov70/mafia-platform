@@ -142,3 +142,5 @@ Added private callback buttons for four eligible consumables, with the buyer, ga
 
 ## Hero v2 private shop checkpoint
 Internal test-only `/herov2` and `/herov2name <name>` UI shows level, total/next points, attack, defense, charges and kill points; permanent purchase, XP packs and conditional refill buttons, plus rename quote. A durable 120-second account-bound quote with exact price and argument is confirmed once; newer quote supersedes older pending quotes; declined or expired confirmation cannot later debit a top-up. Active game purchases remain blocked, existing owners pay zero in confirmation. Production Router does not inject the shop, and legacy /hero stays unchanged. Proposed choices: 120-second quote, one active quote per user, command for rename. Tests cover foreign account, stale price/expiry, replay, and group callback rejection. Existing account migration still needs production cutover planning.
+
+Quote cancellation now durably revokes the exact account-bound pending quote, rather than merely hiding the confirmation screen. Profile progress bar is measured between the current and next level thresholds.
