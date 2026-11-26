@@ -25,7 +25,7 @@ describe('v2 paid item lifecycle',()=>{
    return items;
   };
   await w.send(groupText(1,'/startgame'));
-  expect(calls).toBe(1);expect(e.items(2).filter(x=>x.code!=='PERSONAL_HERO').every(x=>x.qty===0)).toBe(true);
+  expect(calls).toBe(1);expect(e.inventory(2).items.filter(x=>x.code!=='PERSONAL_HERO').every(x=>x.qty===0)).toBe(true);
   w.restart(GROUP);await w.advance(2100);
   const restored=await w.loaded(GROUP),game=restored.data.game!;
   expect(calls).toBe(2);
@@ -35,7 +35,7 @@ describe('v2 paid item lifecycle',()=>{
   expect(usedV2Items(game)).toEqual({'2':['SHIELD','HERO_SHIELD']});
   await w.send(groupText(1,'/stop'));
   expect(restored.data.game).toBeNull();
-  const qty=Object.fromEntries(e.items(2).map(i=>[i.code,i.qty]));
+  const qty=Object.fromEntries(e.inventory(2).items.map(i=>[i.code,i.qty]));
   expect(qty).toMatchObject({SHIELD:0,HERO_SHIELD:0,FAKE_DOC:1,VOTE_SHIELD:1});
   expect(w.registryCore.activeOf(2)).toBeNull();
  });
@@ -43,6 +43,6 @@ describe('v2 paid item lifecycle',()=>{
   const {w,e,g}=await lobby();g.config.allowArcadeItems=false;
   await w.send(groupText(1,'/startgame'));
   expect(g.v2Session!.state.players.find(x=>x.id==='2')).toMatchObject({shield:0,document:false,voteShield:false,heroShield:false});
-  expect(e.items(2).every(x=>x.qty===1)).toBe(true);
+  expect(e.inventory(2).items.every(x=>x.qty===1)).toBe(true);
  });
 });
