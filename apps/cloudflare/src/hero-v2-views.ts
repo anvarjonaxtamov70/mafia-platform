@@ -1,4 +1,4 @@
-import {HERO_V2_PRICE,HERO_V2_XP_PACKS,HERO_V2_RENAME_PRICE,heroV2Threshold,type Keyboard} from '@mafia/bot-core';
+import {backRow,HERO_V2_PRICE,HERO_V2_XP_PACKS,HERO_V2_RENAME_PRICE,heroV2Threshold,type Keyboard} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 import type {HeroV2Core,HeroV2Purchase,HeroV2Quote,HeroV2BuyResult} from './hero-v2-core';
 type View={text:string;keyboard:Keyboard};
@@ -15,7 +15,7 @@ export function decodeHeroV2Button(raw:string):{kind:'HOME'}|{kind:'QUOTE';op:Ex
 }
 export function heroV2Profile(a:ReturnType<HeroV2Core['view']>):View{
  const header='🧪 <b>GEROY V2 — ICHKI SINOV</b>';
- if(!a)return {text:header+'\n\nBitta doimiy shaxsiy geroy. Boshlang‘ich daraja 1.\nNarx: '+HERO_V2_PRICE+' 💎',keyboard:[quote('BUY','Geroy olish · '+HERO_V2_PRICE+' 💎')]};
+ if(!a)return {text:header+'\n\nBitta doimiy shaxsiy geroy. Boshlang‘ich daraja 1.\nNarx: '+HERO_V2_PRICE+' 💎',keyboard:[quote('BUY','Geroy olish · '+HERO_V2_PRICE+' 💎'),backRow()]};
  const start=heroV2Threshold(a.level);
  const progress=Math.max(0,Math.min(10,Math.floor((a.points-start)/(a.nextPoints-start)*10)));
  const keyboard:Keyboard=[
@@ -23,7 +23,7 @@ export function heroV2Profile(a:ReturnType<HeroV2Core['view']>):View{
   quote('XP1000','+1000 ball · '+HERO_V2_XP_PACKS[1].diamonds+' 💎'),
   ...(a.defense<a.maxDefense?[quote('RESTORE','Himoyani tiklash · '+a.restorePrice+' $')]:[]),
   ...(a.charges<a.maxCharges?[quote('RELOAD','O‘qni to‘ldirish · '+a.reloadPrice+' $')]:[]),
-  [home],
+  [home],backRow(),
  ];
  return {text:header+'\n\n<b>'+escapeHtml(a.name)+'</b> · '+a.level+'-daraja\n'+
   '⭐ Ball: '+a.points+' / '+a.nextPoints+'\n'+

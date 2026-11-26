@@ -41,4 +41,32 @@ describe('reference catalogue draft',()=>{
     await w.send(callback(2,'m:ref_invalid'));
     expect(w.tg.calls.slice(before).some(c=>c.method==='sendMessage')).toBe(false);
   });
+  it('staging home and commands open the same 27-role catalogue, not legacy learning menus',async()=>{
+    const w=new World({v2Preview:true,v2SettingsMode:true,v2Ledger:true});
+    await w.send(privateText(2,'/start'));
+    const home=w.tg.sent(2).at(-1)!;
+    const buttons=(params:Record<string,unknown>)=>(params.reply_markup as {inline_keyboard:{callback_data?:string;text:string}[][]}).inline_keyboard.flat();
+    expect(buttons(home.params).some(b=>b.callback_data==='m:characters')).toBe(true);
+    await w.send(callback(2,'m:characters'));
+    const edit=()=>w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+    expect(edit().params.text).toContain('27 ta rol');
+    expect(buttons(edit().params).filter(b=>b.callback_data?.startsWith('m:ref_'))).toHaveLength(27);
+    await w.advance(3100);await w.send(callback(2,'m:ref_zombi'));
+    expect(edit().params.text).toContain('Rejimlar: Zombi');
+    expect(buttons(edit().params).some(b=>b.callback_data==='m:characters')).toBe(true);
+    await w.advance(3100);await w.send(callback(2,'m:roles_city'));
+    expect(edit().params.text).toContain('27 ta rol');
+    for(const cmd of ['/characters','/roles']){
+      await w.send(privateText(2,cmd));
+      expect(w.tg.texts(2).at(-1)).toContain('27 ta rol');
+    }
+    await w.advance(3100);await w.send(callback(2,'m:hero'));
+    expect(edit().params.text).toContain('90 💎');
+    await w.advance(3100);await w.send(callback(2,'e:herook:'));
+    expect(w.registryCore.heroV2.view(2)).toBeNull();
+    const old=new World();await old.send(privateText(2,'/start'));await old.send(callback(2,'m:characters'));
+    const legacy=old.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+    expect(buttons(legacy.params).some(b=>b.callback_data==='m:roles_city')).toBe(true);
+  });
+
 });

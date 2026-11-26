@@ -1,5 +1,8 @@
 /** Draft reference catalogue, NOT the live engine role registry. Do not deploy before parity. */
 import { encode } from './callback-data';
+import {V2_ROLES,V2_DEFS,V2_MODES,v2ModeAllows} from '@mafia/game-engine';
+import {escapeHtml} from '@mafia/localization';
+import {backRow} from './views';
 import type { Keyboard } from './outbox-types';
 
 export const REFERENCE_ROLES = [
@@ -181,4 +184,17 @@ export function referenceRoleDetail(section:string):{text:string;alert:boolean}|
   if(!role)return null;
   const text=role.emoji+' '+role.name+'\n\n'+role.description;
   return {text,alert:text.length<=200};
+}
+
+/** Staging catalogue is backed by the same ordered roles as the V2 engine. */
+export function v2CatalogueView(section='characters'):{text:string;keyboard:Keyboard}|null{
+ const button=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
+ if(section==='characters'||section==='roles')return {text:'🎭 <b>HYPERNOVA — PERSONAJLAR</b>\n\n'+V2_ROLES.length+' ta rol. Batafsil ma’lumot uchun personajni tanlang.',keyboard:[...referenceRolesView().keyboard,backRow()]};
+ const index=REFERENCE_ROLES.findIndex(r=>'ref_'+r.id===section);
+ const role=V2_ROLES[index],entry=REFERENCE_ROLES[index];
+ if(!role||!entry)return null;
+ const def=V2_DEFS[role];
+ const factions={CITY:'Tinch aholi',MAFIA:'Mafia',SOLO:'Yakka rol',NEUTRAL:'Betaraf',ZOMBIE:'Zombi'};
+ const labels={CLASSIC:'Classic',ZOMBIE:'Zombi',HYPERNOVA:'Hypernova',VS:'VS'};
+ return {text:entry.emoji+' <b>'+escapeHtml(entry.name)+'</b>\n\n'+escapeHtml(entry.description)+'\n\nTaraf: '+factions[def.faction]+'\nFaol tungi tanlov: '+(def.active?'Ha':'Yo‘q')+'\nRejimlar: '+V2_MODES.filter(m=>v2ModeAllows(role,m)).map(m=>labels[m]).join(', '),keyboard:[[button('⬅️ Personajlar','characters')],backRow()]};
 }

@@ -23,6 +23,7 @@ import {
   rolesText,
   referenceRolesView,
   referenceRoleDetail,
+  v2CatalogueView,
   learningView,
   SELECTABLE_MODES,
   settingsView,
@@ -438,11 +439,11 @@ export class Router {
         return this.showVisual(from.id, 'intro');
       case 'characters':
       case 'guide': {
-        const view = learningView(c.cmd, !!this.d.visuals)!;
+        const view = (this.d.v2SettingsMode?v2CatalogueView(c.cmd):null)??learningView(c.cmd, !!this.d.visuals)!;
         return this.reply(chatId, view.text, view.keyboard);
       }
       case 'roles': {
-        const view=referenceRolesView();
+        const view=this.d.v2SettingsMode?v2CatalogueView('roles')!:referenceRolesView();
         return this.reply(chatId,view.text,view.keyboard);
       }
       case 'admin_hero_level': {
@@ -742,6 +743,11 @@ export class Router {
     switch (data.t) {
       case 'menu': {
         if(data.section.startsWith('ref_')) {
+          if(this.d.v2SettingsMode){
+            const view=v2CatalogueView(data.section);
+            if(!view)return this.answer(cb,t('cb.stale'));
+            await this.edit(cb,view.text,view.keyboard);return this.answer(cb);
+          }
           const role=referenceRoleDetail(data.section);
           if(!role||chat?.type!=='private'||chat.id!==from.id)return this.answer(cb,t('cb.stale'));
           if(role.alert)return this.answer(cb,role.text,true);
@@ -846,6 +852,9 @@ export class Router {
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
+    if(this.d.v2SettingsMode&&(section==='characters'||section==='roles'||section.startsWith('roles_')||section.startsWith('role_')||section.startsWith('art_'))){
+      const view=v2CatalogueView()!;return this.edit(cb,view.text,view.keyboard);
+    }
     if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
     if (section.startsWith('pick_')) { const v=await this.heroSection(from.id,'hero'); return this.edit(cb,v.text,v.keyboard); }
     if (section === 'buy_dollars' || section === 'buy_diamonds') return this.edit(cb,t('currency.packs_pending'),[backRow()]);
@@ -906,6 +915,11 @@ export class Router {
   }
 
   private async heroSection(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
+    if(this.d.v2SettingsMode){
+      if(section==='herotop')return {text:'V2 geroy reytingi hali ulanmagan.',keyboard:[[ {text:'Mening geroyim',callback_data:encode({t:'menu',section:'hero'})} ],backRow()]};
+      if(!this.d.heroV2Shop)return {text:'Geroy V2 sinov do‘koni mavjud emas. Sinov iqtisodiyoti yoqilishi kerak.',keyboard:[backRow()]};
+      return heroV2Profile(await this.d.heroV2Shop.view(id));
+    }
     if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
     return heroView(await this.d.registry.singleHero(id));
   }
@@ -1018,11 +1032,13 @@ export class Router {
         return this.answer(cb,ok?t('inv.saved'):t('inv.not_owned'));
       }
       case 'herobuy': {
+        if(this.d.v2SettingsMode)return this.answer(cb,t('cb.stale'));
         if(arg) return this.answer(cb,t('cb.stale'));
         await this.edit(cb,t('hero.confirm'),[[{text:t('common.yes'),callback_data:encode({t:'eco',op:'herook',arg:''})},{text:t('common.no'),callback_data:encode({t:'menu',section:'hero'})}]]);
         return this.answer(cb);
       }
       case 'herook': {
+        if(this.d.v2SettingsMode)return this.answer(cb,t('cb.stale'));
         if(arg) return this.answer(cb,t('cb.stale'));
         const result=await reg.buyHero(id,'hero:'+cb.id);
         const v=await this.heroSection(id,'hero'); await this.edit(cb,v.text,v.keyboard);
