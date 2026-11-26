@@ -45,6 +45,7 @@ import { MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type EngineErrorCode, type Game
 import { escapeHtml, t } from '@mafia/localization';
 import type { BuyResult, CheckOrderResult, ClaimDailyResult, PaymentInput, PaymentResult, PaymentRow } from './economy-core';
 import type { TgUserInput, UserInfo } from './registry-core';
+import type {ParaRequest,ParaResult,ParaPair} from './para-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
@@ -66,6 +67,7 @@ export interface TgMessage {
   chat: TgChat;
   from?: TgUser;
   sender_chat?: TgChat;
+  reply_to_message?: {message_id:number;chat:TgChat;from?:TgUser;sender_chat?:TgChat};
   text?: string;
   migrate_to_chat_id?: number;
   refunded_payment?: { currency: string; total_amount: number; invoice_payload: string; telegram_payment_charge_id: string };
@@ -94,6 +96,11 @@ export interface TgUpdate {
 // ───────────────────────────── Portlar ─────────────────────────────
 
 export interface RegistryApi {
+  paraRequest(sender:number,target:number):Promise<ParaRequest>;
+  paraFailed(sender:number,id:number):Promise<void>;
+  paraAnswer(target:number,id:number,accept:boolean):Promise<ParaResult>;
+  paraPair(user:number):Promise<ParaPair|null>;
+  paraLeave(user:number,pair:number):Promise<ParaResult>;
   upsertUser(u: TgUserInput, dmOpened: boolean): Promise<UserInfo>;
   onStart(u: TgUserInput, payload: string): Promise<{ user: UserInfo; referred: boolean }>;
   // iqtisodiyot
@@ -375,6 +382,14 @@ export class Router {
         }
         return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
       }
+      case 'mypara':
+        return this.reply(chatId,await this.paraText(from.id));
+      case 'qpara': {
+        const pair=await this.d.registry.paraPair(from.id);
+        if(!pair)return this.reply(chatId,'Sizda para mavjud emas.');
+        return this.reply(chatId,'Parangizni bekor qilasizmi?',[[{text:'✅ Ha',callback_data:encode({t:'eco',op:'paraq',arg:String(pair.id)})},{text:'❌ Yo‘q',callback_data:encode({t:'eco',op:'paranop',arg:String(pair.id)})}]]);
+      }
+      case 'para':return this.reply(chatId,'Guruhda foydalanuvchining xabariga javob qilib /para yozing.');
       case 'help':
         return this.reply(chatId, t('help.text'));
       case 'support':
@@ -466,7 +481,7 @@ export class Router {
     const c = await this.parseCommand(m.text);
     // Handled commands use response-linked cleanup, not immediate night/dead deletion.
     // Unsupported commands still follow ordinary moderation.
-    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill'].includes(c.cmd);
+    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill','para','mypara'].includes(c.cmd);
     if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous) || !handled ||
         (anonymous && !['game','quick','startgame','stop','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) ||
         (c.cmd === 'devfill' && (!this.d.devFake || !this.isSuperadmin(from.id)))) {
@@ -478,6 +493,21 @@ export class Router {
     const isAdmin = async () => anonymous || await this.isChatAdmin(chatId, from.id);
     const replyTo = m.message_id;
     switch (c.cmd) {
+      case 'para':
+      case 'mypara': {
+        if(await this.silenceCheck(m,true))return;
+        if(c.cmd==='mypara')return this.reply(chatId,await this.paraText(from.id),undefined,replyTo);
+        const reply=m.reply_to_message;
+        if(m.sender_chat||c.args||!reply||reply.sender_chat||reply.chat.id!==chatId||!reply.from||reply.from.is_bot||reply.from.id===from.id)return this.reply(chatId,'Foydalanuvchining xabariga javob qilib /para yozing.',undefined,replyTo);
+        if(!this.chats.allow('para:'+from.id,this.d.now()))return this.reply(chatId,'Birozdan keyin urinib ko‘ring.',undefined,replyTo);
+        await this.d.registry.upsertUser(from,false);
+        const request=await this.d.registry.paraRequest(from.id,reply.from.id);
+        if(!request.ok)return this.reply(chatId,this.paraError(request.error),undefined,replyTo);
+        try {
+          await this.d.tg.call('sendMessage',{chat_id:reply.from.id,text:'💞 <b>Para taklifi!</b>\n\n'+escapeHtml(request.name)+' siz bilan para bo‘lishni xohlayapti.',...HTML,reply_markup:{inline_keyboard:[[{text:'✅ Qabul qilish',callback_data:encode({t:'eco',op:'parayes',arg:String(request.id)})},{text:'❌ Rad etish',callback_data:encode({t:'eco',op:'parano',arg:String(request.id)})}]]}});
+        }catch{await this.d.registry.paraFailed(from.id,request.id);return this.reply(chatId,'Taklif yetkazilmadi. Foydalanuvchi botni ochishi kerak.',undefined,replyTo);}
+        return this.reply(chatId,'💌 Para so‘rovi yuborildi!',undefined,replyTo);
+      }
       case 'quick':
       case 'game': {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
@@ -627,6 +657,7 @@ export class Router {
         return this.answer(cb);
       }
       case 'eco':
+        if(['parayes','parano','paraq','paranop'].includes(data.op))return this.paraCallback(cb,data.op,data.arg);
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
@@ -824,6 +855,22 @@ export class Router {
       default:
         return null;
     }
+  }
+
+  private paraError(error:ParaResult):string {
+    if(error==='PAIRED')return 'Siz yoki foydalanuvchi allaqachon paraga ega.';
+    if(error==='RATE')return 'So‘rovlar juda ko‘p. Keyinroq urinib ko‘ring.';
+    if(error==='UNAVAILABLE')return 'Foydalanuvchi mavjud emas yoki botni ochmagan.';
+    return 'Bu so‘rov eskirgan.';
+  }
+  private async paraText(id:number){const p=await this.d.registry.paraPair(id);return p?'💞 Parangiz: <b>'+escapeHtml(p.partner)+'</b>':'Sizda para mavjud emas.';}
+  private async paraCallback(cb:TgCallback,op:string,arg:string){
+    const id=Number(arg);
+    if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
+    if(op==='paranop'){await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);}
+    const result=op==='paraq'?await this.d.registry.paraLeave(cb.from.id,id):await this.d.registry.paraAnswer(cb.from.id,id,op==='parayes');
+    if(result!=='OK')return this.answer(cb,this.paraError(result),true);
+    await this.edit(cb,op==='parayes'?await this.paraText(cb.from.id):op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');return this.answer(cb);
   }
 
   private async eco(cb: TgCallback, op: string, arg: string): Promise<void> {

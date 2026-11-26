@@ -213,6 +213,11 @@ export class Registry extends DurableObject<Env> {
   profileText(tgId: number) {
     return this.core.profileText(tgId);
   }
+  paraRequest(sender:number,target:number){return this.core.paraRequest(sender,target);}
+  paraFailed(sender:number,id:number){return this.core.paraFailed(sender,id);}
+  paraAnswer(target:number,id:number,accept:boolean){return this.core.paraAnswer(target,id,accept);}
+  paraPair(user:number){return this.core.paraPair(user);}
+  paraLeave(user:number,pair:number){return this.core.paraLeave(user,pair);}
   singleHero(tgId: number) { return this.core.singleHero(tgId); }
   setOwnHeroLevel(tgId: number, level: number) { return this.core.setOwnHeroLevel(tgId, level); }
   buyHero(tgId: number, idem: string) { return this.core.eco.buyHero(tgId, idem); }
@@ -447,6 +452,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'invite', description: 'Do‘stlarni taklif qilish' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
+      { command: 'mypara', description: 'Parangizni ko‘rish' },
+      { command: 'qpara', description: 'Parani bekor qilish' },
       { command: 'characters', description: 'Personajlar katalogi' },
       { command: 'intro', description: 'Hypernova animatsiyasi' },
       { command: 'guide', description: 'Boshlovchilar qo‘llanmasi' },
@@ -460,6 +467,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
     scope: { type: 'all_group_chats' },
     commands: [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
+      { command: 'para', description: 'Xabarga javob qilib para taklifi' },
+      { command: 'mypara', description: 'Parangizni ko‘rish' },
       { command: 'quick', description: 'Tezkor, reytingsiz o‘yin' },
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },

@@ -180,7 +180,10 @@ const SCHEMA = [
   )`,
 ];
 
+import {ParaCore} from './para-core';
+
 export class RegistryCore {
+  readonly para: ParaCore;
   readonly eco: EconomyCore;
   readonly security: SecurityCore;
   readonly heroes: HeroCore;
@@ -193,6 +196,7 @@ export class RegistryCore {
     this.eco = new EconomyCore(sql, clock, undefined, owners);
     this.security = new SecurityCore(sql, clock);
     this.heroes = new HeroCore(sql, clock, (id) => this.eco.isOwner(id));
+    this.para = new ParaCore(sql,clock);
   }
 
   migrate(): void {
@@ -200,7 +204,14 @@ export class RegistryCore {
     this.eco.migrate();
     this.security.migrate();
     this.heroes.migrate();
+    this.para.migrate();
   }
+
+  paraRequest(sender:number,target:number){return this.para.request(sender,target);}
+  paraFailed(sender:number,id:number){return this.para.failed(sender,id);}
+  paraAnswer(target:number,id:number,accept:boolean){return this.para.answer(target,id,accept);}
+  paraPair(user:number){return this.para.pair(user);}
+  paraLeave(user:number,pair:number){return this.para.leave(user,pair);}
 
   private one<T>(q: string, ...p: (string | number | null)[]): T | undefined {
     return this.sql.exec<T>(q, ...p)[0];
@@ -269,6 +280,7 @@ export class RegistryCore {
   /** /delete_me — anonimlashtirish (statistika anonim qoladi) */
   anonymize(tgId: number): 'OK' | 'IN_GAME' {
     if (this.activeOf(tgId)) return 'IN_GAME';
+    this.para.remove(tgId);
     this.sql.exec(`UPDATE users SET first_name = 'Deleted', last_name = NULL, username = NULL, language_code = NULL, deleted_at = ? WHERE telegram_id = ?`, this.clock(), tgId);
     this.audit(String(tgId), 'DELETE_ME', 'users', String(tgId));
     return 'OK';
