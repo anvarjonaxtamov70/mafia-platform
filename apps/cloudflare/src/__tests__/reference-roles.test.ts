@@ -1,5 +1,6 @@
 import {describe,it,expect} from 'vitest';
-import {REFERENCE_ROLES,referenceRolesView,referenceRoleDetail,decode} from '@mafia/bot-core';
+import {REFERENCE_ROLES,referenceRolesView,referenceRoleDetail,decode,v2PortraitInfo,v2CatalogueView} from '@mafia/bot-core';
+import {visualBlob} from '../visuals';
 import {World,privateText,callback,GROUP} from './harness';
 describe('reference catalogue draft',()=>{
   it('exact order, 27 unique entries, 13 two-column rows and one final row, bounded callbacks',()=>{
@@ -67,6 +68,28 @@ describe('reference catalogue draft',()=>{
     const old=new World();await old.send(privateText(2,'/start'));await old.send(callback(2,'m:characters'));
     const legacy=old.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
     expect(buttons(legacy.params).some(b=>b.callback_data==='m:roles_city')).toBe(true);
+  });
+
+  it('all 27 V2 portraits are distinct PNGs and private catalogue artwork can be opened',async()=>{
+    const seen=new Set<string>();
+    for(const role of REFERENCE_ROLES){
+      const section='v2art_'+role.id,art=v2PortraitInfo(section)!;
+      const blob=visualBlob(art.key)!;
+      expect(blob.type).toBe('image/png');expect(blob.size).toBeLessThan(750000);
+      const bytes=new Uint8Array(await blob.arrayBuffer());
+      expect(Array.from(bytes.slice(0,8))).toEqual([137,80,78,71,13,10,26,10]);
+      const dimensions=new DataView(bytes.buffer);
+      expect(dimensions.getUint32(16)).toBe(448);expect(dimensions.getUint32(20)).toBe(560);
+      seen.add(Buffer.from(bytes).toString('base64'));
+      expect(v2CatalogueView('ref_'+role.id,true)?.keyboard.flat()).toContainEqual({text:'🖼 Personaj rasmi',callback_data:'m:'+section});
+    }
+    expect(seen.size).toBe(27);expect(v2PortraitInfo('v2art_unknown')).toBeNull();
+    const w=new World({v2Preview:true,v2SettingsMode:true,visuals:true});
+    await w.send(privateText(2,'/start'));
+    await w.send(callback(2,'m:v2art_don'));
+    expect(w.tg.calls.filter(c=>c.method==='sendPhoto'&&c.params.chat_id===2)).toHaveLength(1);
+    await w.advance(3100);await w.send(callback(2,'m:v2art_don',GROUP));
+    expect(w.tg.calls.filter(c=>c.method==='sendPhoto')).toHaveLength(1);
   });
 
 });

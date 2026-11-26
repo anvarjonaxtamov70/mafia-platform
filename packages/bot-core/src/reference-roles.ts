@@ -187,7 +187,7 @@ export function referenceRoleDetail(section:string):{text:string;alert:boolean}|
 }
 
 /** Staging catalogue is backed by the same ordered roles as the V2 engine. */
-export function v2CatalogueView(section='characters'):{text:string;keyboard:Keyboard}|null{
+export function v2CatalogueView(section='characters',visuals=false):{text:string;keyboard:Keyboard}|null{
  const button=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
  if(section==='characters'||section==='roles')return {text:'🎭 <b>HYPERNOVA — PERSONAJLAR</b>\n\n'+V2_ROLES.length+' ta rol. Batafsil ma’lumot uchun personajni tanlang.',keyboard:[...referenceRolesView().keyboard,backRow()]};
  const index=REFERENCE_ROLES.findIndex(r=>'ref_'+r.id===section);
@@ -196,5 +196,10 @@ export function v2CatalogueView(section='characters'):{text:string;keyboard:Keyb
  const def=V2_DEFS[role];
  const factions={CITY:'Tinch aholi',MAFIA:'Mafia',SOLO:'Yakka rol',NEUTRAL:'Betaraf',ZOMBIE:'Zombi'};
  const labels={CLASSIC:'Classic',ZOMBIE:'Zombi',HYPERNOVA:'Hypernova',VS:'VS'};
- return {text:entry.emoji+' <b>'+escapeHtml(entry.name)+'</b>\n\n'+escapeHtml(entry.description)+'\n\nTaraf: '+factions[def.faction]+'\nFaol tungi tanlov: '+(def.active?'Ha':'Yo‘q')+'\nRejimlar: '+V2_MODES.filter(m=>v2ModeAllows(role,m)).map(m=>labels[m]).join(', '),keyboard:[[button('⬅️ Personajlar','characters')],backRow()]};
+ return {text:entry.emoji+' <b>'+escapeHtml(entry.name)+'</b>\n\n'+escapeHtml(entry.description)+'\n\nTaraf: '+factions[def.faction]+'\nFaol tungi tanlov: '+(def.active?'Ha':'Yo‘q')+'\nRejimlar: '+V2_MODES.filter(m=>v2ModeAllows(role,m)).map(m=>labels[m]).join(', '),keyboard:[...(visuals?[[button('🖼 Personaj rasmi','v2art_'+entry.id)]]:[]),[button('⬅️ Personajlar','characters')],backRow()]};
+}
+
+export function v2PortraitInfo(section:string):{key:string;caption:string}|null{
+ const entry=REFERENCE_ROLES.find(r=>'v2art_'+r.id===section);
+ return entry?{key:'v2portrait_'+entry.id,caption:entry.emoji+' '+entry.name+'\n\n'+entry.description}:null;
 }

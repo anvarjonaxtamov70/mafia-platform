@@ -133,12 +133,128 @@ function gif(scene='intro'){
  }
  pieces.push(Buffer.from([0x3b]));return Buffer.concat(pieces);
 }
+// Original V2 noir character collection, independent of the legacy role artwork.
+// Each role has a costume silhouette and its own foreground emblem.
+const v2Portraits=[
+ ['citizen','TINCH AHOLI','CITY','coat','house'],
+ ['don','DON','MAFIA','hat','crown'],
+ ['mafia','MAFIA','MAFIA','hat','diamond'],
+ ['manyak','MANYAK','SOLO','hood','blade'],
+ ['komissar','KOMISSAR','CITY','cap','star'],
+ ['doktor','DOKTOR','CITY','medic','cross'],
+ ['serjant','SERJANT','CITY','cap','chevrons'],
+ ['daydi','DAYDI','CITY','hood','eye'],
+ ['frozen','FROZEN','CITY','hood','snow'],
+ ['advokat','ADVOKAT','MAFIA','coat','scales'],
+ ['suidsid','SUIDSID','NEUTRAL','hood','hourglass'],
+ ['killer','KILLER','MAFIA','mask','target'],
+ ['kamikaze','KAMIKAZE','CITY','coat','burst'],
+ ['grench','GRENCH','NEUTRAL','mask','coin'],
+ ['minior','MINIOR','SOLO','helmet','burst'],
+ ['shpion','SHPION','MAFIA','hat','eye'],
+ ['zombi','ZOMBI','ZOMBIE','mask','scar'],
+ ['kimyogar','KIMYOGAR','MAFIA','medic','flask'],
+ ['tentak','TENTAK','CITY','cap','spiral'],
+ ['buqalamun','BUQALAMUN','NEUTRAL','hood','split'],
+ ['sotuvchi','SOTUVCHI','NEUTRAL','coat','coin'],
+ ['krampous','KRAMPOUS','SOLO','horns','chain'],
+ ['omadli','OMADLI','CITY','coat','clover'],
+ ['klaus','KLAUS','NEUTRAL','winter','gift'],
+ ['sehrgar','SEHRGAR','NEUTRAL','wizard','star'],
+ ['mergan','MERGAN','SOLO','helmet','target'],
+ ['janob','JANOB','CITY','top','medal'],
+];
+const noirPalette={CITY:[77,151,184],MAFIA:[176,48,67],SOLO:[199,103,55],NEUTRAL:[174,137,78],ZOMBIE:[97,157,99]};
+function noirPortrait(title,faction,costume,symbol,index){
+ const w=448,h=560,accent=noirPalette[faction],gold=[210,175,105],black=[9,12,19],edge=mix(black,accent,.48),light=mix(accent,[245,240,224],.58);
+ const b=canvas(w,h,accent);
+ const poly=(pts,color)=>{
+  const ys=pts.map(p=>p[1]);
+  for(let y=Math.ceil(Math.min(...ys));y<=Math.max(...ys);y++){
+   const xs=[];
+   for(let i=0;i<pts.length;i++){const a=pts[i],z=pts[(i+1)%pts.length];if((a[1]<=y&&z[1]>y)||(z[1]<=y&&a[1]>y))xs.push(a[0]+(y-a[1])*(z[0]-a[0])/(z[1]-a[1]));}
+   xs.sort((a,z)=>a-z);for(let i=0;i+1<xs.length;i+=2)b.rect(Math.ceil(xs[i]),y,Math.max(0,Math.floor(xs[i+1])-Math.ceil(xs[i])+1),1,color);
+  }
+ };
+ const line=(a,z,c=light,n=3)=>b.line(a[0],a[1],z[0],z[1],c,n);
+ const path=(pts,c=light,n=3)=>{for(let i=1;i<pts.length;i++)line(pts[i-1],pts[i],c,n);};
+ b.rect(0,0,w,5,gold);b.rect(0,h-5,w,5,gold);
+ for(let i=0;i<13;i++){const x=15+i*35,ht=32+(i*47+index*19)%112;b.rect(x,361-ht,25,ht,mix(black,accent,.13));for(let y=371-ht;y<351;y+=17)if((i+y)%3===0)b.rect(x+6,y,3,7,edge);}
+ b.ring(224,213,130,edge,2);b.ring(224,213,121,mix(black,accent,.27),1);
+ b.text('HYPERNOVA',224,27,3,gold);b.text('MAFIA',224,53,2,light);
+ b.text(String(index+1).padStart(2,'0'),402,28,2,gold);
+ // Angular tailored body, backlight, contrasting planes.
+ poly([[62,394],[80,314],[145,278],[190,264],[258,264],[306,278],[368,314],[386,394]],edge);
+ poly([[68,394],[92,322],[160,284],[200,273],[224,345],[247,273],[289,284],[356,322],[380,394]],black);
+ poly([[160,284],[195,273],[224,345],[180,333],[147,304]],mix(black,accent,.33));
+ poly([[289,284],[253,273],[224,345],[268,333],[301,304]],mix(black,accent,.2));
+ poly([[205,276],[243,276],[224,340]],light);
+ poly([[224,288],[233,298],[228,332],[224,340],[220,332],[215,298]],accent);
+ poly([[181,196],[183,262],[204,283],[244,283],[266,262],[267,196],[247,168],[201,168]],mix(black,accent,.42));
+ poly([[224,168],[247,168],[267,196],[266,262],[244,283],[224,268]],mix(black,accent,.2));
+ b.line(199,219,213,217,light,2);b.line(236,217,250,219,light,2);b.line(224,221,221,243,edge,2);
+ if(costume==='hat'||costume==='top'||costume==='cap'){
+  const top=costume==='top'?108:costume==='cap'?155:143;
+  poly([[169,190],[185,top],[259,top],[279,190]],black);
+  b.rect(180,176,88,10,accent);poly([[148,192],[299,192],[288,200],[161,200]],edge);
+ }else if(costume==='hood'||costume==='wizard'||costume==='horns'){
+  poly([[151,262],[155,171],[224,costume==='wizard'?91:122],[293,171],[297,262],[260,285],[267,195],[224,158],[181,195],[188,285]],black);
+  path([[151,262],[155,171],[224,costume==='wizard'?91:122],[293,171],[297,262]],edge,4);
+  if(costume==='horns'){poly([[168,170],[134,105],[179,135],[195,158]],accent);poly([[280,170],[314,105],[269,135],[253,158]],accent);}
+ }else if(costume==='medic'||costume==='mask'||costume==='helmet'){
+  poly([[176,205],[180,162],[224,142],[268,162],[272,205]],black);
+  if(costume==='medic'){b.rect(202,162,44,24,light);b.rect(221,164,6,20,accent);b.rect(214,171,20,6,accent);}
+  else b.line(180,196,268,196,accent,5);
+  poly([[183,232],[224,242],[265,232],[253,266],[224,278],[195,266]],edge);
+ }else if(costume==='winter'){
+  poly([[172,189],[187,147],[249,127],[279,183]],accent);b.dot(249,127,10,light);b.rect(168,182,112,13,light);
+  poly([[187,238],[224,249],[261,238],[250,275],[224,298],[198,275]],light);
+ }else{
+  poly([[177,203],[180,166],[210,149],[248,151],[269,174],[270,205],[249,181],[203,181]],black);
+ }
+ // Individual heraldic emblem below the portrait.
+ const cx=224,cy=365; b.dot(cx,cy,33,black);b.ring(cx,cy,33,gold,2);
+ const l=(x,y,z,q)=>b.line(cx+x,cy+y,cx+z,cy+q,light,3);
+ const P=pts=>path(pts.map(([x,y])=>[cx+x,cy+y]),light,3);
+ switch(symbol){
+ case 'house':P([[-19,0],[0,-18],[19,0],[15,0],[15,18],[-15,18],[-15,0]]);break;
+ case 'crown':P([[-19,-10],[-10,0],[0,-17],[10,0],[19,-10],[14,16],[-14,16],[-19,-10]]);break;
+ case 'diamond':P([[0,-21],[19,0],[0,21],[-19,0],[0,-21]]);break;
+ case 'blade':P([[-14,18],[14,-18],[19,-14],[-6,18],[-14,18]]);l(-18,7,0,20);break;
+ case 'star':for(let i=0;i<5;i++){const a=i*2*Math.PI/5-Math.PI/2,z=(i+2)*2*Math.PI/5-Math.PI/2;l(Math.cos(a)*19,Math.sin(a)*19,Math.cos(z)*19,Math.sin(z)*19);}break;
+ case 'cross':l(0,-20,0,20);l(-20,0,20,0);break;
+ case 'chevrons':P([[-18,-10],[0,3],[18,-10]]);P([[-18,3],[0,16],[18,3]]);break;
+ case 'eye':P([[-22,0],[0,-13],[22,0],[0,13],[-22,0]]);b.ring(cx,cy,6,light,3);break;
+ case 'snow':for(let i=0;i<6;i++){const a=i*Math.PI/3;l(0,0,Math.cos(a)*21,Math.sin(a)*21);}break;
+ case 'scales':l(0,-20,0,20);l(-18,-9,18,-9);P([[-18,-9],[-25,9],[-11,9],[-18,-9]]);P([[18,-9],[11,9],[25,9],[18,-9]]);break;
+ case 'hourglass':P([[-16,-19],[16,-19],[-16,19],[16,19],[-16,-19]]);break;
+ case 'target':b.ring(cx,cy,19,light,3);b.ring(cx,cy,8,light,2);l(-25,0,-11,0);l(11,0,25,0);l(0,-25,0,-11);l(0,11,0,25);break;
+ case 'burst':for(let i=0;i<8;i++){const a=i*Math.PI/4;l(Math.cos(a)*7,Math.sin(a)*7,Math.cos(a)*22,Math.sin(a)*22);}break;
+ case 'coin':b.ring(cx,cy,21,light,3);b.text('D',cx,cy-10,3,light);break;
+ case 'scar':P([[-14,-20],[-4,-5],[-12,0],[8,21]]);P([[3,-20],[13,-5],[5,0],[20,20]]);break;
+ case 'flask':P([[-8,-20],[8,-20],[8,-5],[20,17],[-20,17],[-8,-5],[-8,-20]]);l(-13,7,13,7);break;
+ case 'spiral':P([[-19,-19],[19,-19],[19,19],[-19,19],[-19,-6],[6,-6],[6,7],[-6,7]]);break;
+ case 'split':P([[0,-21],[19,0],[0,21],[-19,0],[0,-21]]);l(0,-21,0,21);break;
+ case 'chain':b.ring(cx-8,cy-8,12,light,3);b.ring(cx+8,cy+8,12,light,3);break;
+ case 'clover':for(const [x,y] of [[-10,-10],[10,-10],[-10,10],[10,10]])b.dot(cx+x,cy+y,10,light);l(0,8,0,23);break;
+ case 'gift':P([[-19,-9],[19,-9],[19,18],[-19,18],[-19,-9]]);l(0,-9,0,18);P([[0,-9],[-15,-19],[-15,-7],[0,-9],[15,-19],[15,-7],[0,-9]]);break;
+ case 'medal':P([[-13,-22],[0,-3],[13,-22]]);b.ring(cx,cy+9,12,light,3);break;
+ }
+ b.rect(0,407,w,148,black);b.line(38,418,w-38,418,gold,1);
+ b.text(title,224,445,title.length>12?3:4,[238,232,220]);
+ const factionText={CITY:'TINCH AHOLI',MAFIA:'MAFIA',SOLO:'YAKKA ROL',NEUTRAL:'BETARAF',ZOMBIE:'ZOMBI'}[faction];
+ b.text(factionText,224,497,2,accent);
+ b.text('V2 CHARACTER SERIES',224,530,1,gold);
+ return png(b.data,w,h);
+}
+
 const assets={};
 roles.forEach(([code,category,title,paths],i)=>{assets['role_'+code.toLowerCase()]=png(art(title,category,String(i+1).padStart(2,'0'),paths));});
 for(const [key,title,category] of [['game_start','OYIN BOSHLANDI','BRAND'],['game_city','SHAHAR GALABA','CITY'],['game_mafia','MAFIYA GALABA','MAFIA'],['game_serial_killer','MANYAK GALABA','NEUTRAL'],['game_draw','DURRANG','BRAND']])assets[key]=png(art(title,category,'V5',brand));
 assets.intro=gif();
 for(const key of ['v2_night','v2_dawn','v2_vote','v2_end'])assets[key]=gif(key);
-if(Object.keys(assets).length!==40||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==40)throw new Error('visual manifest incomplete or duplicated');
+v2Portraits.forEach(([id,title,faction,costume,symbol],i)=>{assets['v2portrait_'+id]=noirPortrait(title,faction,costume,symbol,i);});
+if(v2Portraits.length!==27||Object.keys(assets).length!==67||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==67)throw new Error('visual manifest incomplete or duplicated');
 for(const [name,bytes] of Object.entries(assets))if(bytes.length>750000||bytes.length<100)throw new Error('bad asset size '+name);
 const dest=new URL('../src/generated/',import.meta.url);mkdirSync(dest,{recursive:true});
 writeFileSync(new URL('visual-assets.ts',dest),'// Generated deterministically by scripts/generate-visuals.mjs. Do not edit.\nexport const VISUAL_ASSETS: Readonly<Record<string, string>> = '+JSON.stringify(Object.fromEntries(Object.entries(assets).map(([k,b])=>[k,b.toString('base64')])) )+';\n');

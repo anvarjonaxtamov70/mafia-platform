@@ -24,6 +24,7 @@ import {
   referenceRolesView,
   referenceRoleDetail,
   v2CatalogueView,
+  v2PortraitInfo,
   learningView,
   SELECTABLE_MODES,
   settingsView,
@@ -744,7 +745,7 @@ export class Router {
       case 'menu': {
         if(data.section.startsWith('ref_')) {
           if(this.d.v2SettingsMode){
-            const view=v2CatalogueView(data.section);
+            const view=v2CatalogueView(data.section,!!this.d.visuals);
             if(!view)return this.answer(cb,t('cb.stale'));
             await this.edit(cb,view.text,view.keyboard);return this.answer(cb);
           }
@@ -852,6 +853,14 @@ export class Router {
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
+    if(section.startsWith('v2art_')){
+      const portrait=v2PortraitInfo(section);
+      if(!portrait||!this.d.v2Preview)return this.reply(from.id,t('cb.stale'));
+      if(!this.d.visuals)return this.reply(from.id,t('visual.unavailable'));
+      if(!this.media.allow(String(from.id),this.d.now()))return this.reply(from.id,t('common.rate_limited'));
+      if(!(await sendVisual(this.d.tg,from.id,portrait.key,portrait.caption)))await this.reply(from.id,t('visual.unavailable'));
+      return;
+    }
     if(this.d.v2SettingsMode&&(section==='characters'||section==='roles'||section.startsWith('roles_')||section.startsWith('role_')||section.startsWith('art_'))){
       const view=v2CatalogueView()!;return this.edit(cb,view.text,view.keyboard);
     }

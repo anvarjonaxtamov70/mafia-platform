@@ -4,6 +4,7 @@
 import {V2_ROLES,V2_DEFS,v2Eligible,v2Submit,v2SameMafia,v2VerdictTally,type V2State,type V2Role,type V2Action,type V2Effect,type V2NightSession} from '@mafia/game-engine';
 import {escapeHtml} from '@mafia/localization';
 import {REFERENCE_ROLES} from './reference-roles';
+import {encode} from './callback-data';
 import {rows,buttonLabel,type Button,type Keyboard,type OutboxDraft} from './outbox-types';
 export type V2Op='C'|'I'|'S'|'K'|'H'|'V'|'Y'|'N'|'R'|'F'|'X'|'P'|'M';
 export type V2Button={game:number;seq:number;op:V2Op;seat:number};
@@ -34,7 +35,7 @@ function make(game:number,s:V2State,op:V2Op,seat:number,text:string):Button{retu
 export function v2PrivateRoleView(s:V2State,id:string,names:PlayerNames):V2View|null{
  const p=s.players.find(x=>x.id===id);if(!p)return null;
  const mafia=V2_DEFS[p.role].faction==='MAFIA'?s.players.filter(x=>x.id!==id&&v2SameMafia(s,p,x)).map(x=>named(names,x.id)+' — '+escapeHtml(v2RoleLabel(x.role))):[];
- return {text:'Sizning rolingiz: <b>'+escapeHtml(v2RoleLabel(p.role))+'</b>\n\n'+escapeHtml(roleDescription(p.role))+(p.colour?'\n\nJamoangiz: '+(p.colour==='RED'?'🔴 Qizillar':'🔵 Ko‘klar')+'\n'+s.players.filter(x=>x.id!==id&&x.colour===p.colour).map(x=>named(names,x.id)).join(', '):'')+(mafia.length?'\n\nMafia jamoasi:\n'+mafia.join('\n'):'')};
+ return {text:'Sizning rolingiz: <b>'+escapeHtml(v2RoleLabel(p.role))+'</b>\n\n'+escapeHtml(roleDescription(p.role))+(p.colour?'\n\nJamoangiz: '+(p.colour==='RED'?'🔴 Qizillar':'🔵 Ko‘klar')+'\n'+s.players.filter(x=>x.id!==id&&x.colour===p.colour).map(x=>named(names,x.id)).join(', '):'')+(mafia.length?'\n\nMafia jamoasi:\n'+mafia.join('\n'):''),keyboard:[[{text:'🖼 Personaj rasmi',callback_data:encode({t:'menu',section:'v2art_'+REFERENCE_ROLES[V2_ROLES.indexOf(p.role)]!.id})}]]};
 }
 export function v2PrivatePhaseView(s:V2State,game:number,id:string,names:PlayerNames):V2View|null{
  const p=s.players.find(x=>x.id===id);if(!p||p.left)return null;
