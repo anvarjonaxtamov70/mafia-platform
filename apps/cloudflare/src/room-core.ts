@@ -49,7 +49,11 @@ import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './reg
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import {V2_DEFS,v2CanEndNight,v2NightSessionReady,type V2Mode} from '@mafia/game-engine';
-import {v2PublicPhaseView} from '@mafia/bot-core';
+import {decodeV2Button,v2PublicPhaseView} from '@mafia/bot-core';
+import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-hero-settlement';
+import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
+import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
+import type {GrenchBatchReceipt,GrenchDebit} from './role-v2-economy';
 import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
@@ -80,6 +84,9 @@ export interface RoomGame {
   /** Only explicit owner-controlled preview games use v2. */
   v2Mode?: V2Mode;
   v2Session?: V2RoomSession;
+  /** Persist the ledger choice: a missing dependency on reload must never downgrade to simulation. */
+  v2Ledger?: true;
+  v2DeferredMigration?: number;
   version: number;
   createdAt: number;
   startedAt?: number;
@@ -106,7 +113,9 @@ export type PendingOp =
   | { id: number; type: 'dmBlocked'; tgIds: number[] }
   | { id: number; type: 'running'; number: number; players: number }
   | { id: number; type: 'settleItems'; number: number; used: Record<string, string[]> }
-  | { id: number; type: 'releaseItems'; number: number };
+  | { id: number; type: 'releaseItems'; number: number }
+  | { id: number; type: 'v2Night'; number: number; pending: PendingV2NightSettlement }
+  | { id: number; type: 'v2Hero'; number: number; pending: PendingV2HeroShot };
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
@@ -148,7 +157,16 @@ export interface RoomStore {
   setAlarm(at: number | null): Promise<void>;
 }
 
+/** Internal dependency only. Production Worker deliberately does not inject this
+ * port until live rewards, item reservations and role settlement are complete.
+ */
+export interface V2SettlementPort {
+  snapshots(ids:number[]):Promise<Record<string,{defense:number;charges:number;damage:number}>>;
+  settleNight(game:number,round:number,debits:readonly GrenchDebit[]):Promise<GrenchBatchReceipt>;
+  settleHero(request:HeroV2ShotRequest):Promise<HeroV2ShotReceipt>;
+}
 export interface RoomDeps {
+  v2Settlement?: V2SettlementPort;
   store: RoomStore;
   registry: RegistryPort;
   telegram: Telegram;
@@ -232,7 +250,7 @@ export class RoomCore {
 
     for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
-    if(g?.status==='RUNNING'&&g.v2Session){const deadline=this.v2Due(g.v2Session);if(deadline!==null)candidates.push(deadline);}
+    if(g?.status==='RUNNING'&&g.v2Session&&!this.v2Pending(g.number)){const deadline=this.v2Due(g.v2Session);if(deadline!==null)candidates.push(deadline);}
     const next = candidates.length ? Math.min(...candidates) : null;
     if (next !== this.data.alarmAt) {
       this.data.alarmAt = next;
@@ -439,7 +457,7 @@ export class RoomCore {
       return { ok: true };
     }
     if(g.v2Session&&g.status==='RUNNING'){
-      if(g.v2Session.night)return {ok:false,error:'STALE_PHASE'};
+      if(g.v2Session.night||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
       let next:V2RoomTransition;
       try{next=v2RoomLeave(g.v2Session,tgId,this.now);}catch{return {ok:false,error:'NOT_JOINED'};}
       this.acceptV2(g,next);
@@ -598,6 +616,7 @@ export class RoomCore {
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
+    if(this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
     if(g.status==='LOBBY')this.closeLobby(g);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
     if(trigger!=='timeout')this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
@@ -622,6 +641,8 @@ export class RoomCore {
   async migrate(newChatId: number): Promise<void> {
     const g = this.data.game;
     if (g) {
+      // A committed external receipt must be reconciled before discarding the room.
+      if(this.v2Pending(g.number)){g.v2DeferredMigration=newChatId;await this.commit();return;}
       if(g.status==='LOBBY')this.closeLobby(g);
       this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
       this.data.game = null;
@@ -638,15 +659,26 @@ export class RoomCore {
    */
   private async startV2Preview(g:RoomGame,commandMessageId?:number):Promise<RoomResult>{
     if(!g.v2Mode||g.players.length<4||(g.v2Mode==='VS'&&g.players.length%2))return {ok:false,error:'NOT_ENOUGH',details:{min:4,count:g.players.length}};
+    const ledger=this.deps.v2Settlement;
+    if(ledger&&g.players.some(p=>p.fake))return {ok:false,error:'NOT_LOBBY'};
+    const snapshots=ledger?await ledger.snapshots(g.players.map(p=>p.id)):{};
+    if(this.data.game!==g||g.status!=='LOBBY')return {ok:false,error:'NOT_LOBBY'};
     const now=this.now;
     const next=createV2RoomSession(g.number,this.chatId,g.v2Mode,g.players,now,this.deps.rng);
+    if(ledger){
+      for(const p of next.room.state.players){const h=snapshots[p.id];if(h){p.heroDefense=h.defense;p.heroCharges=h.charges;p.heroDamage=h.damage;}}
+      g.v2Ledger=true;
+    }
     g.status='RUNNING';g.startedAt=now;g.deadline=null;g.silenceDead=true;g.silenceNight=true;
     this.closeLobby(g);
-    this.send(this.chatId,'🧪 V2 SINOV — '+g.v2Mode+'\nDollar, Olmos, geroy va reyting o‘zgarmaydi.');
+    this.send(this.chatId,'🧪 V2 SINOV — '+g.v2Mode+(ledger?'\nIchki test hisobi.':'\nDollar, Olmos, geroy va reyting o‘zgarmaydi.'));
     this.attachCommand(this.data.outbox.at(-1),commandMessageId);
     this.acceptV2(g,next);
     this.addOp({type:'running',number:g.number,players:g.players.length});
     await this.commit();return {ok:true};
+  }
+  private v2Pending(number:number):boolean{
+    return this.data.ops.some(op=>(op.type==='v2Night'||op.type==='v2Hero')&&op.number===number);
   }
   private v2Due(s:V2RoomSession):number|null{
     if(s.state.phase==='ENDED'){
@@ -667,23 +699,27 @@ export class RoomCore {
     this.data.game=null;
   }
   private tickV2(g:RoomGame){
-    const s=g.v2Session;if(!s)return;
+    const s=g.v2Session;if(!s||this.v2Pending(g.number))return;
     if(s.state.phase==='ENDED'){
       if(!Object.values(s.lastWords).some(w=>!w.sent&&w.until>this.now))this.finishV2(g);
       return;
     }
     const next=v2RoomTick(s,this.now,this.deps.rng);
     this.acceptV2(g,next);
-    // Preview only: never transfer real balances. No-money simulation falls back to HP.
     if(next.debits.length&&next.room.night){
-      const receipts=new Map(next.debits.map(d=>[d.key,'INSUFFICIENT' as const]));
-      this.acceptV2(g,v2RoomTick(next.room,this.now,this.deps.rng,receipts));
+      this.addOp({type:'v2Night',number:g.number,pending:prepareV2NightSettlement(next.room,this.now)});
     }
   }
   async v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>{
     const g=this.data.game;
-    if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING')return {ok:false,error:'STALE_PHASE'};
+    if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING'||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
     try{
+      if(decodeV2Button(input.raw)?.op==='H'){
+        if(!g.v2Ledger||!this.deps.v2Settlement)return {ok:false,error:'STALE_PHASE'};
+        const pending=prepareV2HeroShot(g.v2Session,input.tgId,input.privateChatId,input.raw,this.now);
+        this.addOp({type:'v2Hero',number:g.number,pending});
+        await this.commit();return {ok:true};
+      }
       const next=v2RoomButton(g.v2Session,input.tgId,input.privateChatId,input.raw,this.now);
       this.acceptV2(g,next);
       const due=this.v2Due(next.room);
@@ -909,6 +945,7 @@ export class RoomCore {
   async relayMafia(input: { tgId: number; text: string }): Promise<boolean> {
     const g = this.data.game;
     if(g?.v2Session&&g.status==='RUNNING'){
+      if(this.v2Pending(g.number))return false;
       const v=g.v2Session,id=String(input.tgId),me=v.state.players.find(p=>p.id===id);
       if(!me)return false;
       const word=v.lastWords[id];
@@ -981,7 +1018,10 @@ export class RoomCore {
     await this.processOps();
     this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
-    if(g2?.status==='RUNNING'&&g2.v2Session){const due=this.v2Due(g2.v2Session);if(due!==null&&due<=this.now)this.tickV2(g2);}
+    if(g2?.status==='RUNNING'&&g2.v2Session&&!this.v2Pending(g2.number)){
+      const due=this.v2Due(g2.v2Session);
+      if(due!==null&&due<=this.now){this.tickV2(g2);await this.deps.store.save(this.data);}
+    }
     if (g2?.status === 'RUNNING' && g2.state?.phaseEndsAt && g2.state.phaseEndsAt <= this.now + 500) {
       const seq = g2.state.phaseSeq;
       await this.mutate(null, (s, now, rng) => advancePhase(s, now, rng, seq));
@@ -1043,6 +1083,26 @@ export class RoomCore {
           case 'releaseItems':
             await this.deps.registry.releaseArcade(op.number);
             break;
+          case 'v2Night': {
+            const g=this.data.game;
+            if(!g||g.number!==op.number||!g.v2Session)throw Error('missing night settlement room');
+            const p=op.pending,ledger=this.deps.v2Settlement;
+            if(g.v2Ledger&&!ledger)throw Error('v2 ledger unavailable');
+            const receipt:GrenchBatchReceipt=g.v2Ledger
+              ?await ledger!.settleNight(p.game,p.round,p.debits)
+              :{status:'OK',game:p.game,round:p.round,entries:p.debits.map(d=>({...d,status:'INSUFFICIENT' as const}))};
+            if(this.data.game!==g||!g.v2Session)throw Error('settlement room changed');
+            this.acceptV2(g,finalizeV2NightSettlement(g.v2Session,p,receipt,this.now));
+            break;
+          }
+          case 'v2Hero': {
+            const g=this.data.game,ledger=this.deps.v2Settlement;
+            if(!g||g.number!==op.number||!g.v2Session||!g.v2Ledger||!ledger)throw Error('hero settlement unavailable');
+            const receipt=await ledger.settleHero(op.pending.request);
+            if(this.data.game!==g||!g.v2Session)throw Error('settlement room changed');
+            this.acceptV2(g,finalizeV2HeroShot(g.v2Session,op.pending,receipt));
+            break;
+          }
         }
       } catch {
         const failures = Math.min(6, (this.data.opsFailures ?? 0) + 1);
@@ -1055,7 +1115,10 @@ export class RoomCore {
       this.data.ops = this.data.ops.filter((x) => x.id !== op.id);
       delete this.data.opsRetryAt;
       delete this.data.opsFailures;
+      // The receipt, new room state, outbox and removed pending operation are one durable write.
       await this.deps.store.save(this.data);
+      const migrated=this.data.game;
+      if(migrated?.v2DeferredMigration!==undefined&&!this.v2Pending(migrated.number))await this.migrate(migrated.v2DeferredMigration);
     }
   }
 
@@ -1190,7 +1253,7 @@ export class RoomCore {
   async forceDeadline(): Promise<void> {
     const g = this.data.game;
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) g.state.phaseEndsAt = this.now;
-    if(g?.v2Session){if(g.v2Session.night)g.v2Session.night.deadline=this.now;else if(g.v2Session.state.deadline!==null)g.v2Session.state.deadline=this.now;}
+    if(g?.v2Session&&!this.v2Pending(g.number)){if(g.v2Session.night)g.v2Session.night.deadline=this.now;else if(g.v2Session.state.deadline!==null)g.v2Session.state.deadline=this.now;}
     await this.alarm();
   }
 }

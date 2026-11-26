@@ -5,7 +5,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { seededRng } from '@mafia/game-engine';
 import { RegistryCore, type Sql } from '../registry-core';
-import { RoomCore, type RegistryPort, type RoomData, type RoomStore } from '../room-core';
+import { RoomCore, type RegistryPort, type RoomData, type RoomStore, type V2SettlementPort } from '../room-core';
 import { Router, type RegistryApi, type RoomApi, type TgUpdate } from '../router';
 import { reentrantTx } from '../sql';
 import { TgError, type Telegram } from '../telegram';
@@ -126,16 +126,22 @@ export class World {
   rng = seededRng(5);
   devFake = false;
   visuals = false;
+  v2Settlement:V2SettlementPort|undefined;
   admins = new Set<number>([1]);
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean; v2Ledger?:boolean } = {}) {
     this.devFake = !!opts.devFake;
     this.visuals = !!opts.visuals;
     this.starsMode = opts.starsMode ?? 'admins';
     this.registryCore = new RegistryCore(sqliteSql(), () => this.now, opts.ownerBenefits ? this.admins : undefined);
     this.registryCore.migrate();
+    if(opts.v2Ledger)this.v2Settlement={
+      snapshots:async ids=>Object.fromEntries(ids.flatMap(id=>{const h=this.registryCore.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];})),
+      settleNight:async (game,round,debits)=>this.registryCore.roleV2Economy.settleGrenchBatch(game,round,debits),
+      settleHero:async request=>this.registryCore.heroV2.settleShot(request),
+    };
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({
       tg: this.tg,
@@ -168,6 +174,7 @@ export class World {
         botUsername: () => 'test_mafia_bot',
         devFakePlayers: this.devFake,
         visuals: this.visuals,
+        ...(this.v2Settlement?{v2Settlement:this.v2Settlement}:{}),
       });
       this.rooms.set(chatId, core);
     }
