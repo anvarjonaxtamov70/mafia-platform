@@ -48,6 +48,9 @@ import { escapeHtml, t } from '@mafia/localization';
 import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
+import {V2_DEFS,v2CanEndNight,v2NightSessionReady,type V2Mode} from '@mafia/game-engine';
+import {v2PublicPhaseView} from '@mafia/bot-core';
+import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
 
@@ -74,6 +77,9 @@ export interface RoomGame {
   deadline: number | null;
   players: RoomPlayer[];
   state: GameState | null;
+  /** Only explicit owner-controlled preview games use v2. */
+  v2Mode?: V2Mode;
+  v2Session?: V2RoomSession;
   version: number;
   createdAt: number;
   startedAt?: number;
@@ -226,6 +232,7 @@ export class RoomCore {
 
     for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
+    if(g?.status==='RUNNING'&&g.v2Session){const deadline=this.v2Due(g.v2Session);if(deadline!==null)candidates.push(deadline);}
     const next = candidates.length ? Math.min(...candidates) : null;
     if (next !== this.data.alarmAt) {
       this.data.alarmAt = next;
@@ -336,7 +343,7 @@ export class RoomCore {
 
   // ───────────────────────────── Lobby ─────────────────────────────
 
-  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean; commandMessageId?:number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>> {
+  async createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; v2Mode?: V2Mode; quick?: boolean; commandMessageId?:number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>> {
     if (input.host.banned) return { ok: false, error: 'BANNED' };
     if (this.data.game) return this.refreshLobby(this.data.game,input.commandMessageId);
     const settings = await this.deps.registry.getSettings(this.chatId);
@@ -353,7 +360,8 @@ export class RoomCore {
       number,
       status: 'LOBBY',
       mode,
-      config,
+      ...(input.v2Mode?{v2Mode:input.v2Mode}:{}),
+      config:input.v2Mode?{...config,minPlayers:4,maxPlayers:30}:config,
       silenceDead: settings.silenceDead,
       silenceNight: settings.silenceNight,
       hostId: input.host.id,
@@ -519,6 +527,8 @@ export class RoomCore {
       return { ok: false, error: 'DM_FAILED', details: { names: removed.map((p) => p.name).join(', ') } };
     }
 
+    if(g.v2Mode)return this.startV2Preview(g,trigger.commandMessageId);
+
     // Arcade: yoqilgan buyumlar band qilinadi (har turdan bittadan, §18.1)
     let items: Record<string, { shield: boolean; fakeDocument: boolean; voteShield?: boolean; heroShot?: boolean; heroShield?: boolean }> = {};
     if (g.config.allowArcadeItems) {
@@ -612,6 +622,66 @@ export class RoomCore {
   }
 
   // ───────────────────────────── O'yin ─────────────────────────────
+
+  /** Preview uses real durable rooms and Telegram, but no wallet or rating changes.
+   * It must remain opt-in until production receipts and result migration are ready.
+   */
+  private async startV2Preview(g:RoomGame,commandMessageId?:number):Promise<RoomResult>{
+    if(!g.v2Mode||g.players.length<4||(g.v2Mode==='VS'&&g.players.length%2))return {ok:false,error:'NOT_ENOUGH',details:{min:4,count:g.players.length}};
+    const now=this.now;
+    const next=createV2RoomSession(g.number,this.chatId,g.v2Mode,g.players,now,this.deps.rng);
+    g.status='RUNNING';g.startedAt=now;g.deadline=null;g.silenceDead=true;g.silenceNight=true;
+    this.closeLobby(g);
+    this.send(this.chatId,'🧪 V2 SINOV — '+g.v2Mode+'\nDollar, Olmos, geroy va reyting o‘zgarmaydi.');
+    this.attachCommand(this.data.outbox.at(-1),commandMessageId);
+    this.acceptV2(g,next);
+    this.addOp({type:'running',number:g.number,players:g.players.length});
+    await this.commit();return {ok:true};
+  }
+  private v2Due(s:V2RoomSession):number|null{
+    if(s.state.phase==='ENDED'){
+      const pending=Object.values(s.lastWords).filter(w=>!w.sent&&w.until>this.now);
+      return pending.length?Math.max(...pending.map(w=>w.until)):this.now;
+    }
+    if(s.night&&v2NightSessionReady(s.night,this.now))return this.now;
+    if(!s.night&&v2CanEndNight(s.state))return this.now;
+    return v2RoomDeadline(s);
+  }
+  private acceptV2(g:RoomGame,next:V2RoomTransition){
+    g.v2Session=next.room;g.version++;
+    const fakes=new Set(g.players.filter(p=>p.fake).map(p=>p.id));
+    this.enqueue(next.outbox.filter(o=>!fakes.has(Number(o.chatId))));
+  }
+  private finishV2(g:RoomGame){
+    this.addOp({type:'releaseGame',number:g.number,status:'FINISHED'});
+    this.data.game=null;
+  }
+  private tickV2(g:RoomGame){
+    const s=g.v2Session;if(!s)return;
+    if(s.state.phase==='ENDED'){
+      if(!Object.values(s.lastWords).some(w=>!w.sent&&w.until>this.now))this.finishV2(g);
+      return;
+    }
+    const next=v2RoomTick(s,this.now,this.deps.rng);
+    this.acceptV2(g,next);
+    // Preview only: never transfer real balances. No-money simulation falls back to HP.
+    if(next.debits.length&&next.room.night){
+      const receipts=new Map(next.debits.map(d=>[d.key,'INSUFFICIENT' as const]));
+      this.acceptV2(g,v2RoomTick(next.room,this.now,this.deps.rng,receipts));
+    }
+  }
+  async v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>{
+    const g=this.data.game;
+    if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING')return {ok:false,error:'STALE_PHASE'};
+    try{
+      const next=v2RoomButton(g.v2Session,input.tgId,input.privateChatId,input.raw,this.now);
+      this.acceptV2(g,next);
+      const due=this.v2Due(next.room);
+      if(due!==null&&due<=this.now)this.tickV2(g);
+      await this.commit();return {ok:true};
+    }catch{return {ok:false,error:'STALE_PHASE'};}
+  }
+
 
   private postProcess(state: GameState, events: GameEvent[], fakes: ReadonlySet<string>, playedSeq: number, now: number): { state: GameState; events: GameEvent[] } {
     let s = state;
@@ -828,6 +898,15 @@ export class RoomCore {
   /** Tunda Mafia a'zosining xabari tirik jamoadoshlariga (§8). */
   async relayMafia(input: { tgId: number; text: string }): Promise<boolean> {
     const g = this.data.game;
+    if(g?.v2Session&&g.status==='RUNNING'){
+      const v=g.v2Session,id=String(input.tgId),me=v.state.players.find(p=>p.id===id);
+      if(!me)return false;
+      const word=v.lastWords[id];
+      if(word&&!word.sent&&word.until>this.now){try{this.acceptV2(g,v2RoomLastWord(v,input.tgId,input.text,this.now));await this.commit();return true;}catch{return false;}}
+      if(v.state.phase!=='NIGHT'||me.hp<=0||me.left||me.blockedUntil>=v.state.round||V2_DEFS[me.role].faction!=='MAFIA')return false;
+      for(const p of v.state.players)if(p.id!==id&&p.hp>0&&!p.left&&p.blockedUntil<v.state.round&&V2_DEFS[p.role].faction==='MAFIA'&&!g.players.some(u=>u.fake&&String(u.id)===p.id))this.send(Number(p.id),t('dm.mafia_chat',{name:escapeHtml(v.names[id]??'O‘yinchi'),text:escapeHtml(input.text.slice(0,1000))}));
+      await this.commit();return true;
+    }
     const s = g?.state;
     if (!g || !s || g.status !== 'RUNNING' || s.phase !== 'NIGHT') return false;
     const me = s.players.find((p) => p.id === String(input.tgId));
@@ -843,6 +922,9 @@ export class RoomCore {
 
   silenceSnapshot(): SilenceSnapshot {
     const g = this.data.game;
+    if(g?.v2Session&&g.status==='RUNNING'&&g.v2Session.state.phase!=='ENDED'){
+      const s=g.v2Session.state;return {running:true,phase:s.phase,players:g.players.map(p=>p.id),alive:s.players.filter(p=>p.hp>0&&!p.left&&p.blockedUntil<s.round).map(p=>Number(p.id)),silenceDead:true,silenceNight:true,until:this.now+1000};
+    }
     const s = g?.state;
     if (!g || !s || g.status !== 'RUNNING') {
       return { running: false, phase: null, players: [], alive: [], silenceDead: false, silenceNight: false, until: this.now + 30_000 };
@@ -867,6 +949,7 @@ export class RoomCore {
         list: g.players.map((p, i) => `${i + 1}. ${escapeHtml(p.name)}`).join('\n') || t('lobby.empty_list'),
       });
     }
+    if(g.v2Session)return v2PublicPhaseView(g.v2Session.state,g.v2Session.names).text;
     const s = g.state!;
     const alive = s.players.filter((p) => p.status === 'ALIVE');
     return t('game.status', {
@@ -888,6 +971,7 @@ export class RoomCore {
     await this.processOps();
     this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
+    if(g2?.status==='RUNNING'&&g2.v2Session){const due=this.v2Due(g2.v2Session);if(due!==null&&due<=this.now)this.tickV2(g2);}
     if (g2?.status === 'RUNNING' && g2.state?.phaseEndsAt && g2.state.phaseEndsAt <= this.now + 500) {
       const seq = g2.state.phaseSeq;
       await this.mutate(null, (s, now, rng) => advancePhase(s, now, rng, seq));
@@ -1096,6 +1180,7 @@ export class RoomCore {
   async forceDeadline(): Promise<void> {
     const g = this.data.game;
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) g.state.phaseEndsAt = this.now;
+    if(g?.v2Session){if(g.v2Session.night)g.v2Session.night.deadline=this.now;else if(g.v2Session.state.deadline!==null)g.v2Session.state.deadline=this.now;}
     await this.alarm();
   }
 }

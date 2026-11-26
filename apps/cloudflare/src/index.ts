@@ -28,6 +28,8 @@ export interface Env {
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
+  /** Explicit owner-only, no-economy v2 preview. Off by default. */
+  V2_PREVIEW?: string;
   VISUAL_MEDIA?: string;
   /** Telegram Stars: off | admins | all (standart: admins) */
   STARS_MODE?: string;
@@ -294,6 +296,7 @@ const ROOM_METHODS = [
   'start',
   'cancel',
   'devFill',
+  'v2Button',
   'nightAction',
   'skip',
   'mafiaVote',
@@ -403,6 +406,7 @@ function getRouter(env: Env): Router {
       room: (chatId) => roomApi(env, chatId),
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
+      v2Preview: env.V2_PREVIEW === 'true',
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),

@@ -51,6 +51,8 @@ import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
+import {decodeV2Button} from '@mafia/bot-core';
+import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
 
@@ -150,7 +152,7 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean; commandMessageId?: number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; v2Mode?: V2Mode; quick?: boolean; commandMessageId?: number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
   join(user: UserInfo, number?: number, commandMessageId?: number): Promise<RoomResult<{ title: string }>>;
   leave(tgId: number, number?: number): Promise<RoomResult>;
   leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult>;
@@ -158,6 +160,7 @@ export interface RoomApi {
   cancel(trigger: { by: number; isAdmin: boolean; commandMessageId?: number }, text?: string, number?: number): Promise<RoomResult>;
   cleanupCommand(messageId: number): Promise<void>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
+  v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
   mafiaVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>>;
@@ -177,6 +180,7 @@ export interface RouterDeps {
   room(chatId: number): RoomApi;
   admins: ReadonlySet<number>;
   devFake: boolean;
+  v2Preview?: boolean;
   visuals?: boolean;
   /** Telegram Stars: off | admins (faqat bot egalari sinaydi) | all */
   starsMode: StarsMode;
@@ -513,7 +517,10 @@ export class Router {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = anonymous ? { id: chatId, name: m.chat.title ?? 'Guruh administratori', dmAvailable: false, banned: false, badge: '' } : await this.d.registry.upsertUser(from, false);
         const arg = c.args.toUpperCase() as GameMode;
-        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(replyTo ? {commandMessageId:replyTo}:{}), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
+        const preview=c.cmd==='game'&&c.args.toLowerCase().startsWith('v2');
+        const v2Mode=c.args.slice(2).toUpperCase() as V2Mode;
+        if(preview&&(!this.d.v2Preview||!this.isSuperadmin(from.id)||anonymous||!V2_MODES.includes(v2Mode)))return this.reply(chatId,'V2 sinov rejimi mavjud emas.',undefined,replyTo);
+        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(replyTo ? {commandMessageId:replyTo}:{}), ...(preview?{v2Mode}:{}), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
         if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
@@ -622,6 +629,15 @@ export class Router {
 
   private async onCallback(cb: TgCallback): Promise<void> {
     const from = cb.from;
+    if(cb.data?.startsWith('v2:')){
+      const button=decodeV2Button(cb.data);
+      if(!button||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+      if(!this.clicks.allow('cb:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
+      const room=await this.roomOfGame(button.game);
+      if(!room)return this.answer(cb,t('cb.stale'));
+      const result=await room.v2Button({tgId:from.id,privateChatId:cb.message.chat.id,number:button.game,raw:cb.data});
+      return this.answer(cb,result.ok?'Qabul qilindi':t('cb.stale'));
+    }
     const data = cb.data ? decode(cb.data) : null;
     if (!data || from.is_bot) return this.answer(cb, t('cb.stale'));
     // Private menus, economy and deletion must never be invoked from a group or another user's message.

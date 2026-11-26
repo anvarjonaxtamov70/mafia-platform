@@ -108,3 +108,7 @@ Added transactional Grench transfers (real virtual balance only; no owner allowa
 
 ## Serializable room session checkpoint
 Added standalone v2 room transitions with native Telegram outbox drafts, phase/deadline/game/actor checks, private response handling, deterministic timer progression, last words (one message, 29 seconds) and silence decisions. JSON snapshot reload is tested. This is an adapter building block, not live RoomCore integration: production dispatch remains on v1. Remaining critical work: use authoritative Registry receipts and durable room/outbox transaction ordering, integrate mode settings/lobby, group membership and last-word routing after match end, result statistics and hero shop/UI, and verify real Telegram E2E. No merge.
+
+
+## Owner-only real Telegram preview checkpoint
+Cloudflare RoomCore now optionally runs the v2 room session inside the existing lobby, durable storage, alarms and Telegram outbox. Off by default; enabled only by V2_PREVIEW=true, with owner-only explicit /game v2classic, v2zombie, v2hypernova, v2vs. Normal /game remains v1. Preview is clearly announced, no real wallet, hero or rating changes, Grench money path simulates insufficient funds; Klaus/Seller effects are not delivered as live purchases. Existing /stop, membership claim, DM probes and stale callback checks are preserved. Added integration tests for disabled gate, real router/lobby/callback/timer and cancellation. Production integration remains blocked on real economy/hero reconciliation and result migration, not solved by preview. Do not merge.

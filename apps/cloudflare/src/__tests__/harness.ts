@@ -130,7 +130,7 @@ export class World {
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean } = {}) {
     this.devFake = !!opts.devFake;
     this.visuals = !!opts.visuals;
     this.starsMode = opts.starsMode ?? 'admins';
@@ -143,6 +143,7 @@ export class World {
       room: (chatId) => this.roomApi(chatId),
       admins: this.admins,
       devFake: this.devFake,
+      v2Preview: !!opts.v2Preview,
       visuals: this.visuals,
       starsMode: this.starsMode,
       botUsername: async () => 'test_mafia_bot',
