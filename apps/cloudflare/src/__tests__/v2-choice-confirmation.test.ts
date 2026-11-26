@@ -1,0 +1,43 @@
+import {describe,it,expect} from 'vitest';
+import {decodeV2Button} from '@mafia/bot-core';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+
+describe('durable V2 one-time private selection',()=>{
+ it('edits the exact sent prompt, preserves the selected name, survives restart and emits one role-only event',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  let core=await w.loaded(GROUP);
+  const n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const state=()=>core.data.game!.v2Session!.state;
+  const don=Number(state().players.find(p=>p.role==='DON')!.id);
+  const target=state().players.find(p=>p.role==='CITIZEN')!;
+  const seat=state().players.indexOf(target)+1;
+  const key='v2choice:'+n+':'+state().seq+':'+don+':phase';
+  const prompt=core.data.refs[key]!;
+  expect(prompt.chatId).toBe(don);
+  const all=w.tg.sent(don).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>b.callback_data??'');
+  const raw=all.find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.op==='C'&&b.seat===seat;})!;
+  const other=all.find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.op==='K';})!;
+  expect(raw).toBeTruthy();expect(other).toBeTruthy();
+  await w.send(callback(don,raw));
+  expect(state().intents).toEqual([{actor:String(don),target:target.id,kind:'CHOOSE'}]);
+  const edits=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===don&&c.params.message_id===prompt.messageId);
+  expect(edits).toHaveLength(1);
+  expect(edits[0]!.params.text).toContain('Harakatingizni tanlang.');
+  expect(edits[0]!.params.text).toContain('Sizning tanlovingiz:');
+  expect(edits[0]!.params.text).toContain('U'+target.id);
+  const keyboard=edits[0]!.params.reply_markup as {inline_keyboard:{callback_data?:string;url?:string}[][]};
+  expect(keyboard.inline_keyboard.flat().every(b=>!b.callback_data)).toBe(true);
+  const events=()=>w.tg.texts(GROUP).filter(t=>t.includes('o‘z o‘ljasini tanladi.'));
+  expect(events()).toHaveLength(1);expect(events()[0]).not.toContain('U'+target.id);
+  expect(events()[0]).not.toContain('U'+don);
+  w.restart(GROUP);core=await w.loaded(GROUP);
+  await w.advance(1000);
+  await w.send(callback(don,other));
+  expect(state().intents).toEqual([{actor:String(don),target:target.id,kind:'CHOOSE'}]);
+  expect(events()).toHaveLength(1);
+ });
+});
