@@ -40,7 +40,7 @@ describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
   expect(r.eco.coins(3)).toBe(200-amount);
   expect(core.data.game!.v2Session!.state.phase).toBe('NIGHT');
   expect((await core.leave(3)).ok).toBe(false);
-  expect((await core.cancel({by:1,isAdmin:true})).ok).toBe(false);
+  expect((await core.cancel({by:2,isAdmin:false})).ok).toBe(false);
   w.restart(GROUP);
   await w.advance(2100);
   const restored=await w.loaded(GROUP);
@@ -50,6 +50,27 @@ describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
   expect(restored.data.game!.v2Session!.state.phase).toBe('DAWN');
   expect(restored.data.game!.v2Session!.state.players[2]?.hp).toBe(100);
   expect(r.eco.coins(3)).toBe(200-amount);expect(r.eco.coins(2)).toBe(amount);
+ });
+ it('admin stop persists across a lost committed receipt and restart',async()=>{
+  const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
+  s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;
+  const raw=encodeV2Button({game:n,seq:2,op:'H',seat:2});
+  const original=w.v2Settlement!.settleHero;let calls=0;
+  w.v2Settlement!.settleHero=async request=>{
+    const receipt=await original(request);
+    if(++calls===1)throw Error('lost response');
+    return receipt;
+  };
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(true);
+  await w.runAlarms();
+  expect(calls).toBe(1);expect(r.heroV2.view(1)?.charges).toBe(9);
+  expect((await core.cancel({by:2,isAdmin:false})).ok).toBe(false);
+  expect((await core.cancel({by:1,isAdmin:true})).ok).toBe(true);
+  expect(w.stores.get(GROUP)!.data?.game?.v2DeferredStop).toBe(true);
+  w.restart(GROUP);await w.advance(2100);
+  expect(calls).toBe(2);
+  expect((await w.loaded(GROUP)).data.game).toBeNull();
+  expect(r.heroV2.view(1)?.charges).toBe(9);expect(r.activeOf(1)).toBeNull();
  });
  it('Klaus gift and Seller offer resolve through night queue even without Grench',async()=>{
   const {w,r,core,n,s}=await start(['DON','KLAUS','SELLER','CITIZEN']);

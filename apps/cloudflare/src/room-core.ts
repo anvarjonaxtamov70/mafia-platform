@@ -90,6 +90,7 @@ export interface RoomGame {
   /** Persist the ledger choice: a missing dependency on reload must never downgrade to simulation. */
   v2Ledger?: true;
   v2DeferredMigration?: number;
+  v2DeferredStop?:true;
   v2Offers?: V2SellerOffer[];
   v2FinishedAt?:number;
   version: number;
@@ -242,8 +243,7 @@ export class RoomCore {
       alarmAt: null,
     };
     if(this.clearLegacyLobbyTimer())await this.commit();
-    const deferred=this.data.game;
-    if(deferred?.v2DeferredMigration!==undefined&&!this.v2Pending(deferred.number))await this.migrate(deferred.v2DeferredMigration);
+    await this.resumeV2Deferred();
   }
 
   private get now(): number {
@@ -265,7 +265,7 @@ export class RoomCore {
     for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
     if (g?.status === 'RUNNING' && g.state?.phaseEndsAt) candidates.push(g.state.phaseEndsAt);
     if(g?.status==='RUNNING'&&g.v2Session&&!this.v2Pending(g.number)){
-      const deadline=g.v2DeferredMigration!==undefined?this.now:this.v2Due(g.v2Session);
+      const deadline=g.v2DeferredMigration!==undefined||g.v2DeferredStop?this.now:this.v2Due(g.v2Session);
       if(deadline!==null)candidates.push(deadline);
     }
     const next = candidates.length ? Math.min(...candidates) : null;
@@ -633,7 +633,16 @@ export class RoomCore {
     if (!g || (number !== undefined && g.number !== number)) return { ok: false, error: 'NOT_FOUND' };
     if (trigger !== 'timeout' && !trigger.isAdmin) return { ok: false, error: 'NO_PERMISSION' };
     if (g.status === 'RUNNING' && (trigger === 'timeout' || !trigger.isAdmin)) return { ok: false, error: 'NO_PERMISSION' };
-    if(this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
+    if(g.v2Session?.state.phase==='ENDED')return {ok:false,error:'STALE_PHASE'};
+    if(this.v2Pending(g.number)){
+      if(trigger==='timeout'||!g.v2Session)return {ok:false,error:'STALE_PHASE'};
+      if(!g.v2DeferredStop){
+        g.v2DeferredStop=true;
+        this.send(this.chatId,'⏳ Hisob-kitob tekshirilgach o‘yin xavfsiz bekor qilinadi.');
+        this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
+      }
+      await this.commit();return {ok:true};
+    }
     if(g.status==='LOBBY')this.closeLobby(g);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
     if(trigger!=='timeout')this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
@@ -698,6 +707,17 @@ export class RoomCore {
     else this.addOp({type:'running',number:g.number,players:g.players.length});
     await this.commit();return {ok:true};
   }
+  /** Deferred commands survive restarts. Never discard an uncertain debit or shot. */
+  private async resumeV2Deferred():Promise<void>{
+    const g=this.data.game;
+    if(!g||this.v2Pending(g.number))return;
+    if(g.v2DeferredMigration!==undefined){await this.migrate(g.v2DeferredMigration);return;}
+    if(g.v2DeferredStop){
+      // If the reconciled action naturally ended the match, preserve the result.
+      if(g.v2Session?.state.phase==='ENDED'){delete g.v2DeferredStop;await this.commit();return;}
+      await this.cancel({by:g.hostId,isAdmin:true});
+    }
+  }
   private v2Pending(number:number):boolean{
     return this.data.ops.some(op=>(op.type==='v2Night'||op.type==='v2Hero'||op.type==='v2Buy'||op.type==='v2Record'||op.type==='v2Running')&&op.number===number);
   }
@@ -739,7 +759,7 @@ export class RoomCore {
   }
   async v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string}):Promise<RoomResult>{
     const g=this.data.game;
-    if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING'||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
+    if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING'||g.v2DeferredStop||g.v2DeferredMigration!==undefined||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
     try{
       if(input.raw.startsWith('v2s:')){
         const button=decodeSellerButton(input.raw),s=g.v2Session.state;
@@ -1053,8 +1073,7 @@ export class RoomCore {
     this.externalCalls = 0;
     this.data.alarmAt = null;
     await this.processOps();
-    const deferred=this.data.game;
-    if(deferred?.v2DeferredMigration!==undefined&&!this.v2Pending(deferred.number))await this.migrate(deferred.v2DeferredMigration);
+    await this.resumeV2Deferred();
     this.clearLegacyLobbyTimer();
     const g2 = this.data.game;
     if(g2?.status==='RUNNING'&&g2.v2Session&&!this.v2Pending(g2.number)){
@@ -1241,8 +1260,7 @@ export class RoomCore {
       delete this.data.opsFailures;
       // The receipt, new room state, outbox and removed pending operation are one durable write.
       await this.deps.store.save(this.data);
-      const migrated=this.data.game;
-      if(migrated?.v2DeferredMigration!==undefined&&!this.v2Pending(migrated.number))await this.migrate(migrated.v2DeferredMigration);
+      await this.resumeV2Deferred();
     }
   }
 
