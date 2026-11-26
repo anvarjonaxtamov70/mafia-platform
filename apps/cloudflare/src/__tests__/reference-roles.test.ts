@@ -2,13 +2,13 @@ import {describe,it,expect} from 'vitest';
 import {REFERENCE_ROLES,referenceRolesView,referenceRoleDetail,decode} from '@mafia/bot-core';
 import {World,privateText,callback,GROUP} from './harness';
 describe('reference catalogue draft',()=>{
-  it('exact order, 28 unique entries, 14 two-column rows, bounded callbacks',()=>{
-    const ids='citizen don mafia manyak komissar doktor serjant daydi frozen advokat suidsid killer kamikaze grench minior shpion zombi kimyogar tentak buqalamun sotuvchi krampous omadli klaus sehrgar mergan janob qoy'.split(' ');
+  it('exact order, 27 unique entries, 13 two-column rows and one final row, bounded callbacks',()=>{
+    const ids='citizen don mafia manyak komissar doktor serjant daydi frozen advokat suidsid killer kamikaze grench minior shpion zombi kimyogar tentak buqalamun sotuvchi krampous omadli klaus sehrgar mergan janob'.split(' ');
     expect(REFERENCE_ROLES.map(r=>r.id)).toEqual(ids);
     const view=referenceRolesView();
     expect(view.keyboard).toHaveLength(14);
     for(const row of view.keyboard){
-      expect(row).toHaveLength(2);
+      expect(row).toHaveLength(row===view.keyboard.at(-1)?1:2);
       for(const b of row){
         if(!('callback_data' in b))throw Error('unexpected link');
         expect(Buffer.byteLength(b.callback_data,'utf8')).toBeLessThanOrEqual(64);
@@ -25,6 +25,7 @@ describe('reference catalogue draft',()=>{
     const msg=w.tg.sent(2).at(-1)!;
     expect(msg.params['text']).toBe("Rollar ro'yhati:");
     for(const role of REFERENCE_ROLES){
+      await w.advance(3100);
       const section='ref_'+role.id;
       const detail=referenceRoleDetail(section)!;
       const before=w.tg.calls.length;
@@ -34,6 +35,7 @@ describe('reference catalogue draft',()=>{
       else expect(calls.some(c=>c.method==='sendMessage'&&c.params['chat_id']===2)).toBe(true);
       expect(calls.some(c=>c.method==='editMessageText')).toBe(false);
     }
+    await w.advance(3100);
     const before=w.tg.calls.length;
     await w.send(callback(2,'m:ref_krampous',GROUP));
     await w.send(callback(2,'m:ref_invalid'));

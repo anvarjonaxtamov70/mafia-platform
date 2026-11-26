@@ -31,13 +31,13 @@ export const REFERENCE_ROLES = [
     "id": "komissar",
     "emoji": "🕵🏻",
     "name": "Komissar",
-    "description": "Shaharning asosiy himoyachisisiz va mafiyaga qarshi kurashasiz."
+    "description": "Har tun bitta harakat: o‘yinchining aniq rolini tekshirish yoki unga hujum qilish. Serjant harakatlaringizdan xabardor bo‘ladi."
   },
   {
     "id": "doktor",
     "emoji": "👨🏼‍⚕️",
     "name": "Doktor",
-    "description": "Tunda bir o‘yinchini qutqarishingiz mumkin."
+    "description": "Tunda tanlangan o‘yinchini barcha hujumlardan qutqarasiz. O‘zingizni o‘yinda bir marta, boshqalarni ketma-ket davolashingiz mumkin."
   },
   {
     "id": "serjant",
@@ -49,25 +49,25 @@ export const REFERENCE_ROLES = [
     "id": "daydi",
     "emoji": "🧙",
     "name": "Daydi",
-    "description": "Bir o‘yinchining uyiga borib, qotillikka guvoh bo‘lishingiz mumkin."
+    "description": "Tanlangan uyga borasiz. Qotillikka guvoh bo‘lsangiz, hujumchining ismi va rolini bilasiz."
   },
   {
     "id": "frozen",
     "emoji": "❄️",
     "name": "Frozen",
-    "description": "Maqsadingiz tirik qolish. Tashrif buyurgan o‘yinchingiz bir kun uxlaydi."
+    "description": "Tinch tarafdasiz. Tanlangan o‘yinchi bir kun barcha harakatlardan mahrum bo‘ladi. O‘zingizni va ayni nishonni ketma-ket tanlay olmaysiz."
   },
   {
     "id": "advokat",
     "emoji": "👨🏼‍💼",
     "name": "Advokat",
-    "description": "Mafia tarafidasiz. Tunda tanlagan mafia a’zongiz Komissarga tinch aholi bo‘lib ko‘rinadi."
+    "description": "Mafia tarafidasiz. Tanlangan mafia a’zosi tekshiruvda tinch aholi ko‘rinadi. Himoyangizdagi nomzod osilishdan qutuladi."
   },
   {
     "id": "suidsid",
     "emoji": "🪦",
     "name": "Suidsid",
-    "description": "Kunduzgi osish orqali o‘yindan chiqarilsangiz, g‘alaba qozonasiz."
+    "description": "Faqat kunduzgi osish orqali o‘yindan chiqarilsangiz g‘alaba qozonasiz. O‘zingizga ovoz bera olmaysiz."
   },
   {
     "id": "killer",
@@ -79,37 +79,37 @@ export const REFERENCE_ROLES = [
     "id": "kamikaze",
     "emoji": "💣",
     "name": "Kamikaze",
-    "description": "Tinchlarga yordam berasiz. Tunda halok bo‘lsangiz, hujumchi ham halok bo‘ladi. Kunduz osilsangiz, bir o‘yinchini tanlab olib ketishingiz mumkin."
+    "description": "Kunduz osilsangiz, bir o‘yinchini olib ketib yutasiz. Tunda halok bo‘lsangiz, barcha hujumchilar ham halok bo‘ladi. Komissar hujum qilgan bo‘lsa yutqazasiz. Tirik qolsangiz ham yutqazasiz. Geroy egasiga qasos tatbiq etilmaydi."
   },
   {
     "id": "grench",
     "emoji": "💚",
     "name": "Grench",
-    "description": "Betarafsiz. Har tun 50–150 Dollar (o‘nlik qadamda) olasiz. Nishonning puli yetmasa, 50 joni kamayadi; joni tugasa, halok bo‘ladi. Maqsad — tirik qolish."
+    "description": "Betarafsiz. Tunda nishonga 50–150 Dollar yoki 17% jon berish tanlovini yuborasiz. Javob bo‘lmasa pul olinadi; pul yetmasa 17% jon kamayadi. Tirik qolish — maqsadingiz."
   },
   {
     "id": "minior",
     "emoji": "☠️",
     "name": "Minior",
-    "description": "Erkinsiz. Tunda tanlangan uyga tuzoq qo‘yasiz; o‘sha uyga kelgan sizdan boshqa barcha o‘yinchilar halok bo‘ladi."
+    "description": "Yakka rol. Bir tun tanlangan uyga tuzoq qo‘yasiz. O‘sha uyga kelgan boshqa personajlar halok bo‘ladi; uy egasi tirik qoladi. Ketma-ket bir uyga qo‘yish mumkin."
   },
   {
     "id": "shpion",
     "emoji": "🦇",
     "name": "Shpion",
-    "description": "Mafia tarafidasiz. Tunda bir o‘yinchining rolini bilib, mafiyalarga oshkor qilishingiz mumkin."
+    "description": "Mafia tarafida. Tunda bitta o‘yinchining rolini bilib, mafiyalarga oshkor qilishingiz mumkin. Faol hujjat haqiqiy rolni yashiradi."
   },
   {
     "id": "zombi",
     "emoji": "🧟",
     "name": "Zombi",
-    "description": "Shahardagi hammani zombiga aylantirishga harakat qilasiz."
+    "description": "Faqat Zombi rejimida. Tunda bir o‘yinchini zombiga aylantirasiz. Aylanganlar eski qobiliyatlarini yo‘qotadi va boshqalarni zombiga aylantirishi mumkin."
   },
   {
     "id": "kimyogar",
     "emoji": "👨‍🔬",
     "name": "Kimyogar",
-    "description": "Mafia tarafidasiz. Tunda mafia a’zosini tanlasangiz, himoya qilasiz; boshqa tarafdagi nishonga hujum qilasiz."
+    "description": "Mafia tarafidasiz. Mafia a’zosini barcha hujumlardan himoya qilasiz, boshqa tarafdagi nishonga hujum qilasiz. O‘zingizni himoya qila olmaysiz."
   },
   {
     "id": "tentak",
@@ -121,55 +121,49 @@ export const REFERENCE_ROLES = [
     "id": "buqalamun",
     "emoji": "🦎",
     "name": "Buqalamun",
-    "description": "Tunda bir marta o‘yinchi tanlaysiz va uning tarafida o‘yinni davom ettirasiz."
+    "description": "Bir marta o‘yinchi tanlaysiz: tinch taraf bo‘lsa Serjantga, mafia bo‘lsa Mafiyaga, yakka rol bo‘lsa Manyakka aylanasiz. Tanlamaguningizcha betarafsiz."
   },
   {
     "id": "sotuvchi",
     "emoji": "🎁",
     "name": "Sotuvchi",
-    "description": "Tunda bir o‘yinchini tanlab, ertasi kuni mahsulotlarni yarim narxda taklif qilasiz. Xarid qilsa, 10% olasiz."
+    "description": "Betaraf. Tunda bir o‘yinchini tanlaysiz; ertasi kuni yarim narxda mahsulot taklif qilasiz. Xarid qilsa 10% olasiz. Tirik qolish — maqsadingiz."
   },
   {
     "id": "krampous",
     "emoji": "😈",
     "name": "Krampous",
-    "description": "Har tun takrorlanmaydigan nishon tanlaysiz. O‘zingizni tanlasangiz, avvalgi nishonlar bilan halok bo‘lasiz. Doktor, Kimyogar yoki faol himoya nishonni qutqarishi mumkin. Kamida 3 nishon halok bo‘lsa yutasiz. Erta faollashtirsangiz ham o‘zingiz halok bo‘lasiz. Rolingiz o‘zgarmaydi."
+    "description": "Har tun takrorlanmaydigan nishon tanlaysiz. O‘zingizni tanlasangiz, avvalgi nishonlar bilan halok bo‘lasiz. Doktor, Kimyogar yoki faol himoya nishonni qutqarishi mumkin. Kamida 3 nishon halok bo‘lsa yutasiz; oldin halok bo‘lgan nishonlar ham hisoblanadi."
   },
   {
     "id": "omadli",
     "emoji": "🤞🏻",
     "name": "Omadli",
-    "description": "Tinch aholisiz. Hujum qilinganda tasodifan omon qolishingiz mumkin."
+    "description": "Tinch tarafdasiz. Birinchi mos hujumdan 100% omon qolasiz. Avval tabiiy omad, keyin sotib olingan himoya ishlaydi."
   },
   {
     "id": "klaus",
     "emoji": "🎅🏻",
     "name": "Klaus",
-    "description": "Tunda tanlagan o‘yinchingizga 50–200 Dollar sovg‘a qilasiz."
+    "description": "Betaraf. Tunda tanlagan o‘yinchingizga 50–200 Dollar sovg‘a qilasiz. Tirik qolish — maqsadingiz."
   },
   {
     "id": "sehrgar",
     "emoji": "🧙",
     "name": "Sehrgar",
-    "description": "Kimdir hujum qilsa, uni kechirish yoki kechirmaslikni tanlaysiz. O‘yin oxirigacha tirik qolsangiz, yutasiz."
+    "description": "Hujumchilarni birgalikda kechirsangiz, hamma tirik qoladi; kechirmasangiz, hujumchilar halok bo‘ladi. Javob bermasangiz, o‘zingiz halok bo‘lasiz. Tirik qolsangiz yutasiz."
   },
   {
     "id": "mergan",
     "emoji": "🎯",
     "name": "Mergan",
-    "description": "Yakka rollar orasida kuchlisiz. Boshqa yakka rollar sizni o‘ldira olmaydi."
+    "description": "Har tun hujum qilasiz. Yakka rollar sizni o‘ldira olmaydi; boshqa yakka rollar kabi yakka g‘alaba uchun kurashasiz."
   },
   {
     "id": "janob",
     "emoji": "🎖️",
     "name": "Janob",
     "description": "Kunduzgi ovozingiz ikkita ovozga teng. Ovoz berganda shaxsingiz oshkor bo‘lmaydi."
-  },
-  {
-    "id": "qoy",
-    "emoji": "🐑",
-    "name": "Qo'y",
-    "description": "Suidsidni osishda qatnashgan o‘yinchining roli Qo‘yga aylanadi."
   }
 ] as const;
 

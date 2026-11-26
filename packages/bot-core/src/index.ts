@@ -21,3 +21,5 @@ export {
 } from './economy-views';
 
 export * from './reference-roles';
+
+export * from './hero-rules-v2';
