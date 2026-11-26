@@ -866,7 +866,7 @@ export class Router {
   private async paraText(id:number){const p=await this.d.registry.paraPair(id);return p?'💞 Parangiz: <b>'+escapeHtml(p.partner)+'</b>':'Sizda para mavjud emas.';}
   private async paraCallback(cb:TgCallback,op:string,arg:string){
     const id=Number(arg);
-    if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
+    if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
     if(op==='paranop'){await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);}
     const result=op==='paraq'?await this.d.registry.paraLeave(cb.from.id,id):await this.d.registry.paraAnswer(cb.from.id,id,op==='parayes');
     if(result!=='OK')return this.answer(cb,this.paraError(result),true);
