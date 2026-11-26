@@ -1431,9 +1431,49 @@ export class RoomCore {
     this.data.outbox = this.data.outbox.filter((o) => o.id !== id);
   }
 
+  /** Revalidate queued controls at delivery time, not just when a player clicks.
+   * The durable FIFO and Telegram retry-after policy remain unchanged. */
+  private v2ChoiceStillOpen(key:string):boolean{
+    const [,game,seq,id,...parts]=key.split(':');
+    const kind=parts.join(':');
+    const room=this.data.game?.v2Session;
+    if(!room||String(room.game)!==game||String(room.state.seq)!==seq)return false;
+    const s=room.state,p=s.players.find(x=>x.id===id);
+    if(!p||p.left)return false;
+    if(kind!=='phase'){
+      return !!room.night&&room.night.deadline>this.now&&room.night.prompts.some(x=>x.key===kind&&x.recipient===id)&&!room.night.answers.some(x=>x.key===kind);
+    }
+    if(room.night||s.deadline===null||s.deadline<=this.now)return false;
+    if(s.phase==='REVENGE')return s.revenge===id;
+    if(p.hp<=0||p.blockedUntil>=s.round)return false;
+    if(s.phase==='NIGHT')return !s.intents.some(x=>x.actor===id);
+    if(s.phase==='VOTING')return !s.votes.some(x=>x.actor===id)&&!s.abstentions?.includes(id);
+    if(s.phase==='DAWN')return !p.heroUsed&&p.heroCharges>0;
+    return false;
+  }
+
   private async deliver(item: OutItem): Promise<boolean> {
     let p = item.payload;
     const key=item.storeRefAs;
+    if(p.kind==='SEND'&&key?.startsWith('v2choice:')&&!this.v2ChoiceStillOpen(key)){
+      // If a confirmation is already queued, retain its original message
+      // reference; otherwise a never-delivered, expired action is unnecessary.
+      const confirmation=this.data.outbox.some(o=>o.payload.kind==='EDIT'&&o.payload.refKey===key);
+      if(!confirmation)return false;
+      p={...p,keyboard:[]};
+    }
+    if(p.kind==='SEND'&&key?.startsWith('v2seller:')){
+      const g=this.data.game;
+      const active=g?.v2Offers?.find(o=>sellerRef(g.number,o.id)===key);
+      if(!active||active.expires<=this.now)p={...p,keyboard:[]};
+    }
+    if(p.kind==='SEND'&&key?.startsWith('v2phase:')&&p.keyboard?.flat().some(b=>'callback_data'in b)){
+      const [,game,seq]=key.split(':');const room=this.data.game?.v2Session;
+      if(!room||String(room.game)!==game||String(room.state.seq)!==seq||room.state.deadline===null||room.state.deadline<=this.now){
+        // Preserve the public question/history for its pending final tally edit.
+        p={...p,keyboard:p.keyboard.map(row=>row.filter(b=>'url'in b)).filter(row=>row.length)};
+      }
+    }
     // Real group-message link, not a guessed chat URL. Only supergroup IDs have t.me/c links.
     const choice=p.kind==='SEND'?key:p.kind==='EDIT'?p.refKey:undefined;
     if(choice?.startsWith('v2choice:')&&(p.kind==='SEND'||p.kind==='EDIT')){

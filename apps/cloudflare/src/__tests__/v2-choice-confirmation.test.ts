@@ -1,5 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {decodeV2Button} from '@mafia/bot-core';
+import {TgError} from '../telegram';
 import {World,privateText,groupText,callback,GROUP} from './harness';
 
 describe('durable V2 one-time private selection',()=>{
@@ -70,6 +71,38 @@ describe('durable V2 one-time private selection',()=>{
   expect(w.tg.texts(GROUP).filter(t=>t.includes('ovoz berishni o‘tkazib yubordi.'))).toHaveLength(1);
   await w.advance(30001);expect(state().phase).toBe('NIGHT');
   expect(state().abstentions).toEqual([]);
+ });
+
+ it('honours Telegram retry-after and never delivers expired queued night controls after restart',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  let core=await w.loaded(GROUP);const n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  const call=w.tg.call.bind(w.tg);let blocked=0;
+  w.tg.call=async <T>(method:string,params?:Record<string,unknown>):Promise<T>=>{
+   if(method==='sendMessage'&&Number(params?.chat_id)>0&&String(params?.text).includes('Harakatingizni tanlang.')&&blocked===0){
+    blocked++;throw new TgError(429,'test rate limit',35);
+   }
+   return call<T>(method,params);
+  };
+  await w.send(groupText(1,'/startgame'));
+  expect(blocked).toBe(1);
+  const nightSeq=core.data.game!.v2Session!.state.seq;
+  expect(core.data.outbox[0]?.notBefore).toBe(w.now+35000);
+  w.restart(GROUP);core=await w.loaded(GROUP);
+  await w.advance(30001);
+  expect(core.data.game?.v2Session?.state.phase).toBe('DAWN');
+  expect(core.data.outbox[0]?.notBefore).toBeGreaterThan(w.now);
+  await w.advance(5000);
+  expect(core.data.outbox).toHaveLength(0);
+  const oldButtons=w.tg.sent().flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>decodeV2Button(b.callback_data??'')).filter(b=>b?.game===n&&b.seq===nightSeq);
+  expect(oldButtons).toHaveLength(0);
+  expect(w.tg.texts(GROUP).some(text=>text.includes('Tong otdi'))).toBe(true);
+  await w.advance(30001);await w.advance(30001);
+  expect(core.data.game?.v2Session?.state.phase).toBe('VOTING');
+  const votingSeq=core.data.game!.v2Session!.state.seq;
+  for(const id of [1,2,3,4])expect(w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).some(b=>{const decoded=decodeV2Button(b.callback_data??'');return decoded?.game===n&&decoded.seq===votingSeq&&decoded.op==='V';})).toBe(true);
  });
 
 });
