@@ -1,12 +1,13 @@
 import {V2_DEFS,type PlayerOutcome} from '@mafia/game-engine';
 import type {RecordGameInput} from './registry-core';
 import type {RoomGame} from './room-core';
+import {usedV2Items} from './v2-items';
 export function buildV2Result(g:RoomGame,chatId:number,finishedAt:number):RecordGameInput{
  const state=g.v2Session?.state;
  if(!state||state.phase!=='ENDED'||!state.outcome||state.players.length!==g.players.length)throw Error('v2 result not final');
  const result=state.outcome,winners=new Set(result.winners);
  const outcome=result.reason as RecordGameInput['outcome'];
- return {gameId:g.id,number:g.number,chatId,engineVersion:2,mode:state.mode,ranked:g.config.ranked&&!g.players.some(p=>p.fake),practice:g.players.some(p=>p.fake),outcome,days:state.round,rewardVersion:1,completedAt:finishedAt,durationMs:Math.max(0,finishedAt-(g.startedAt??finishedAt)),players:state.players.map(p=>{
+ return {gameId:g.id,number:g.number,chatId,engineVersion:2,mode:state.mode,usedItems:usedV2Items(g),ranked:g.config.ranked&&!g.players.some(p=>p.fake),practice:g.players.some(p=>p.fake),outcome,days:state.round,rewardVersion:1,completedAt:finishedAt,durationMs:Math.max(0,finishedAt-(g.startedAt??finishedAt)),players:state.players.map(p=>{
   const user=g.players.find(u=>String(u.id)===p.id);if(!user)throw Error('missing player');
   const faction=V2_DEFS[p.role].faction;
   const afk=p.death==='AFK',left=p.left||afk,won=winners.has(p.id)&&!left;

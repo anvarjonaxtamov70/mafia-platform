@@ -81,6 +81,7 @@ export interface RecordGameInput {
   outcome: MainOutcome | 'SOLO' | 'TEAM' | 'ZOMBIE' | 'NEUTRAL' | 'SUIDSID';
   engineVersion?: 2;
   mode?: V2Mode;
+  usedItems?:Record<string,string[]>;
   days: number;
   /** Optional for previously persisted v6 result operations. */
   rewardVersion?: 1;
@@ -176,6 +177,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS match_points_user ON match_points(telegram_id)`,
   `CREATE TABLE IF NOT EXISTS v2_role_stats(telegram_id INTEGER NOT NULL,role TEXT NOT NULL,played INTEGER NOT NULL DEFAULT 0,won INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(telegram_id,role))`,
   `CREATE TABLE IF NOT EXISTS v2_match_modes(game_number INTEGER PRIMARY KEY,mode TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS v2_loadouts(game_number INTEGER PRIMARY KEY,enabled INTEGER NOT NULL,items TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS v2_match_rosters(game_number INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, roster TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS v2_match_receipts(game_number INTEGER PRIMARY KEY, request TEXT NOT NULL, receipt TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS game_participation (game_number INTEGER NOT NULL, telegram_id INTEGER NOT NULL, afk INTEGER NOT NULL, left_game INTEGER NOT NULL, PRIMARY KEY(game_number, telegram_id))`,
@@ -426,17 +428,24 @@ export class RegistryCore {
   // ───────────────────────────── Natijalar ─────────────────────────────
 
   /** Internal ledger only: bind v2 participants before any leave or result. */
-  markV2Running(number:number,chatId:number,ids:readonly number[]):void{
+  markV2Running(number:number,chatId:number,ids:readonly number[],allowItems=false):ReturnType<EconomyCore['reserveArcade']>{
     const sorted=[...ids].sort((a,b)=>a-b),roster=JSON.stringify(sorted);
     if(ids.length<4||ids.length>30||new Set(ids).size!==ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<1))throw Error('invalid v2 roster');
-    this.sql.tx(()=>{
+    return this.sql.tx(()=>{
       const prior=this.one<{chat_id:number;roster:string}>(`SELECT chat_id,roster FROM v2_match_rosters WHERE game_number=?`,number);
-      if(prior){if(prior.chat_id!==chatId||prior.roster!==roster)throw Error('v2 roster conflict');return;}
+      if(prior){
+        const load=this.one<{enabled:number;items:string}>(`SELECT enabled,items FROM v2_loadouts WHERE game_number=?`,number);
+        if(prior.chat_id!==chatId||prior.roster!==roster||!load||load.enabled!==Number(allowItems))throw Error('v2 roster conflict');
+        return JSON.parse(load.items) as ReturnType<EconomyCore['reserveArcade']>;
+      }
       const game=this.one<{status:string;chat_id:number}>(`SELECT status,chat_id FROM games WHERE number=?`,number);
       const active=this.sql.exec<{telegram_id:number}>(`SELECT telegram_id FROM active_players WHERE game_number=? AND chat_id=? ORDER BY telegram_id`,number,chatId).map(x=>x.telegram_id);
       if(!game||game.chat_id!==chatId||game.status!=='LOBBY'||JSON.stringify(active)!==roster)throw Error('v2 roster unavailable');
+      const items=allowItems?this.eco.reserveArcade(number,sorted):{};
       this.markRunning(number,ids.length);
       this.sql.exec(`INSERT INTO v2_match_rosters(game_number,chat_id,roster) VALUES(?,?,?)`,number,chatId,roster);
+      this.sql.exec(`INSERT INTO v2_loadouts(game_number,enabled,items) VALUES(?,?,?)`,number,Number(allowItems),JSON.stringify(items));
+      return items;
     });
   }
 
@@ -456,6 +465,11 @@ export class RegistryCore {
       const game=this.one<{status:string;chat_id:number}>(`SELECT status,chat_id FROM games WHERE number=?`,input.number);
       if(!roster||roster.chat_id!==input.chatId||roster.roster!==JSON.stringify(ids)||!game||game.status!=='RUNNING'||game.chat_id!==input.chatId||
         this.one(`SELECT 1 FROM game_results WHERE game_number=?`,input.number))throw Error('v2 result unavailable');
+      const used=input.usedItems??{};
+      const reserved=this.sql.exec<{telegram_id:number;item:string}>(`SELECT telegram_id,item FROM item_reservations WHERE game_number=?`,input.number);
+      if(Object.entries(used).some(([id,codes])=>!Array.isArray(codes)||new Set(codes).size!==codes.length||
+        codes.some(code=>!reserved.some(x=>String(x.telegram_id)===id&&x.item===code))))throw Error('invalid v2 item receipt');
+      this.eco.settleArcade(input.number,used);
       const receipt=this.recordGameTx(input);
       this.sql.exec(`INSERT INTO v2_match_modes(game_number,mode) VALUES(?,?)`,input.number,input.mode!);
       this.sql.exec(`INSERT INTO v2_match_receipts(game_number,request,receipt) VALUES(?,?,?)`,input.number,request,JSON.stringify(receipt));

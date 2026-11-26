@@ -143,7 +143,7 @@ export class World {
       settleHero:async request=>this.registryCore.heroV2.settleShot(request),
       settleDawn:async (game,round,actions)=>this.registryCore.roleV2Economy.settleDawn(game,round,actions),
       buyOffer:async (game,attempt,buyer,offer,code)=>this.registryCore.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code),
-      markRunning:async (game,chatId,ids)=>this.registryCore.markV2Running(game,chatId,ids),
+      markRunning:async (game,chatId,ids,allowItems)=>this.registryCore.markV2Running(game,chatId,ids,allowItems),
       recordResult:async input=>this.registryCore.recordV2Game(input),
     };
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;

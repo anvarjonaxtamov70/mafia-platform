@@ -56,6 +56,7 @@ import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
 import type {GrenchBatchReceipt,GrenchDebit,DawnRoleAction,DawnRoleReceipt,Receipt} from './role-v2-economy';
 import {decodeSellerButton,sellerKeyboard,type V2SellerOffer} from './v2-seller';
 import {buildV2Result} from './v2-match-result';
+import {applyV2Loadout,usedV2Items} from './v2-items';
 import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
@@ -121,7 +122,7 @@ export type PendingOp =
   | { id: number; type: 'v2Night'; number: number; pending: PendingV2NightSettlement }
   | { id: number; type: 'v2Hero'; number: number; pending: PendingV2HeroShot }
   | { id: number; type: 'v2Buy'; number: number; buyer:number; offer:number; code:string }
-  | { id:number;type:'v2Running';number:number;chatId:number;ids:number[] }
+  | { id:number;type:'v2Running';number:number;chatId:number;ids:number[];allowItems?:boolean }
   | { id:number;type:'v2Record';number:number;input:RecordGameInput };
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
@@ -173,7 +174,7 @@ export interface V2SettlementPort {
   settleHero(request:HeroV2ShotRequest):Promise<HeroV2ShotReceipt>;
   settleDawn(game:number,round:number,actions:readonly DawnRoleAction[]):Promise<DawnRoleReceipt>;
   buyOffer(game:number,attempt:number,buyer:number,offer:number,code:string):Promise<Receipt>;
-  markRunning(game:number,chatId:number,ids:readonly number[]):Promise<void>;
+  markRunning(game:number,chatId:number,ids:readonly number[],allowItems:boolean):Promise<NonNullable<RoomGame['arcade']>>;
   recordResult(input:RecordGameInput):Promise<RecordResult>;
 }
 export interface RoomDeps {
@@ -636,6 +637,7 @@ export class RoomCore {
     if(g.status==='LOBBY')this.closeLobby(g);
     this.send(this.chatId, text ?? (g.status === 'RUNNING' ? t('game.cancelled_admin') : t('lobby.cancelled')));
     if(trigger!=='timeout')this.attachCommand(this.data.outbox.at(-1),trigger.commandMessageId);
+    if(g.v2Ledger&&g.v2Session)this.addOp({type:'settleItems',number:g.number,used:usedV2Items(g)});
     this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
     this.data.game = null;
     await this.commit();
@@ -660,6 +662,7 @@ export class RoomCore {
       // A committed external receipt must be reconciled before discarding the room.
       if(this.v2Pending(g.number)){g.v2DeferredMigration=newChatId;await this.commit();return;}
       if(g.status==='LOBBY')this.closeLobby(g);
+      if(g.v2Ledger&&g.v2Session)this.addOp({type:'settleItems',number:g.number,used:usedV2Items(g)});
       this.addOp({ type: 'releaseGame', number: g.number, status: 'CANCELLED' });
       this.data.game = null;
     }
@@ -690,7 +693,7 @@ export class RoomCore {
     this.send(this.chatId,'🧪 V2 SINOV — '+g.v2Mode+(ledger?'\nIchki test hisobi.':'\nDollar, Olmos, geroy va reyting o‘zgarmaydi.'));
     this.attachCommand(this.data.outbox.at(-1),commandMessageId);
     this.acceptV2(g,next);
-    if(g.v2Ledger)this.addOp({type:'v2Running',number:g.number,chatId:this.chatId,ids:g.players.map(p=>p.id)});
+    if(g.v2Ledger)this.addOp({type:'v2Running',number:g.number,chatId:this.chatId,ids:g.players.map(p=>p.id),allowItems:g.config.allowArcadeItems});
     else this.addOp({type:'running',number:g.number,players:g.players.length});
     await this.commit();return {ok:true};
   }
@@ -1122,7 +1125,14 @@ export class RoomCore {
             const ledger=this.deps.v2Settlement;
             if(!ledger)throw Error('missing v2 ledger');
             await this.deps.store.save(this.data);
-            await ledger.markRunning(op.number,op.chatId,op.ids);
+            const items=await ledger.markRunning(op.number,op.chatId,op.ids,!!op.allowItems);
+            const g=this.data.game;
+            if(!g||g.number!==op.number||!g.v2Session||!g.v2Ledger)throw Error('v2 start room changed');
+            applyV2Loadout(g,items);
+            // Restart the first phase clock after the start receipt, not before an unavailable ledger.
+            g.startedAt=this.now;g.v2Session.state.deadline=this.now+30000;
+            const all=Object.values(items);
+            if(all.some(x=>x.shield||x.fakeDocument||x.voteShield||x.heroShield))this.send(this.chatId,t('game.arcade_items',{shields:all.filter(x=>x.shield).length,docs:all.filter(x=>x.fakeDocument).length,votes:all.filter(x=>x.voteShield).length}));
             break;
           }
           case 'v2Record': {
