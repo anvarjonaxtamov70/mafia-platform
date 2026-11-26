@@ -2,11 +2,14 @@
 import {catalogItem} from '@mafia/bot-core';
 import type {EconomyCore} from './economy-core';
 import type {Sql} from './sql';
-type Receipt='PAID'|'INSUFFICIENT'|'UNAVAILABLE'|'CONFLICT';
+export type Receipt='PAID'|'INSUFFICIENT'|'UNAVAILABLE'|'CONFLICT';
 type EventRow={actor:number;target:number;amount:number;status:Receipt};
 type Offer={id:number;game:number;round:number;seller:number;buyer:number;expires:number;item:string|null};
 export type GrenchDebit={actor:number;target:number;amount:number};
 export type GrenchBatchReceipt={status:'OK';game:number;round:number;entries:(GrenchDebit&{status:'PAID'|'INSUFFICIENT'})[]}|{status:'UNAVAILABLE'|'CONFLICT'};
+export type DawnRoleAction={kind:'KLAUS';actor:number;target:number;amount:number}|{kind:'SELLER';actor:number;target:number};
+export type DawnRoleEntry={kind:'KLAUS';actor:number;target:number;amount:number}|{kind:'SELLER';actor:number;target:number;offer:number;expires:number};
+export type DawnRoleReceipt={status:'OK';game:number;round:number;entries:DawnRoleEntry[]}|{status:'UNAVAILABLE'|'CONFLICT'};
 class GrenchBatchAbort extends Error{
  constructor(readonly status:'UNAVAILABLE'|'CONFLICT'){super(status);}
 }
@@ -15,6 +18,7 @@ export class RoleV2Economy {
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_receipts(game INTEGER NOT NULL,round INTEGER NOT NULL,kind TEXT NOT NULL,actor INTEGER NOT NULL,target INTEGER NOT NULL,amount INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(game,round,kind,actor))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_grench_batches(game INTEGER NOT NULL,round INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,round))`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_dawn_batches(game INTEGER NOT NULL,round INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,round))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_offers(id INTEGER PRIMARY KEY AUTOINCREMENT,game INTEGER NOT NULL,round INTEGER NOT NULL,seller INTEGER NOT NULL,buyer INTEGER NOT NULL,expires INTEGER NOT NULL,item TEXT,UNIQUE(game,round,seller))`);
  }
  private valid(game:number,round:number,actor:number,target:number){
@@ -85,6 +89,36 @@ export class RoleV2Economy {
    if(!this.valid(game,round,seller,buyer))return null;
    return this.sql.exec<{id:number}>(`INSERT INTO role_v2_offers(game,round,seller,buyer,expires) VALUES(?,?,?,?,?) RETURNING id`,game,round,seller,buyer,this.clock()+60000)[0]!.id;
   });
+ }
+ /** Freeze the exact dawn effects in an atomic, replayable receipt. */
+ settleDawn(game:number,round:number,actions:readonly DawnRoleAction[]):DawnRoleReceipt{
+  if(!Number.isSafeInteger(game)||game<1||!Number.isSafeInteger(round)||round<1||actions.length>30||
+    new Set(actions.map(a=>a.actor)).size!==actions.length||
+    actions.some(a=>![a.actor,a.target].every(Number.isSafeInteger)||a.actor<1||a.target<1||a.actor===a.target||
+     (a.kind==='KLAUS'?(!Number.isSafeInteger(a.amount)||a.amount<50||a.amount>200):a.kind!=='SELLER')))return {status:'UNAVAILABLE'};
+  const canonical=actions.map(a=>a.kind==='KLAUS'?{kind:a.kind,actor:a.actor,target:a.target,amount:a.amount}:{kind:a.kind,actor:a.actor,target:a.target});
+  const request=JSON.stringify(canonical);
+  try{return this.sql.tx(()=>{
+   const prior=this.sql.exec<{request:string;receipt:string}>(`SELECT request,receipt FROM role_v2_dawn_batches WHERE game=? AND round=?`,game,round)[0];
+   if(prior)return prior.request===request?JSON.parse(prior.receipt) as DawnRoleReceipt:{status:'CONFLICT'};
+   if(!this.sql.exec(`SELECT 1 FROM games WHERE number=? AND status='RUNNING'`,game).length)return {status:'UNAVAILABLE'};
+   const entries:DawnRoleEntry[]=[];
+   for(const a of actions){
+    if(a.kind==='KLAUS'){
+     const result=this.klaus(game,round,a.actor,a.target,a.amount);
+     if(result!=='PAID')throw new GrenchBatchAbort(result==='CONFLICT'?'CONFLICT':'UNAVAILABLE');
+     entries.push({kind:a.kind,actor:a.actor,target:a.target,amount:a.amount});
+    }else{
+     const offer=this.offer(game,round,a.actor,a.target);
+     if(offer===null)throw new GrenchBatchAbort('UNAVAILABLE');
+     const row=this.sql.exec<Offer>(`SELECT * FROM role_v2_offers WHERE id=?`,offer)[0]!;
+     entries.push({kind:a.kind,actor:a.actor,target:a.target,offer,expires:row.expires});
+    }
+   }
+   const receipt={status:'OK' as const,game,round,entries};
+   this.sql.exec(`INSERT INTO role_v2_dawn_batches(game,round,request,receipt) VALUES(?,?,?,?)`,game,round,request,JSON.stringify(receipt));
+   return receipt;
+  });}catch(error){if(error instanceof GrenchBatchAbort)return {status:error.status};throw error;}
  }
  /** One discounted consumable per offer. No VIP, hero, real-money or legacy cosmetics.
   * Commission is 10% of actual amount paid, floored in the same currency.

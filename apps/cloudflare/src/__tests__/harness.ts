@@ -141,6 +141,7 @@ export class World {
       snapshots:async ids=>Object.fromEntries(ids.flatMap(id=>{const h=this.registryCore.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];})),
       settleNight:async (game,round,debits)=>this.registryCore.roleV2Economy.settleGrenchBatch(game,round,debits),
       settleHero:async request=>this.registryCore.heroV2.settleShot(request),
+      settleDawn:async (game,round,actions)=>this.registryCore.roleV2Economy.settleDawn(game,round,actions),
     };
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({

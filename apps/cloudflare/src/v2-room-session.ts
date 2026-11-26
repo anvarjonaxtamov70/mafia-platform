@@ -85,7 +85,7 @@ export function v2RoomDeadline(room:V2RoomSession):number|null{
 /** Can be called after any action or timer. Returns pending debit requests instead
  * of assuming that money has been paid. Caller persists room and retries receipts.
  */
-export function v2RoomTick(input:V2RoomSession,now:number,rng:Rng,receipts:ReadonlyMap<string,'PAID'|'INSUFFICIENT'>=new Map()):V2RoomTransition & {debits:ReturnType<typeof v2NightDebits>}{
+export function v2RoomTick(input:V2RoomSession,now:number,rng:Rng,receipts:ReadonlyMap<string,'PAID'|'INSUFFICIENT'>=new Map(),deferSettlement=false):V2RoomTransition & {debits:ReturnType<typeof v2NightDebits>}{
  const room=copy(input);room.revision++;
  const result={...empty(room),debits:[] as ReturnType<typeof v2NightDebits>};
  const state=room.state;
@@ -98,7 +98,7 @@ export function v2RoomTick(input:V2RoomSession,now:number,rng:Rng,receipts:Reado
  if(room.night){
   if(!v2NightSessionReady(room.night,now))return result;
   result.debits=v2NightDebits(room.night,now);
-  if(result.debits.some(d=>!receipts.has(d.key)))return result;
+  if(deferSettlement||result.debits.some(d=>!receipts.has(d.key)))return result;
   const next=v2FinishNightSession(room.night,now,receipts);
   room.night=null;apply(result,next.state,next.effects,now);return result;
  }

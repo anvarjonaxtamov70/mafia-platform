@@ -51,6 +51,32 @@ describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
   expect(restored.data.game!.v2Session!.state.players[2]?.hp).toBe(100);
   expect(r.eco.coins(3)).toBe(200-amount);expect(r.eco.coins(2)).toBe(amount);
  });
+ it('Klaus gift and Seller offer resolve through night queue even without Grench',async()=>{
+  const {w,r,core,n,s}=await start(['DON','KLAUS','SELLER','CITIZEN']);
+  s.state=v2Submit(s.state,{actor:'1',target:null,kind:'SKIP'},1);
+  s.state=v2Submit(s.state,{actor:'2',target:'4',kind:'CHOOSE'},1);
+  s.state=v2Submit(s.state,{actor:'3',target:'4',kind:'CHOOSE'},1);
+  const original=w.v2Settlement!.settleDawn;let calls=0,amount=0;
+  w.v2Settlement!.settleDawn=async (...args)=>{
+    calls++;expect(w.stores.get(GROUP)!.data?.ops.some(o=>o.type==='v2Night')).toBe(true);
+    const receipt=await original(...args);
+    if(receipt.status==='OK'){const gift=receipt.entries.find(e=>e.kind==='KLAUS');if(gift?.kind==='KLAUS')amount=gift.amount;}
+    if(calls===1)throw Error('lost response');
+    return receipt;
+  };
+  await core.forceDeadline();
+  expect(calls).toBe(1);expect(amount).toBeGreaterThanOrEqual(50);
+  expect(r.eco.coins(4)).toBe(amount);
+  expect(core.data.game!.v2Session!.state.phase).toBe('NIGHT');
+  w.restart(GROUP);await w.advance(2100);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(2);expect(r.eco.coins(4)).toBe(amount);
+  expect(restored.data.game!.v2Session!.state.phase).toBe('DAWN');
+  expect(restored.data.game!.number).toBe(n);
+  expect(w.tg.texts(4).join(' ')).toContain('Klaus');
+  expect(w.tg.texts(4).join(' ')).toContain('50% chegirmali');
+  expect(w.tg.texts(GROUP).join(' ')).not.toContain('Klaus sizga');
+ });
  it('hero shot is persisted before charge, replayed after restart and applied once',async()=>{
   const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
   s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;

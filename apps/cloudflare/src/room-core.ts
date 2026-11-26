@@ -53,7 +53,7 @@ import {decodeV2Button,v2PublicPhaseView} from '@mafia/bot-core';
 import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-hero-settlement';
 import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
 import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
-import type {GrenchBatchReceipt,GrenchDebit} from './role-v2-economy';
+import type {GrenchBatchReceipt,GrenchDebit,DawnRoleAction,DawnRoleReceipt} from './role-v2-economy';
 import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
@@ -164,6 +164,7 @@ export interface V2SettlementPort {
   snapshots(ids:number[]):Promise<Record<string,{defense:number;charges:number;damage:number}>>;
   settleNight(game:number,round:number,debits:readonly GrenchDebit[]):Promise<GrenchBatchReceipt>;
   settleHero(request:HeroV2ShotRequest):Promise<HeroV2ShotReceipt>;
+  settleDawn(game:number,round:number,actions:readonly DawnRoleAction[]):Promise<DawnRoleReceipt>;
 }
 export interface RoomDeps {
   v2Settlement?: V2SettlementPort;
@@ -709,9 +710,9 @@ export class RoomCore {
       if(!Object.values(s.lastWords).some(w=>!w.sent&&w.until>this.now))this.finishV2(g);
       return;
     }
-    const next=v2RoomTick(s,this.now,this.deps.rng);
+    const next=v2RoomTick(s,this.now,this.deps.rng,new Map(),!!g.v2Ledger);
     this.acceptV2(g,next);
-    if(next.debits.length&&next.room.night){
+    if(next.room.night&&v2NightSessionReady(next.room.night,this.now)&&(g.v2Ledger||next.debits.length)){
       this.addOp({type:'v2Night',number:g.number,pending:prepareV2NightSettlement(next.room,this.now)});
     }
   }
@@ -1101,7 +1102,40 @@ export class RoomCore {
               ?await ledger!.settleNight(p.game,p.round,p.debits)
               :{status:'OK',game:p.game,round:p.round,entries:p.debits.map(d=>({...d,status:'INSUFFICIENT' as const}))};
             if(this.data.game!==g||!g.v2Session)throw Error('settlement room changed');
-            this.acceptV2(g,finalizeV2NightSettlement(g.v2Session,p,receipt,this.now));
+            const resolved=finalizeV2NightSettlement(g.v2Session,p,receipt,this.now);
+            if(g.v2Ledger){
+              const living=(id:string)=>resolved.room.state.players.some(x=>x.id===id&&x.hp>0&&!x.left);
+              const actions:DawnRoleAction[]=resolved.effects.flatMap((e):DawnRoleAction[]=>{
+                if(e.kind==='KLAUS')return [{kind:e.kind,actor:Number(e.actor),target:Number(e.target),amount:e.amount}];
+                if(e.kind==='SELLER'&&living(e.actor)&&living(e.target))return [{kind:e.kind,actor:Number(e.actor),target:Number(e.target)}];
+                return [];
+              });
+              if(actions.length){
+                // The persisted seeded night plan plus Grench receipt deterministically
+                // reproduces the exact role effects after a lost response/restart.
+                const dawn=await ledger!.settleDawn(p.game,p.round,actions);
+                if(dawn.status!=='OK'||dawn.game!==p.game||dawn.round!==p.round||dawn.entries.length!==actions.length)throw Error('dawn receipt unavailable');
+                for(let i=0;i<actions.length;i++){
+                  const a=actions[i]!,entry=dawn.entries[i]!;
+                  if(a.kind!==entry.kind||a.actor!==entry.actor||a.target!==entry.target)throw Error('dawn receipt mismatch');
+                  if(a.kind==='KLAUS'&&(entry.kind!=='KLAUS'||a.amount!==entry.amount))throw Error('gift receipt mismatch');
+                  if(entry.kind==='SELLER'&&(!Number.isSafeInteger(entry.offer)||entry.offer<1||!Number.isSafeInteger(entry.expires)))throw Error('offer receipt mismatch');
+                }
+                if(this.data.game!==g||!g.v2Session)throw Error('settlement room changed');
+                const fresh=finalizeV2NightSettlement(g.v2Session,p,receipt,this.now);
+                this.acceptV2(g,fresh);
+                for(const entry of dawn.entries){
+                  if(entry.kind==='KLAUS'){
+                    this.send(entry.target,'🎁 Klaus sizga '+entry.amount+' Dollar sovg‘a qildi.');
+                    this.send(entry.actor,'🎁 '+entry.amount+' Dollar sovg‘angiz yetkazildi.');
+                  }else if(entry.expires>this.now){
+                    this.send(entry.target,'🛒 Sotuvchidan 50% chegirmali taklif. Taklif raqami: '+entry.offer+'. Xarid tugmalari hali sinovga ulanmagan.');
+                  }
+                }
+                break;
+              }
+            }
+            this.acceptV2(g,resolved);
             break;
           }
           case 'v2Hero': {

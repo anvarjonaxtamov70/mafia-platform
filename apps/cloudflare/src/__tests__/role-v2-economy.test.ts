@@ -34,6 +34,21 @@ describe('v2 role economy',()=>{
   expect(roles.settleGrenchBatch(n,1,[first,second])).toEqual(receipt);
   expect(e.coins(1)).toBe(100);
  });
+ it('Klaus and Seller batch is atomic and its exact offer survives replay',async()=>{
+  const {n,e,roles,r}=await fixture();
+  const gift={kind:'KLAUS' as const,actor:1,target:2,amount:150};
+  const offer={kind:'SELLER' as const,actor:3,target:2};
+  expect(roles.settleDawn(n,1,[gift,{...offer,target:4}])).toEqual({status:'UNAVAILABLE'});
+  expect(e.coins(2)).toBe(0);
+  const receipt=roles.settleDawn(n,1,[gift,offer]);
+  expect(receipt).toMatchObject({status:'OK',entries:[gift,{...offer,offer:expect.any(Number),expires:expect.any(Number)}]});
+  expect(e.coins(2)).toBe(150);
+  expect(roles.settleDawn(n,1,[gift,offer])).toEqual(receipt);
+  expect(roles.settleDawn(n,1,[{...gift,amount:100},offer])).toEqual({status:'CONFLICT'});
+  r.releaseGame(n,'FINISHED');
+  expect(roles.settleDawn(n,1,[gift,offer])).toEqual(receipt);
+  expect(e.coins(2)).toBe(150);
+ });
  it('Klaus pays once, seller half-price purchase and commission atomic',async()=>{
   const {n,e,roles}=await fixture();
   expect(roles.klaus(n,1,1,2,200)).toBe('PAID');
