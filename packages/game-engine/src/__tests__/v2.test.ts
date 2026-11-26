@@ -73,6 +73,55 @@ describe('v2 independent engine',()=>{
   expect(s.players[2]!.hp).toBe(55);expect(()=>v2HeroShot(s,'0','2',s.seq)).toThrow();
   s=v2HeroShot(s,'1','2',s.seq).state;expect(s.players[2]!.hp).toBe(10);
  });
+ it('ordinary shields are consumed per hit and never consume persistent hero defense',()=>{
+  let s=game(['DON','COMMISSAR','MANYAK','CITIZEN','CITIZEN']);
+  s.players[3]!.shield=1;s.players[3]!.heroDefense=100;s.players[3]!.heroShield=true;
+  s=act(s,0,3);let r=night(s);
+  expect(r.state.players[3]).toMatchObject({hp:100,shield:0,heroDefense:100,heroShield:true});
+  s=act(s,2,3);r=night(s);
+  expect(r.state.players[3]).toMatchObject({hp:0,shield:0,heroDefense:100,heroShield:true});
+ });
+ it('paid document masks spy and commissar, lawyer mask does not spend document',()=>{
+  let s=game(['DON','COMMISSAR','SPY','LAWYER','MAFIOSO','CITIZEN']);
+  s.players[4]!.document=true;s=act(act(s,1,4,'CHECK'),3,4);
+  let r=night(s);
+  expect(r.effects).toContainEqual({kind:'CHECK',recipient:'1',target:'4',role:'CITIZEN'});
+  expect(r.state.players[4]!.document).toBe(true);
+  s=game(['DON','SPY','COMMISSAR','CITIZEN']);
+  s.players[2]!.document=true;s=act(s,1,2);r=night(s);
+  expect(r.effects).toContainEqual({kind:'CHECK',recipient:'1',target:'2',role:'CITIZEN'});
+  expect(r.state.players[2]!.document).toBe(false);
+ });
+ it('zombie conversion consumes only ordinary shield; doctor preserves it',()=>{
+  const make=()=>v2CreateFixed(['0','1','2','3','4'],['DON','ZOMBIE','DOCTOR','COMMISSAR','DOCTOR'],'ZOMBIE',0,rng());
+  let s=make();s.players[3]!.shield=1;s.players[3]!.heroDefense=80;
+  s=act(s,1,3);let r=night(s);
+  expect(r.state.players[3]).toMatchObject({role:'COMMISSAR',shield:0,heroDefense:80});
+  s=act(s,2,3);r=night(s);
+  expect(r.state.players[3]).toMatchObject({role:'COMMISSAR',shield:1,heroDefense:80});
+ });
+ it('hero shield precedes persistent defense and leaves ordinary shield intact',()=>{
+  const s=game(['DON','COMMISSAR','CITIZEN','CITIZEN']);
+  s.phase='DAWN';s.players[0]!.heroCharges=1;s.players[1]!.heroCharges=1;
+  Object.assign(s.players[2]!,{shield:1,heroShield:true,heroDefense:8});
+  const a=v2HeroShot(s,'0','2',s.seq);
+  expect(a.state.players[2]).toMatchObject({hp:100,shield:1,heroShield:false,heroDefense:8});
+  const b=v2HeroShot(a.state,'1','2',s.seq);
+  expect(b.state.players[2]).toMatchObject({hp:63,shield:1,heroShield:false,heroDefense:0});
+  expect(s.players[2]).toMatchObject({hp:100,heroShield:true,heroDefense:8});
+ });
+ it('role hanging protection precedes vote shield and shield is consumed once',()=>{
+  const s=game(['DON','COMMISSAR','CITIZEN','CITIZEN','CITIZEN']);
+  s.phase='VERDICT';s.candidate='2';s.players[2]!.hangingProtection=true;s.players[2]!.voteShield=true;
+  const voted=v2Verdict(s,'1',true,s.seq);
+  const a=v2Advance(voted,1,s.seq);
+  expect(a.state.players[2]).toMatchObject({hp:100,voteShield:true});
+  expect(a.effects).toContainEqual({kind:'HANGING_PROTECTED',target:'2',reason:'LAWYER_OR_TENTAK'});
+  s.players[2]!.hangingProtection=false;
+  const b=v2Advance(v2Verdict(s,'1',true,s.seq),1,s.seq);
+  expect(b.state.players[2]).toMatchObject({hp:100,voteShield:false});
+  expect(b.effects).toContainEqual({kind:'HANGING_PROTECTED',target:'2',reason:'ITEM'});
+ });
  it('all ordered role pairs accept or reject with immutable original state',()=>{
   for(const a of V2_ROLES)for(const b of V2_ROLES){
     const mode=a==='ZOMBIE'||b==='ZOMBIE'?'ZOMBIE':'CLASSIC';
