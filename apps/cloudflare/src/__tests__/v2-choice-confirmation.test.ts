@@ -40,4 +40,36 @@ describe('durable V2 one-time private selection',()=>{
   expect(state().intents).toEqual([{actor:String(don),target:target.id,kind:'CHOOSE'}]);
   expect(events()).toHaveLength(1);
  });
+ it('expires unused night prompts and locks a private nomination abstention',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  const core=await w.loaded(GROUP),n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const state=()=>core.data.game!.v2Session!.state;
+  const don=Number(state().players.find(p=>p.role==='DON')!.id);
+  const doc=Number(state().players.find(p=>p.role==='DOCTOR')!.id);
+  const nightSeq=state().seq;
+  const prompt=core.data.refs['v2choice:'+n+':'+nightSeq+':'+doc+':phase']!;
+  const donPrompt=core.data.refs['v2choice:'+n+':'+nightSeq+':'+don+':phase']!;
+  const findButton=(id:number,op:string,seat:number)=>w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>b.callback_data??'').find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.seq===state().seq&&b.op===op&&b.seat===seat;})??'';
+  const skip=findButton(don,'K',0);expect(skip).toBeTruthy();await w.send(callback(don,skip));
+  await w.advance(30001);expect(state().phase).toBe('DAWN');
+  const expiry=w.tg.calls.filter(c=>c.method==='editMessageReplyMarkup'&&c.params.chat_id===doc&&c.params.message_id===prompt.messageId);
+  expect(expiry).toHaveLength(1);expect(JSON.stringify(expiry[0]!.params.reply_markup)).not.toContain('callback_data');
+  expect(w.tg.calls.filter(c=>c.method==='editMessageReplyMarkup'&&c.params.chat_id===don&&c.params.message_id===donPrompt.messageId)).toHaveLength(0);
+  await w.advance(30001);await w.advance(30001);expect(state().phase).toBe('VOTING');
+  const abstain=findButton(doc,'V',0);expect(abstain).toBeTruthy();
+  await w.send(callback(doc,abstain));
+  expect(state().abstentions).toEqual([String(doc)]);expect(state().votes).toHaveLength(0);
+  const target=state().players.findIndex(p=>p.id===String(don))+1;
+  const vote=findButton(doc,'V',target);expect(vote).toBeTruthy();
+  await w.advance(3100);await w.send(callback(doc,vote));
+  expect(state().votes).toHaveLength(0);
+  expect(w.tg.texts(GROUP).filter(t=>t.includes('ovoz berishni o‘tkazib yubordi.'))).toHaveLength(1);
+  await w.advance(30001);expect(state().phase).toBe('NIGHT');
+  expect(state().abstentions).toEqual([]);
+ });
+
 });
