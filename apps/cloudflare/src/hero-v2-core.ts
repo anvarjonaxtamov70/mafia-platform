@@ -7,12 +7,18 @@ import type {EconomyCore} from './economy-core';
 type HeroRow={telegram_id:number;name:string;points:number;defense:number;charges:number};
 export type HeroV2Purchase='BUY'|'XP500'|'XP1000'|'RESTORE'|'RELOAD'|'RENAME';
 export type HeroV2BuyResult='OK'|'UNAVAILABLE'|'INSUFFICIENT'|'FULL'|'INVALID'|'CONFLICT';
+export type HeroV2ShotRequest={
+ game:number;seq:number;actor:number;target:number;targetHp:number;blocked:boolean;
+ actorCharges:number;damage:number;targetDefense:number;
+};
+export type HeroV2ShotReceipt=({status:'PAID';request:HeroV2ShotRequest;points:number;charges:number}&ReturnType<typeof heroV2Hit>)|{status:'UNAVAILABLE'|'CONFLICT'};
 export class HeroV2Core {
  constructor(private readonly sql:Sql,private readonly eco:EconomyCore,private readonly clock:()=>number){}
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_accounts(telegram_id INTEGER PRIMARY KEY,name TEXT NOT NULL,points INTEGER NOT NULL CHECK(points>=0),defense INTEGER NOT NULL CHECK(defense>=0),charges INTEGER NOT NULL CHECK(charges>=0 AND charges<=10))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_purchases(idem TEXT PRIMARY KEY,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,created INTEGER NOT NULL)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_shots(game INTEGER NOT NULL,actor INTEGER NOT NULL,target INTEGER NOT NULL,damage INTEGER NOT NULL,points INTEGER NOT NULL,PRIMARY KEY(game,actor))`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_shot_receipts(game INTEGER NOT NULL,actor INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,actor))`);
  }
  private eligible(id:number){
   return this.sql.exec(`SELECT 1 FROM users u WHERE u.telegram_id=? AND u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM bans b WHERE b.telegram_id=u.telegram_id AND (b.expires_at IS NULL OR b.expires_at>?))`,id,this.clock()).length>0;
@@ -85,23 +91,39 @@ export class HeroV2Core {
    return 'OK';
   });
  }
- /** Trusted game adapter only. The adapter supplies the target HP immediately before
-  * the hit; this transaction persists hero charge, defense and score exactly once.
-  * It must not be called directly on client-provided values.
+ /** Trusted room adapter only. A persisted request identifies an accepted shot.
+  * Replay returns the same committed receipt, including after match cleanup.
+  * A different request with the same game/actor is never a second charge.
   */
- settleShot(game:number,actor:number,target:number,targetHp:number,blocked:boolean){
-  if(!Number.isSafeInteger(game)||game<1||actor===target||!Number.isInteger(targetHp)||targetHp<1||targetHp>100)return null;
+ settleShot(input:HeroV2ShotRequest):HeroV2ShotReceipt{
+  const {game,seq,actor,target,targetHp,blocked,actorCharges,damage,targetDefense}=input;
+  if(![game,seq,actor,target,targetHp,actorCharges,damage,targetDefense].every(Number.isSafeInteger)||
+    game<1||seq<1||actor<1||target<1||actor===target||targetHp<1||targetHp>100||
+    actorCharges<1||actorCharges>HERO_V2_MAX_CHARGES||damage<45||damage>100||targetDefense<0||typeof blocked!=='boolean')return {status:'UNAVAILABLE'};
+  // Canonical order: callers may reconstruct a request after serialization.
+  const request={game,seq,actor,target,targetHp,blocked,actorCharges,damage,targetDefense};
+  const key=JSON.stringify(request);
   return this.sql.tx(()=>{
-   if(this.sql.exec(`SELECT 1 FROM hero_v2_shots WHERE game=? AND actor=?`,game,actor).length)return null;
-   const a=this.ensure(actor);if(!a||a.charges<1)return null;
+   const prior=this.sql.exec<{request:string;receipt:string}>(`SELECT request,receipt FROM hero_v2_shot_receipts WHERE game=? AND actor=?`,game,actor)[0];
+   if(prior)return prior.request===key?JSON.parse(prior.receipt) as HeroV2ShotReceipt:{status:'CONFLICT'};
+   // Legacy draft records lack enough data for a safe replay. Fail closed.
+   if(this.sql.exec(`SELECT 1 FROM hero_v2_shots WHERE game=? AND actor=?`,game,actor).length)return {status:'CONFLICT'};
+   if(!this.sql.exec(`SELECT 1 FROM games WHERE number=? AND status='RUNNING'`,game).length||
+     this.sql.exec(`SELECT 1 FROM active_players a JOIN games g ON g.number=a.game_number AND g.chat_id=a.chat_id WHERE a.game_number=? AND a.telegram_id IN (?,?)`,game,actor,target).length!==2||
+     !this.eligible(actor)||!this.eligible(target))return {status:'UNAVAILABLE'};
+   const a=this.ensure(actor);if(!a)return {status:'UNAVAILABLE'};
    const t=this.ensure(target),stats=this.stats(a);
-   const hit=heroV2Hit(targetHp,t?Math.min(t.defense,this.stats(t).maxDefense):0,blocked?0:stats.damage);
+   const defense=t?Math.min(t.defense,this.stats(t).maxDefense):0;
+   if(a.charges!==actorCharges||stats.damage!==damage||defense!==targetDefense)return {status:'CONFLICT'};
+   const hit=heroV2Hit(targetHp,defense,blocked?0:damage);
    const points=heroV2ShotPoints(stats.level,hit);
    if(!Number.isSafeInteger(a.points+points))throw Error('hero points overflow');
    this.sql.exec(`UPDATE hero_v2_accounts SET charges=charges-1,points=points+? WHERE telegram_id=?`,points,actor);
    if(t)this.sql.exec(`UPDATE hero_v2_accounts SET defense=? WHERE telegram_id=?`,hit.defense,target);
+   const receipt={status:'PAID' as const,request,...hit,points,charges:a.charges-1};
    this.sql.exec(`INSERT INTO hero_v2_shots(game,actor,target,damage,points) VALUES(?,?,?,?,?)`,game,actor,target,hit.lostHp,points);
-   return {...hit,points};
+   this.sql.exec(`INSERT INTO hero_v2_shot_receipts(game,actor,request,receipt) VALUES(?,?,?,?)`,game,actor,key,JSON.stringify(receipt));
+   return receipt;
   });
  }
 }

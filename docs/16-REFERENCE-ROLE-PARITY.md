@@ -116,3 +116,7 @@ Cloudflare RoomCore now optionally runs the v2 room session inside the existing 
 
 ## Preview departure checkpoint
 Explicit group /leave now forfeits the v2 participant, clears pending intents/votes and last-word eligibility, promotes a missing leader, and releases only the departing player's registry claim. This is preview-only; v1 behavior and balances remain unchanged. A locked Wizard/Grench night-response snapshot must resolve before departure is accepted; immediate exit during that window remains pending work. Added adapter and router regression tests. No production enablement or merge.
+
+
+## Hero durable receipt checkpoint
+Replaced draft shot settlement with an exact replayable receipt keyed by game and actor. Trusted request binds phase sequence, target, pre-hit HP, hero charge, damage, persistent defense and shield. Registry requires a running game with both active members before a new settlement; same request returns original receipt even after cleanup, changed request conflicts. Added pure room preparation/finalization bridge with revision guard, receipt/state consistency checks and reload/replay tests. Live routing remains disabled: RoomCore must still durably freeze mutation around pending settlement, initialize hero snapshots, and retry the registry operation before publishing. No real balances or production settings changed.
