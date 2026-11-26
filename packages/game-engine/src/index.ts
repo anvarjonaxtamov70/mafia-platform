@@ -8,3 +8,5 @@ export * from './victory';
 export * from './engine';
 export { computeMafiaTarget } from './night/resolver';
 export * from './simulator';
+
+export * from './v2';
