@@ -1,0 +1,108 @@
+import {describe,it,expect} from 'vitest';
+import {decodeV2Button} from '@mafia/bot-core';
+import {TgError} from '../telegram';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+
+describe('durable V2 one-time private selection',()=>{
+ it('edits the exact sent prompt, preserves the selected name, survives restart and emits one role-only event',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  let core=await w.loaded(GROUP);
+  const n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const state=()=>core.data.game!.v2Session!.state;
+  const don=Number(state().players.find(p=>p.role==='DON')!.id);
+  const target=state().players.find(p=>p.role==='CITIZEN')!;
+  const seat=state().players.indexOf(target)+1;
+  const key='v2choice:'+n+':'+state().seq+':'+don+':phase';
+  const prompt=core.data.refs[key]!;
+  expect(prompt.chatId).toBe(don);
+  const all=w.tg.sent(don).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>b.callback_data??'');
+  const raw=all.find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.op==='C'&&b.seat===seat;})!;
+  const other=all.find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.op==='K';})!;
+  expect(raw).toBeTruthy();expect(other).toBeTruthy();
+  await w.send(callback(don,raw));
+  expect(state().intents).toEqual([{actor:String(don),target:target.id,kind:'CHOOSE'}]);
+  const edits=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===don&&c.params.message_id===prompt.messageId);
+  expect(edits).toHaveLength(1);
+  expect(edits[0]!.params.text).toContain('Harakatingizni tanlang.');
+  expect(edits[0]!.params.text).toContain('Sizning tanlovingiz:');
+  expect(edits[0]!.params.text).toContain('U'+target.id);
+  const keyboard=edits[0]!.params.reply_markup as {inline_keyboard:{callback_data?:string;url?:string}[][]};
+  expect(keyboard.inline_keyboard.flat().every(b=>!b.callback_data)).toBe(true);
+  const events=()=>w.tg.texts(GROUP).filter(t=>t.includes('o‘z o‘ljasini tanladi.'));
+  expect(events()).toHaveLength(1);expect(events()[0]).not.toContain('U'+target.id);
+  expect(events()[0]).not.toContain('U'+don);
+  w.restart(GROUP);core=await w.loaded(GROUP);
+  await w.advance(1000);
+  await w.send(callback(don,other));
+  expect(state().intents).toEqual([{actor:String(don),target:target.id,kind:'CHOOSE'}]);
+  expect(events()).toHaveLength(1);
+ });
+ it('expires unused night prompts and locks a private nomination abstention',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  const core=await w.loaded(GROUP),n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const state=()=>core.data.game!.v2Session!.state;
+  const don=Number(state().players.find(p=>p.role==='DON')!.id);
+  const doc=Number(state().players.find(p=>p.role==='DOCTOR')!.id);
+  const nightSeq=state().seq;
+  const prompt=core.data.refs['v2choice:'+n+':'+nightSeq+':'+doc+':phase']!;
+  const donPrompt=core.data.refs['v2choice:'+n+':'+nightSeq+':'+don+':phase']!;
+  const findButton=(id:number,op:string,seat:number)=>w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>b.callback_data??'').find(raw=>{const b=decodeV2Button(raw);return b?.game===n&&b.seq===state().seq&&b.op===op&&b.seat===seat;})??'';
+  const skip=findButton(don,'K',0);expect(skip).toBeTruthy();await w.send(callback(don,skip));
+  await w.advance(30001);expect(state().phase).toBe('DAWN');
+  const expiry=w.tg.calls.filter(c=>c.method==='editMessageReplyMarkup'&&c.params.chat_id===doc&&c.params.message_id===prompt.messageId);
+  expect(expiry).toHaveLength(1);expect(JSON.stringify(expiry[0]!.params.reply_markup)).not.toContain('callback_data');
+  expect(w.tg.calls.filter(c=>c.method==='editMessageReplyMarkup'&&c.params.chat_id===don&&c.params.message_id===donPrompt.messageId)).toHaveLength(0);
+  await w.advance(30001);await w.advance(30001);expect(state().phase).toBe('VOTING');
+  const abstain=findButton(doc,'V',0);expect(abstain).toBeTruthy();
+  await w.send(callback(doc,abstain));
+  expect(state().abstentions).toEqual([String(doc)]);expect(state().votes).toHaveLength(0);
+  const target=state().players.findIndex(p=>p.id===String(don))+1;
+  const vote=findButton(doc,'V',target);expect(vote).toBeTruthy();
+  await w.advance(3100);await w.send(callback(doc,vote));
+  expect(state().votes).toHaveLength(0);
+  expect(w.tg.texts(GROUP).filter(t=>t.includes('ovoz berishni o‘tkazib yubordi.'))).toHaveLength(1);
+  await w.advance(30001);expect(state().phase).toBe('NIGHT');
+  expect(state().abstentions).toEqual([]);
+ });
+
+ it('honours Telegram retry-after and never delivers expired queued night controls after restart',async()=>{
+  const w=new World({v2Preview:true,v2Ledger:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game_v2classic'));
+  let core=await w.loaded(GROUP);const n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  const call=w.tg.call.bind(w.tg);let blocked=0;
+  w.tg.call=async <T>(method:string,params?:Record<string,unknown>):Promise<T>=>{
+   if(method==='sendMessage'&&Number(params?.chat_id)>0&&String(params?.text).includes('Harakatingizni tanlang.')&&blocked===0){
+    blocked++;throw new TgError(429,'test rate limit',35);
+   }
+   return call<T>(method,params);
+  };
+  await w.send(groupText(1,'/startgame'));
+  expect(blocked).toBe(1);
+  const nightSeq=core.data.game!.v2Session!.state.seq;
+  expect(core.data.outbox[0]?.notBefore).toBe(w.now+35000);
+  w.restart(GROUP);core=await w.loaded(GROUP);
+  await w.advance(30001);
+  expect(core.data.game?.v2Session?.state.phase).toBe('DAWN');
+  expect(core.data.outbox[0]?.notBefore).toBeGreaterThan(w.now);
+  await w.advance(5000);
+  expect(core.data.outbox).toHaveLength(0);
+  const oldButtons=w.tg.sent().flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).map(b=>decodeV2Button(b.callback_data??'')).filter(b=>b?.game===n&&b.seq===nightSeq);
+  expect(oldButtons).toHaveLength(0);
+  expect(w.tg.texts(GROUP).some(text=>text.includes('Tong otdi'))).toBe(true);
+  await w.advance(30001);await w.advance(30001);
+  expect(core.data.game?.v2Session?.state.phase).toBe('VOTING');
+  const votingSeq=core.data.game!.v2Session!.state.seq;
+  for(const id of [1,2,3,4])expect(w.tg.sent(id).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]).some(b=>{const decoded=decodeV2Button(b.callback_data??'');return decoded?.game===n&&decoded.seq===votingSeq&&decoded.op==='V';})).toBe(true);
+ });
+
+});

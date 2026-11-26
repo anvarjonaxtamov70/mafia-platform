@@ -21,6 +21,8 @@ export function validTelegramUpdate(v: unknown): v is TgUpdate {
     if (!obj(m) || !id(m['message_id']) || !chat(m['chat']) || !optionalStr(m['text'], 16384)) return false;
     if (m['from'] !== undefined && !user(m['from'])) return false;
     if (m['sender_chat'] !== undefined && !chat(m['sender_chat'])) return false;
+    const reply=m['reply_to_message'];
+    if(reply!==undefined&&(!obj(reply)||!id(reply['message_id'])||!chat(reply['chat'])||(reply['from']!==undefined&&!user(reply['from']))||(reply['sender_chat']!==undefined&&!chat(reply['sender_chat']))))return false;
     if (m['migrate_to_chat_id'] !== undefined && (!id(m['migrate_to_chat_id']) || m['migrate_to_chat_id'] >= 0)) return false;
     const refund = m['refunded_payment'];
     if (refund !== undefined && (!obj(refund) || !purchase(refund) || !str(refund['telegram_payment_charge_id'], 256) || m['chat']['type'] !== 'private' || m['successful_payment'] !== undefined)) return false;

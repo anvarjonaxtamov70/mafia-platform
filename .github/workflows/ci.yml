@@ -61,5 +61,47 @@ jobs:
       - name: Integratsiya testlari (PostgreSQL, Redis)
         run: npm run test:integration
 
+      - name: Isolated staging Worker bundle (no deploy)
+        working-directory: apps/cloudflare
+        run: npx wrangler deploy --config wrangler.staging.toml --dry-run --outdir "$RUNNER_TEMP/v2-staging-bundle"
+
       - name: Cloudflare E2E (workerd + Durable Objects + soxta Telegram)
         run: npm run cf:e2e
+
+  # No automatic PR/push deployments. This job only runs on a deliberate manual
+  # dispatch of the existing Tekshiruv workflow on the V2 branch, after green CI.
+  deploy_staging:
+    name: Explicit isolated V2 Telegram preview
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/hypernova-role-parity-v16'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: hypernova-v2-staging
+    concurrency:
+      group: hypernova-v2-staging
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.STAGING_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
+      STAGING_BOT_ID: ${{ vars.STAGING_BOT_ID }}
+      PRODUCTION_BOT_ID: ${{ vars.PRODUCTION_BOT_ID }}
+      STAGING_ORIGIN: ${{ vars.STAGING_ORIGIN }}
+      STAGING_ADMIN_IDS: ${{ vars.STAGING_ADMIN_IDS }}
+      STAGING_CONFIRM: ${{ vars.STAGING_CONFIRM }}
+      STAGING_V2_LEDGER: ${{ vars.STAGING_V2_LEDGER }}
+      STAGING_EXPECTED_USERNAME: HypernovaV2Test_Bot
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read-only staging preflight
+        run: node apps/cloudflare/scripts/staging-launch.mjs
+      - name: Deploy only isolated preview and verify webhook
+        run: node apps/cloudflare/scripts/staging-launch.mjs --apply

@@ -97,6 +97,7 @@ export type ConfigSnapshot = GameConfig & { lobby: LobbySnapshot };
 export interface LobbyViewInput {
   number: number;
   mode: string;
+  modeLabel?: string;
   config: ConfigSnapshot;
   hostName: string;
   deadline: number | null;
@@ -108,7 +109,7 @@ export function renderLobby(game: LobbyViewInput, names: string[], _opts: { now:
   const hint = names.length < min ? t('lobby.need_more_manual',{min}) : t('lobby.ready_manual');
   const text = (game.config.lobby.quick ? t('quick.banner') + '\n\n' : '') + t('lobby.title', {
     host: escapeHtml(game.hostName),
-    mode: t(`mode.${game.mode}`),
+    mode: game.modeLabel??t(`mode.${game.mode}`),
     count: names.length,
     max: game.config.maxPlayers,
     list,

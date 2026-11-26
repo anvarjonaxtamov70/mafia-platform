@@ -19,3 +19,9 @@ export {
   walletBadge,
   type View,
 } from './economy-views';
+
+export * from './reference-roles';
+
+export * from './hero-rules-v2';
+
+export * from './v2-presenter';

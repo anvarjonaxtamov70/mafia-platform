@@ -5,7 +5,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { seededRng } from '@mafia/game-engine';
 import { RegistryCore, type Sql } from '../registry-core';
-import { RoomCore, type RegistryPort, type RoomData, type RoomStore } from '../room-core';
+import { RoomCore, type RegistryPort, type RoomData, type RoomStore, type V2SettlementPort } from '../room-core';
 import { Router, type RegistryApi, type RoomApi, type TgUpdate } from '../router';
 import { reentrantTx } from '../sql';
 import { TgError, type Telegram } from '../telegram';
@@ -126,16 +126,26 @@ export class World {
   rng = seededRng(5);
   devFake = false;
   visuals = false;
+  v2Settlement:V2SettlementPort|undefined;
   admins = new Set<number>([1]);
 
   starsMode: StarsMode;
 
-  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean } = {}) {
+  constructor(opts: { devFake?: boolean; starsMode?: StarsMode; ownerBenefits?: boolean; visuals?: boolean; v2Preview?: boolean; v2Ledger?:boolean; v2SettingsMode?:boolean } = {}) {
     this.devFake = !!opts.devFake;
     this.visuals = !!opts.visuals;
     this.starsMode = opts.starsMode ?? 'admins';
     this.registryCore = new RegistryCore(sqliteSql(), () => this.now, opts.ownerBenefits ? this.admins : undefined);
     this.registryCore.migrate();
+    if(opts.v2Ledger)this.v2Settlement={
+      snapshots:async ids=>Object.fromEntries(ids.flatMap(id=>{const h=this.registryCore.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];})),
+      settleNight:async (game,round,debits)=>this.registryCore.roleV2Economy.settleGrenchBatch(game,round,debits),
+      settleHero:async request=>this.registryCore.heroV2.settleShot(request),
+      settleDawn:async (game,round,actions)=>this.registryCore.roleV2Economy.settleDawn(game,round,actions),
+      buyOffer:async (game,attempt,buyer,offer,code)=>this.registryCore.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code),
+      markRunning:async (game,chatId,ids,allowItems)=>this.registryCore.markV2Running(game,chatId,ids,allowItems),
+      recordResult:async input=>this.registryCore.recordV2Game(input),
+    };
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({
       tg: this.tg,
@@ -143,6 +153,9 @@ export class World {
       room: (chatId) => this.roomApi(chatId),
       admins: this.admins,
       devFake: this.devFake,
+      v2Preview: !!opts.v2Preview,
+      v2SettingsMode: !!opts.v2SettingsMode,
+      ...(opts.v2Ledger?{heroV2Shop:{top:async()=>this.registryCore.heroV2.top(),view:async id=>this.registryCore.heroV2.view(id),quote:async (id,op,arg)=>this.registryCore.heroV2.quote(id,op,arg),confirm:async (id,quoteId)=>this.registryCore.heroV2.confirm(id,quoteId),cancel:async (id,quoteId)=>this.registryCore.heroV2.cancel(id,quoteId)}}:{}),
       visuals: this.visuals,
       starsMode: this.starsMode,
       botUsername: async () => 'test_mafia_bot',
@@ -167,6 +180,7 @@ export class World {
         botUsername: () => 'test_mafia_bot',
         devFakePlayers: this.devFake,
         visuals: this.visuals,
+        ...(this.v2Settlement?{v2Settlement:this.v2Settlement}:{}),
       });
       this.rooms.set(chatId, core);
     }
@@ -237,9 +251,9 @@ export function groupText(from: number, text: string, chatId = GROUP): Omit<TgUp
   return { message: { message_id: msgId++, chat: { id: chatId, type: 'supergroup', title: 'Mafia guruh' }, from: user(from), text } };
 }
 
-export function callback(from: number, data: string, chatId?: number): Omit<TgUpdate, 'update_id'> {
+export function callback(from: number, data: string, chatId?: number, messageId=77): Omit<TgUpdate, 'update_id'> {
   const chat = chatId !== undefined ? { id: chatId, type: 'supergroup' as const, title: 'Mafia guruh' } : { id: from, type: 'private' as const };
-  return { callback_query: { id: String(msgId++), from: user(from), data, message: { message_id: 77, chat } } };
+  return { callback_query: { id: String(msgId++), from: user(from), data, message: { message_id: messageId, chat } } };
 }
 
 // ───────────────────────────── O'yin yordamchilari ─────────────────────────────

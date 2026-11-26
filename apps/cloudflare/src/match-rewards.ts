@@ -1,4 +1,4 @@
-import type { Faction, PlayerOutcome, RoleCode } from '@mafia/game-engine';
+import type { Faction, PlayerOutcome, RoleCode,V2Role,V2Faction } from '@mafia/game-engine';
 
 export interface MatchRewardContext {
   playerCount: number;
@@ -9,8 +9,9 @@ export interface MatchRewardContext {
   practice: boolean;
 }
 export interface MatchRewardPlayer {
-  role: RoleCode;
-  faction: Faction;
+  role: RoleCode | V2Role;
+  faction: Faction | V2Faction;
+  teamWin?:boolean;
   outcome: PlayerOutcome;
   active: boolean;
   afk?: boolean;
@@ -37,7 +38,7 @@ export function matchReward(c: MatchRewardContext, p: MatchRewardPlayer): MatchR
   const missed = clamp(p.missed ?? (p.active ? 0 : 1), 0, 1000);
   const personal = p.active ? 1 : Math.max(0.35, 0.85 - 0.10 * Math.max(0, missed - 1));
   if (won(p)) {
-    const cap = p.faction === 'NEUTRAL' ? (p.outcome === 'WIN' ? 150 : 70) : 120;
+    const cap = p.teamWin ? 120 : p.faction === 'SOLO'||p.faction==='NEUTRAL' ? (p.outcome === 'WIN' ? 150 : 70) : 120;
     return { points: Math.min(cap, Math.max(1, Math.round(cap * quality * personal))), dollars: Math.min(66, Math.round(66 * quality * personal)) };
   }
   if (p.outcome === 'DRAW') return { points: 0, dollars: Math.min(16, Math.round(16 * quality * personal)) };

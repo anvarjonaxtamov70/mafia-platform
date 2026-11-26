@@ -1,0 +1,43 @@
+import {describe,it,expect} from 'vitest';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+describe('staging settings-controlled V2 games',()=>{
+ it('defaults to Classic, only group admin or superadmin may change future mode',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true});
+  for(const id of [1,2,3])await w.send(privateText(id,'/start'));
+  await w.send(groupText(2,'/game'));
+  const core=await w.loaded(GROUP);
+  expect(core.data.game?.v2Mode).toBe('CLASSIC');
+  await w.send(groupText(3,'/settings'));
+  await w.send(callback(3,'gs:v2mode_VS:'+GROUP,GROUP));
+  expect(w.registryCore.getSettings(GROUP).v2Mode).toBeUndefined();
+  w.tg.admins.add(2);
+  await w.send(groupText(2,'/settings'));
+  expect(w.tg.texts(GROUP).some(t=>t.includes('O‘yin rejimi:'))).toBe(true);
+  await w.send(callback(2,'gs:v2mode_VS:'+GROUP,GROUP));
+  expect(w.registryCore.getSettings(GROUP).v2Mode).toBe('VS');
+  expect(core.data.game?.v2Mode).toBe('CLASSIC');
+  await w.send(groupText(1,'/stop'));
+  await w.send(groupText(3,'/game'));
+  expect(core.data.game?.v2Mode).toBe('VS');
+  await w.send(groupText(1,'/stop'));
+  await w.send(callback(1,'gs:v2mode_ZOMBIE:'+GROUP,GROUP));
+  expect(w.registryCore.getSettings(GROUP).v2Mode).toBe('ZOMBIE');
+  await w.send(groupText(3,'/game'));
+  expect(core.data.game?.v2Mode).toBe('ZOMBIE');
+ });
+ it('rejects direct mode overrides and foreign settings callbacks even from owner',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true});
+  await w.send(privateText(1,'/start'));
+  await w.send(groupText(1,'/game_v2vs'));
+  expect((await w.loaded(GROUP)).data.game).toBeNull();
+  await w.advance(3100);
+  await w.send(groupText(1,'/game v2vs'));
+  expect((await w.loaded(GROUP)).data.game).toBeNull();
+  await w.send(callback(1,'gs:v2mode_VS:'+GROUP,GROUP-1));
+  expect(w.registryCore.getSettings(GROUP).v2Mode).toBeUndefined();
+  await w.advance(3100);
+  await w.send(groupText(1,'/quick'));
+  const g=(await w.loaded(GROUP)).data.game;
+  expect(g?.v2Mode).toBe('CLASSIC');expect(g?.config.ranked).toBe(false);expect(g?.config.allowArcadeItems).toBe(false);
+ });
+});

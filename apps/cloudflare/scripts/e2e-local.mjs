@@ -61,7 +61,7 @@ const wrangler = spawn(
   'npx',
   [
     'wrangler', 'dev', '--port', String(WORKER_PORT), '--ip', '127.0.0.1', '--persist-to', persist, '--show-interactive-dev-session=false',
-    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1,6', '--var', 'STARS_MODE:all',
+    '--var', `BOT_TOKEN:${TOKEN}`, '--var', `TELEGRAM_API:http://127.0.0.1:${TG_PORT}`, '--var', 'TEST_HOOKS:true', '--var', 'ADMIN_IDS:1,6', '--var', 'STARS_MODE:all', '--var', 'V2_PREVIEW:true', '--var', 'V2_LOCAL_LEDGER:true',
   ],
   { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
@@ -271,8 +271,89 @@ try {
   await pm(1, '/refund e2e-charge-1');
   check(calls.some((c) => c.method === 'refundStarPayment' && c.params.telegram_payment_charge_id === 'e2e-charge-1' && c.params.user_id === 2), 'owner refund targets actual payer');
 
+  // V2 through the actual Worker / Room DO / Registry DO (separate from unit harness).
+  await sleep(3100);
+  const v2Players=[1,11,12,13];
+  for(const p of v2Players.slice(1))await pm(p,'/start');
+  await pm(11,'/herov2');
+  check(texts(11).at(-1)?.includes('90 💎'),'local v2 shop RPC reads real Registry SQLite');
+  // A user with no diamonds can obtain a quote, but cannot spend another user's quote or buy the hero.
+  const v2Buy=buttons(11).find(x=>x==='hv2:q:BUY');
+  if(!v2Buy)throw Error('V2 hero buy button missing');
+  await cb(11,v2Buy);
+  const quote=calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===11).at(-1)?.params.reply_markup?.inline_keyboard?.flat().find(b=>b.callback_data?.startsWith('hv2:c:'))?.callback_data;
+  if(!quote)throw Error('V2 hero confirmation missing');
+  await cb(12,quote);
+  check((calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text??'').includes('Taklif mavjud emas'),'foreign user cannot confirm v2 quote');
+  await cb(11,quote);
+  check((calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text??'').includes('Mablag‘ yetarli emas'),'insufficient diamonds rejected by real Registry DO');
+  await pm(11,'/herov2');
+  check(texts(11).at(-1)?.includes('90 💎'),'declined v2 purchase did not grant hero');
+  // Check the actual complete V2 terminal view, not the obsolete unformatted
+  // title. Keep independent Registry profile assertions below.
+  const v2Terminal = text => text.includes('🏁 <b>O‘yin tugadi!</b>') &&
+    text.includes('<b>G‘oliblar:</b>') &&
+    text.includes('<b>Boshqa ishtirokchilar:</b>') &&
+    text.includes('Davomiyligi:');
+  const beforeV2=texts(GROUP).length;
+  await gm(1,'/game_v2classic');await sleep(1200);
+  const v2Lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+  const v2Join=v2Lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
+  if(!v2Join||v2Join===joinBtn)throw Error('new V2 lobby missing');
+  for(const p of v2Players.slice(1))await cb(p,v2Join,true);
+  await gm(1,'/startgame');await sleep(1800);
+  check(texts(GROUP).slice(beforeV2).some(t=>t.includes('V2 SINOV')&&t.includes('Ichki test hisobi')),'V2 real RoomCore uses local ledger');
+  for(const p of v2Players)check(texts(p).some(t=>t.includes('Sizning rolingiz:')),'V2 role privately delivered '+p);
+  for(let round=0;round<18;round++){
+    if(texts(GROUP).slice(beforeV2).some(v2Terminal))break;
+    const status=await force();if(!status.ok)throw Error('V2 force failed');
+    await sleep(500);
+  }
+  check(texts(GROUP).slice(beforeV2).some(v2Terminal),'V2 match ends through actual DO alarms');
+  await sleep(1800);
+  await pm(11,'/profile');
+  check(texts(11).at(-1)?.includes('Barcha o‘yinlar: 1'),'V2 result stored through Registry RPC');
+  // Finish each remaining mode through real webhook and DO alarm/RPC paths.
+  // Fresh participants avoid historical profile/DM assertions passing by accident.
+  let previousJoin=v2Join;
+  for(const [mode,first] of [['zombie',21],['hypernova',31],['vs',41]]){
+    await sleep(3100);
+    const ids=[1,first,first+1,first+2];
+    for(const id of ids.slice(1))await pm(id,'/start');
+    const beforeGroup=texts(GROUP).length,beforeDM=new Map(ids.map(id=>[id,texts(id).length]));
+    await gm(1,'/game_v2'+mode);await sleep(1200);
+    const lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+    const join=lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
+    if(!join||join===previousJoin)throw Error('new '+mode+' lobby missing');
+    previousJoin=join;
+    for(const id of ids.slice(1))await cb(id,join,true);
+    await gm(1,'/startgame');await sleep(1800);
+    check(texts(GROUP).slice(beforeGroup).some(t=>t.includes('V2 SINOV — '+mode.toUpperCase())&&t.includes('Ichki test hisobi')),mode+' real ledger starts');
+    const roleDMs=ids.map(id=>texts(id).slice(beforeDM.get(id)).find(t=>t.includes('Sizning rolingiz:')));
+    check(roleDMs.every(Boolean),mode+' all private roles delivered');
+    check(!texts(GROUP).slice(beforeGroup).some(t=>t.includes('Sizning rolingiz:')),mode+' no public role assignment');
+    if(mode==='vs'){
+      check(roleDMs.filter(t=>t?.includes('Jamoangiz: 🔴')).length===2&&roleDMs.filter(t=>t?.includes('Jamoangiz: 🔵')).length===2,'VS equal private colour teams');
+    }
+    // Timeout path intentionally exercises AFK cleanup without synthetic role selection.
+    for(let round=0;round<24;round++){
+      if(texts(GROUP).slice(beforeGroup).some(v2Terminal))break;
+      const result=await force();if(!result.ok)throw Error(mode+' force failed');
+      await sleep(500);
+    }
+    check(texts(GROUP).slice(beforeGroup).some(v2Terminal),mode+' terminal phase through actual DO alarms');
+    await sleep(1800);
+    for(const id of ids.slice(1)){
+      await pm(id,'/profile');
+      check(texts(id).at(-1)?.includes('Barcha o‘yinlar: 1'),mode+' result recorded for '+id);
+    }
+  }
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
+  const groupCommands=calls.filter(c=>c.method==='setMyCommands'&&c.params.scope?.type==='all_group_chats').at(-1)?.params.commands??[];
+  for(const mode of ['classic','zombie','hypernova','vs']){
+    check(groupCommands.some(c=>c.command==='game_v2'+mode),'Telegram menu exposes /game_v2'+mode);
+  }
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.allowed_updates.includes('pre_checkout_query')), 'webhook pre_checkout_query ni qabul qiladi');
   const diag = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });

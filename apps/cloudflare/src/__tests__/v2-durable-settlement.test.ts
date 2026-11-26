@@ -1,0 +1,173 @@
+import {describe,it,expect} from 'vitest';
+import {seededRng,v2CreateFixed,v2Submit,type V2Role} from '@mafia/game-engine';
+import {encodeV2Button} from '@mafia/bot-core';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+async function start(roles:V2Role[],hero=false){
+ const w=new World({v2Preview:true,v2Ledger:true}),ids=[1,2,3,4];
+ for(const id of ids)await w.send(privateText(id,'/start'));
+ const r=w.registryCore;
+ if(hero){for(const id of [1,2]){r.eco.creditDiamonds(id,90,'TEST','d'+id);expect(r.heroV2.purchase(id,'BUY','b'+id)).toBe('OK');}}
+ await w.send(groupText(1,'/game v2classic'));
+ const core=await w.loaded(GROUP),n=core.data.game!.number;
+ for(const id of ids.slice(1))await w.send(callback(id,'l:j:'+n,GROUP));
+ await w.send(groupText(1,'/startgame'));
+ const s=core.data.game!.v2Session!;
+ const old=s.state;
+ s.state=v2CreateFixed(ids.map(String),roles,'CLASSIC',w.now,seededRng(1));
+ for(const p of s.state.players){const previous=old.players.find(x=>x.id===p.id)!;p.heroDefense=previous.heroDefense;p.heroCharges=previous.heroCharges;p.heroDamage=previous.heroDamage;}
+ return {w,r,core,n,s};
+}
+describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
+ it('persists night plan before debit, retries a lost response after restart and freezes mutations',async()=>{
+  const {w,r,core,n,s}=await start(['DON','GRENCH','CITIZEN','CITIZEN']);
+  s.state=v2Submit(s.state,{actor:'1',target:null,kind:'SKIP'},1);
+  s.state=v2Submit(s.state,{actor:'2',target:'3',kind:'CHOOSE'},1);
+  r.eco.credit(3,200,'TEST',null,'seed');
+  await core.forceDeadline();
+  const original=w.v2Settlement!.settleNight;
+  let amount=0,calls=0;
+  w.v2Settlement!.settleNight=async (...args)=>{
+    calls++;
+    const stored=w.stores.get(GROUP)!.data;
+    expect(stored?.ops.some(o=>o.type==='v2Night')).toBe(true);
+    amount=args[2][0]!.amount;
+    const receipt=await original(...args);
+    if(calls===1)throw Error('response lost after commit');
+    return receipt;
+  };
+  await w.advance(30001);
+  expect(calls).toBe(1);
+  expect(r.eco.coins(3)).toBe(200-amount);
+  expect(core.data.game!.v2Session!.state.phase).toBe('NIGHT');
+  expect((await core.leave(3)).ok).toBe(false);
+  expect((await core.cancel({by:2,isAdmin:false})).ok).toBe(false);
+  w.restart(GROUP);
+  await w.advance(2100);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(2);
+  expect(restored.data.ops.some(o=>o.type==='v2Night')).toBe(false);
+  expect(restored.data.game!.number).toBe(n);
+  expect(restored.data.game!.v2Session!.state.phase).toBe('DAWN');
+  expect(restored.data.game!.v2Session!.state.players[2]?.hp).toBe(100);
+  expect(r.eco.coins(3)).toBe(200-amount);expect(r.eco.coins(2)).toBe(amount);
+ });
+ it('admin stop persists across a lost committed receipt and restart',async()=>{
+  const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
+  s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;
+  const raw=encodeV2Button({game:n,seq:2,op:'H',seat:2});
+  const original=w.v2Settlement!.settleHero;let calls=0;
+  w.v2Settlement!.settleHero=async request=>{
+    const receipt=await original(request);
+    if(++calls===1)throw Error('lost response');
+    return receipt;
+  };
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(true);
+  await w.runAlarms();
+  expect(calls).toBe(1);expect(r.heroV2.view(1)?.charges).toBe(9);
+  expect((await core.cancel({by:2,isAdmin:false})).ok).toBe(false);
+  expect((await core.cancel({by:1,isAdmin:true})).ok).toBe(true);
+  expect(w.stores.get(GROUP)!.data?.game?.v2DeferredStop).toBe(true);
+  w.restart(GROUP);await w.advance(2100);
+  expect(calls).toBe(2);
+  expect((await w.loaded(GROUP)).data.game).toBeNull();
+  expect(r.heroV2.view(1)?.charges).toBe(9);expect(r.activeOf(1)).toBeNull();
+ });
+ it('permanent failure holds exact operation across restart; only owner can retry after repair',async()=>{
+  const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
+  s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;
+  const raw=encodeV2Button({game:n,seq:2,op:'H',seat:2});
+  const original=w.v2Settlement!.settleHero;let calls=0;
+  w.v2Settlement!.settleHero=async request=>{
+    calls++;await original(request);throw Error('persistent response loss');
+  };
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(true);
+  await w.runAlarms();
+  for(const delay of [2000,4000,8000,16000,32000])await w.advance(delay+1);
+  expect(calls).toBe(6);
+  const hold=core.v2RecoveryStatus(n)!;expect(hold).toMatchObject({game:n,kind:'v2Hero',failures:6});
+  expect(w.stores.get(GROUP)!.data?.v2RecoveryHold).toEqual(hold);
+  expect(r.heroV2.view(1)?.charges).toBe(9);
+  w.restart(GROUP);await w.advance(120000);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(6);expect(restored.v2RecoveryStatus(n)).toEqual(hold);
+  await w.send(privateText(2,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(6);
+  await w.send(privateText(1,'/admin_v2_recovery '+n));
+  expect(w.tg.texts(1).at(-1)).toContain('Operatsiya #'+hold.op);
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+(hold.op+1)));
+  expect(calls).toBe(6);
+  // A failed manual retry re-enters hold immediately, not another six attempts.
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(7);expect(restored.v2RecoveryStatus(n)?.op).toBe(hold.op);
+  w.v2Settlement!.settleHero=async request=>{calls++;return original(request);};
+  expect((await restored.cancel({by:1,isAdmin:true})).ok).toBe(true);
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(8);expect(restored.v2RecoveryStatus(n)).toBeNull();
+  expect(restored.data.game).toBeNull();expect(r.heroV2.view(1)?.charges).toBe(9);
+  expect(r.activeOf(1)).toBeNull();
+ });
+ it('Klaus gift and Seller offer resolve through night queue even without Grench',async()=>{
+  const {w,r,core,n,s}=await start(['DON','KLAUS','SELLER','CITIZEN']);
+  s.state=v2Submit(s.state,{actor:'1',target:null,kind:'SKIP'},1);
+  s.state=v2Submit(s.state,{actor:'2',target:'4',kind:'CHOOSE'},1);
+  s.state=v2Submit(s.state,{actor:'3',target:'4',kind:'CHOOSE'},1);
+  const original=w.v2Settlement!.settleDawn;let calls=0,amount=0;
+  w.v2Settlement!.settleDawn=async (...args)=>{
+    calls++;expect(w.stores.get(GROUP)!.data?.ops.some(o=>o.type==='v2Night')).toBe(true);
+    const receipt=await original(...args);
+    if(receipt.status==='OK'){const gift=receipt.entries.find(e=>e.kind==='KLAUS');if(gift?.kind==='KLAUS')amount=gift.amount;}
+    if(calls===1)throw Error('lost response');
+    return receipt;
+  };
+  await core.forceDeadline();
+  expect(calls).toBe(1);expect(amount).toBeGreaterThanOrEqual(50);
+  expect(r.eco.coins(4)).toBe(amount);
+  expect(core.data.game!.v2Session!.state.phase).toBe('NIGHT');
+  w.restart(GROUP);await w.advance(2100);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(2);expect(r.eco.coins(4)).toBe(amount);
+  expect(restored.data.game!.v2Session!.state.phase).toBe('DAWN');
+  expect(restored.data.game!.number).toBe(n);
+  expect(w.tg.texts(4).join(' ')).toContain('Klaus');
+  expect(w.tg.texts(4).join(' ')).toContain('50% chegirmali');
+  expect(w.tg.texts(GROUP).join(' ')).not.toContain('Klaus sizga');
+  const offer=restored.data.game!.v2Offers![0]!;
+  const raw='v2s:'+n+':'+offer.id+':FAKE_DOC';
+  const offerMessage=restored.data.refs['v2seller:'+n+':'+offer.id]!.messageId;
+  r.eco.credit(4,200,'TEST',null,'offer-money');
+  expect((await restored.v2Button({tgId:3,privateChatId:3,number:n,raw})).ok).toBe(false);
+  expect((await restored.v2Button({tgId:4,privateChatId:GROUP,number:n,raw})).ok).toBe(false);
+  await w.send(callback(4,raw));
+  expect(r.eco.coins(4)).toBe(amount+100);expect(r.eco.coins(3)).toBe(10);
+  expect(restored.data.game!.v2Offers).toHaveLength(0);
+  const edits=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===4&&c.params.message_id===offerMessage);
+  expect(edits).toHaveLength(1);expect(edits[0]!.params.text).toContain('Sizning tanlovingiz:');expect(edits[0]!.params.text).toContain('Hujjat');
+  expect(edits[0]!.params.reply_markup).toEqual({inline_keyboard:[]});
+  expect((await restored.v2Button({tgId:4,privateChatId:4,number:n,raw})).ok).toBe(false);
+ });
+ it('hero shot is persisted before charge, replayed after restart and applied once',async()=>{
+  const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
+  s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;
+  const raw=encodeV2Button({game:n,seq:2,op:'H',seat:2});
+  const original=w.v2Settlement!.settleHero;let calls=0;
+  w.v2Settlement!.settleHero=async request=>{
+    calls++;
+    expect(w.stores.get(GROUP)!.data?.ops.some(o=>o.type==='v2Hero')).toBe(true);
+    const receipt=await original(request);
+    if(calls===1)throw Error('response lost after commit');
+    return receipt;
+  };
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(true);
+  await w.runAlarms();
+  expect(calls).toBe(1);expect(r.heroV2.view(1)?.charges).toBe(9);
+  expect(core.data.game!.v2Session!.state.players[1]?.hp).toBe(100);
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(false);
+  w.restart(GROUP);
+  await w.advance(2100);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(2);
+  expect(restored.data.game!.v2Session!.state.players[1]?.hp).toBe(63);
+  expect(r.heroV2.view(1)).toMatchObject({charges:9,points:6});
+  expect(restored.data.ops.some(o=>o.type==='v2Hero')).toBe(false);
+ });
+});

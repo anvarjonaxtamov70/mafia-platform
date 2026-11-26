@@ -1,6 +1,6 @@
-// Deterministic original vector-style artwork. No network, font, image or npm dependency.
+// Deterministic vector fallback artwork plus checked-in cinematic JPEG/GIF overrides. No network.
 import { deflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const W=512,H=320;
@@ -86,28 +86,212 @@ function png(rgb,w=W,h=H){
  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ih),chunk('IDAT',deflateSync(raw,{level:9})),chunk('IEND',Buffer.alloc(0))]);
 }
 // GIF89a; use short clear-code runs so code width is always 5 bits.
-function gif(){
- const w=256,h=144,colors=[[10,15,25],[20,25,36],[35,34,42],[58,46,44],[81,58,45],[118,84,48],[163,117,54],[205,150,60],[241,181,75],[255,211,122],[255,235,177],[240,242,247],[99,109,130],[48,57,76],[16,20,30],[0,0,0]];
+function gif(scene='intro'){
+ const w=scene==='intro'?256:192,h=scene==='intro'?144:108,colors=[[10,15,25],[20,25,36],[35,34,42],[58,46,44],[81,58,45],[118,84,48],[163,117,54],[205,150,60],[241,181,75],[255,211,122],[255,235,177],[240,242,247],[99,109,130],[48,57,76],[16,20,30],[0,0,0]];
+ if(scene==='v2_night')colors.splice(0,16,...[[8,13,25],[14,22,42],[22,34,58],[31,49,78],[40,65,102],[57,88,135],[83,113,159],[113,145,189],[156,183,219],[200,219,246],[239,244,255],[235,239,247],[78,89,115],[25,32,50],[13,18,31],[0,0,0]]);
+ if(scene==='v2_dawn')colors.splice(0,16,...[[18,20,35],[34,30,49],[56,39,61],[80,48,70],[108,61,75],[145,78,75],[182,99,76],[217,133,83],[242,171,101],[255,210,138],[255,239,188],[245,243,235],[93,68,82],[40,35,55],[25,24,39],[0,0,0]]);
+ if(scene==='v2_vote')colors.splice(0,16,...[[11,17,30],[19,28,48],[29,43,65],[40,59,86],[57,78,111],[74,100,135],[97,128,164],[132,165,196],[173,205,231],[211,231,246],[241,247,255],[235,242,250],[115,139,165],[35,50,69],[17,24,39],[0,0,0]]);
  const u16=n=>{const b=Buffer.alloc(2);b.writeUInt16LE(n);return b;};
  const pieces=[Buffer.from('GIF89a'),u16(w),u16(h),Buffer.from([0xf3,0,0]),Buffer.from(colors.flat()),Buffer.from([0x21,0xff,11]),Buffer.from('NETSCAPE2.0'),Buffer.from([3,1,0,0,0])];
- for(let frame=0;frame<8;frame++){
-  const b=canvas(w,h,palette.BRAND);b.ring(128,58,37,colors[6],2);b.ring(128,58,29,colors[4],1);
+ const frames=scene==='intro'?8:12;
+ for(let frame=0;frame<frames;frame++){
+  const b=canvas(w,h,colors[8]);
+  if(scene==='intro'){
+  b.ring(128,58,37,colors[6],2);b.ring(128,58,29,colors[4],1);
   for(const p of brand){const pts=p.split(' ').map(q=>q.split(',').map(Number));for(let i=1;i<pts.length;i++)b.line(100+pts[i-1][0]*.56,30+pts[i-1][1]*.56,100+pts[i][0]*.56,30+pts[i][1]*.56,colors[8],2);}
   const a=frame*Math.PI/4;b.dot(128+Math.cos(a)*37,58+Math.sin(a)*37,4,colors[10]);
   b.text('HYPERNOVA',128,106,3,colors[11]);b.text('MAFIA',128,130,1,colors[8]);
+  }else{
+   const cx=w/2,cy=43,a=frame*2*Math.PI/frames;
+   // Layered skyline, illuminated horizon and drifting fog, kept within a small GIF budget.
+   for(let y=0;y<78;y++){
+    const color=scene==='v2_dawn'?colors[Math.min(8,1+Math.floor(y/10))]:colors[Math.min(4,Math.floor(y/18))];
+    b.rect(0,y,w,1,color);
+   }
+   const skyline=(layer,base,color)=>{for(let i=0;i<15;i++){
+    const x=i*14-6,ht=8+(i*17+layer*11)%24;
+    b.rect(x,base-ht,12,ht,color);
+    if(i%4===0)b.line(x+6,base-ht-6,x+6,base-ht,color,1);
+    for(let j=base-ht+4;j<base-2;j+=6)if((i+j+layer)%3===0)b.rect(x+3,j,2,2,colors[5]);
+   }};
+   for(let i=0;i<6;i++){const x=(i*39+frame*3)%240-24;b.line(x,19+i*5,x+22,19+i*5,colors[2],1);}
+   b.rect(0,0,w,2,colors[7]);b.rect(0,h-2,w,2,colors[7]);
+   b.text('HYPERNOVA',cx,8,1,colors[11]);
+   if(scene==='v2_night'){
+    b.dot(cx,cy-5,23,colors[7]);b.dot(cx,cy-5,21,colors[10]);b.dot(cx+10,cy-12,20,colors[2]);
+    for(let i=0;i<7;i++){const x=18+(i*29)%156,y=22+(i*13)%39;b.dot(x,y,(i+frame)%4===0?2:1,colors[8+(i+frame)%3]);}
+    skyline(0,72,colors[3]);skyline(1,76,colors[0]);
+    b.rect(0,77,w,31,colors[0]);b.text('TUN',cx,81,3,colors[11]);
+   }else if(scene==='v2_dawn'){
+    const y=63-Math.round(17*(1-Math.cos(a))/2);
+    b.dot(cx,y,20,colors[10]);b.rect(0,64,w,10,colors[1]);b.line(16,64,w-16,64,colors[8],2);
+    for(let i=0;i<7;i++){const ang=Math.PI+i*Math.PI/6;b.line(cx+Math.cos(ang)*24,y+Math.sin(ang)*24,cx+Math.cos(ang)*29,y+Math.sin(ang)*29,colors[7],2);}
+    skyline(0,72,colors[3]);skyline(1,76,colors[0]);
+    b.rect(0,77,w,31,colors[0]);b.text('TONG',cx,81,3,colors[11]);
+   }else if(scene==='v2_vote'){
+    b.ring(cx,cy,32,colors[5],1);b.ring(cx,cy,29,colors[3],1);
+    b.rect(61,54,70,17,colors[2]);b.rect(66,49,60,21,colors[4]);b.rect(75,45,42,4,colors[0]);b.line(66,69,126,69,colors[7],1);
+    const y=24+Math.round(7*(1-Math.cos(a))/2);
+    b.rect(84,y,24,20,colors[9]);b.line(89,y+9,94,y+14,colors[2],2);b.line(94,y+14,103,y+5,colors[2],2);
+    b.rect(0,77,w,31,colors[0]);b.text('OVOZ',cx,81,3,colors[11]);
+   }else{
+    b.ring(cx,cy,26,colors[6],2);b.line(cx-21,cy-14,cx-11,cy+11,colors[9],3);b.line(cx-11,cy+11,cx+11,cy+11,colors[9],3);b.line(cx+11,cy+11,cx+21,cy-14,colors[9],3);b.line(cx-21,cy-14,cx-9,cy-3,colors[9],3);b.line(cx-9,cy-3,cx,cy-18,colors[9],3);b.line(cx,cy-18,cx+9,cy-3,colors[9],3);b.line(cx+9,cy-3,cx+21,cy-14,colors[9],3);
+    for(let i=0;i<5;i++){const ang=a+i*Math.PI*2/5;b.dot(cx+Math.cos(ang)*33,cy+Math.sin(ang)*29,2,colors[10]);}
+    b.ring(cx,cy,29,colors[4],1);b.rect(0,77,w,31,colors[0]);b.text('YAKUN',cx,81,3,colors[11]);
+   }
+   b.line(65,101,127,101,colors[6],1);
+  }
   const bytes=[];let bits=0,nb=0;const emit=n=>{bits|=n<<nb;nb+=5;while(nb>=8){bytes.push(bits&255);bits>>>=8;nb-=8;}};
   for(let i=0;i<w*h;i++){if(i%12===0)emit(16);let best=0,score=Infinity;for(let j=0;j<colors.length;j++){const d=colors[j];const q=(b.data[i*3]-d[0])**2+(b.data[i*3+1]-d[1])**2+(b.data[i*3+2]-d[2])**2;if(q<score){best=j;score=q;}}emit(best);}
   emit(17);if(nb)bytes.push(bits&255);
-  pieces.push(Buffer.from([0x21,0xf9,4,4,12,0,0,0,0x2c]),u16(0),u16(0),u16(w),u16(h),Buffer.from([0,4]));
+  pieces.push(Buffer.from([0x21,0xf9,4,4,scene==='intro'?12:10,0,0,0,0x2c]),u16(0),u16(0),u16(w),u16(h),Buffer.from([0,4]));
   for(let i=0;i<bytes.length;i+=255){const block=Buffer.from(bytes.slice(i,i+255));pieces.push(Buffer.from([block.length]),block);}pieces.push(Buffer.from([0]));
  }
  pieces.push(Buffer.from([0x3b]));return Buffer.concat(pieces);
 }
+// Original V2 noir character collection, independent of the legacy role artwork.
+// Each role has a costume silhouette and its own foreground emblem.
+const v2Portraits=[
+ ['citizen','TINCH AHOLI','CITY','coat','house'],
+ ['don','DON','MAFIA','hat','crown'],
+ ['mafia','MAFIA','MAFIA','hat','diamond'],
+ ['manyak','MANYAK','SOLO','hood','blade'],
+ ['komissar','KOMISSAR','CITY','cap','star'],
+ ['doktor','DOKTOR','CITY','medic','cross'],
+ ['serjant','SERJANT','CITY','cap','chevrons'],
+ ['daydi','DAYDI','CITY','hood','eye'],
+ ['frozen','FROZEN','CITY','hood','snow'],
+ ['advokat','ADVOKAT','MAFIA','coat','scales'],
+ ['suidsid','SUIDSID','NEUTRAL','hood','hourglass'],
+ ['killer','KILLER','MAFIA','mask','target'],
+ ['kamikaze','KAMIKAZE','CITY','coat','burst'],
+ ['grench','GRENCH','NEUTRAL','mask','coin'],
+ ['minior','MINIOR','SOLO','helmet','burst'],
+ ['shpion','SHPION','MAFIA','hat','eye'],
+ ['zombi','ZOMBI','ZOMBIE','mask','scar'],
+ ['kimyogar','KIMYOGAR','MAFIA','medic','flask'],
+ ['tentak','TENTAK','CITY','cap','spiral'],
+ ['buqalamun','BUQALAMUN','NEUTRAL','hood','split'],
+ ['sotuvchi','SOTUVCHI','NEUTRAL','coat','coin'],
+ ['krampous','KRAMPOUS','SOLO','horns','chain'],
+ ['omadli','OMADLI','CITY','coat','clover'],
+ ['klaus','KLAUS','NEUTRAL','winter','gift'],
+ ['sehrgar','SEHRGAR','NEUTRAL','wizard','star'],
+ ['mergan','MERGAN','SOLO','helmet','target'],
+ ['janob','JANOB','CITY','top','medal'],
+];
+const noirPalette={CITY:[77,151,184],MAFIA:[176,48,67],SOLO:[199,103,55],NEUTRAL:[174,137,78],ZOMBIE:[97,157,99]};
+function noirPortrait(title,faction,costume,symbol,index){
+ const w=448,h=560,accent=noirPalette[faction],gold=[210,175,105],black=[9,12,19],edge=mix(black,accent,.48),light=mix(accent,[245,240,224],.58);
+ const b=canvas(w,h,accent);
+ const poly=(pts,color)=>{
+  const ys=pts.map(p=>p[1]);
+  for(let y=Math.ceil(Math.min(...ys));y<=Math.max(...ys);y++){
+   const xs=[];
+   for(let i=0;i<pts.length;i++){const a=pts[i],z=pts[(i+1)%pts.length];if((a[1]<=y&&z[1]>y)||(z[1]<=y&&a[1]>y))xs.push(a[0]+(y-a[1])*(z[0]-a[0])/(z[1]-a[1]));}
+   xs.sort((a,z)=>a-z);for(let i=0;i+1<xs.length;i+=2)b.rect(Math.ceil(xs[i]),y,Math.max(0,Math.floor(xs[i+1])-Math.ceil(xs[i])+1),1,color);
+  }
+ };
+ const line=(a,z,c=light,n=3)=>b.line(a[0],a[1],z[0],z[1],c,n);
+ const path=(pts,c=light,n=3)=>{for(let i=1;i<pts.length;i++)line(pts[i-1],pts[i],c,n);};
+ b.rect(0,0,w,5,gold);b.rect(0,h-5,w,5,gold);
+ for(let i=0;i<13;i++){const x=15+i*35,ht=32+(i*47+index*19)%112;b.rect(x,361-ht,25,ht,mix(black,accent,.13));for(let y=371-ht;y<351;y+=17)if((i+y)%3===0)b.rect(x+6,y,3,7,edge);}
+ b.ring(224,213,130,edge,2);b.ring(224,213,121,mix(black,accent,.27),1);
+ b.text('HYPERNOVA',224,27,3,gold);b.text('MAFIA',224,53,2,light);
+ b.text(String(index+1).padStart(2,'0'),402,28,2,gold);
+ // Angular tailored body, backlight, contrasting planes.
+ poly([[62,394],[80,314],[145,278],[190,264],[258,264],[306,278],[368,314],[386,394]],edge);
+ poly([[68,394],[92,322],[160,284],[200,273],[224,345],[247,273],[289,284],[356,322],[380,394]],black);
+ poly([[160,284],[195,273],[224,345],[180,333],[147,304]],mix(black,accent,.33));
+ poly([[289,284],[253,273],[224,345],[268,333],[301,304]],mix(black,accent,.2));
+ poly([[205,276],[243,276],[224,340]],light);
+ poly([[224,288],[233,298],[228,332],[224,340],[220,332],[215,298]],accent);
+ poly([[181,196],[183,262],[204,283],[244,283],[266,262],[267,196],[247,168],[201,168]],mix(black,accent,.42));
+ poly([[224,168],[247,168],[267,196],[266,262],[244,283],[224,268]],mix(black,accent,.2));
+ b.line(199,219,213,217,light,2);b.line(236,217,250,219,light,2);b.line(224,221,221,243,edge,2);
+ if(costume==='hat'||costume==='top'||costume==='cap'){
+  const top=costume==='top'?108:costume==='cap'?155:143;
+  poly([[169,190],[185,top],[259,top],[279,190]],black);
+  b.rect(180,176,88,10,accent);poly([[148,192],[299,192],[288,200],[161,200]],edge);
+ }else if(costume==='hood'||costume==='wizard'||costume==='horns'){
+  poly([[151,262],[155,171],[224,costume==='wizard'?91:122],[293,171],[297,262],[260,285],[267,195],[224,158],[181,195],[188,285]],black);
+  path([[151,262],[155,171],[224,costume==='wizard'?91:122],[293,171],[297,262]],edge,4);
+  if(costume==='horns'){poly([[168,170],[134,105],[179,135],[195,158]],accent);poly([[280,170],[314,105],[269,135],[253,158]],accent);}
+ }else if(costume==='medic'||costume==='mask'||costume==='helmet'){
+  poly([[176,205],[180,162],[224,142],[268,162],[272,205]],black);
+  if(costume==='medic'){b.rect(202,162,44,24,light);b.rect(221,164,6,20,accent);b.rect(214,171,20,6,accent);}
+  else b.line(180,196,268,196,accent,5);
+  poly([[183,232],[224,242],[265,232],[253,266],[224,278],[195,266]],edge);
+ }else if(costume==='winter'){
+  poly([[172,189],[187,147],[249,127],[279,183]],accent);b.dot(249,127,10,light);b.rect(168,182,112,13,light);
+  poly([[187,238],[224,249],[261,238],[250,275],[224,298],[198,275]],light);
+ }else{
+  poly([[177,203],[180,166],[210,149],[248,151],[269,174],[270,205],[249,181],[203,181]],black);
+ }
+ // Individual heraldic emblem below the portrait.
+ const cx=224,cy=365; b.dot(cx,cy,33,black);b.ring(cx,cy,33,gold,2);
+ const l=(x,y,z,q)=>b.line(cx+x,cy+y,cx+z,cy+q,light,3);
+ const P=pts=>path(pts.map(([x,y])=>[cx+x,cy+y]),light,3);
+ switch(symbol){
+ case 'house':P([[-19,0],[0,-18],[19,0],[15,0],[15,18],[-15,18],[-15,0]]);break;
+ case 'crown':P([[-19,-10],[-10,0],[0,-17],[10,0],[19,-10],[14,16],[-14,16],[-19,-10]]);break;
+ case 'diamond':P([[0,-21],[19,0],[0,21],[-19,0],[0,-21]]);break;
+ case 'blade':P([[-14,18],[14,-18],[19,-14],[-6,18],[-14,18]]);l(-18,7,0,20);break;
+ case 'star':for(let i=0;i<5;i++){const a=i*2*Math.PI/5-Math.PI/2,z=(i+2)*2*Math.PI/5-Math.PI/2;l(Math.cos(a)*19,Math.sin(a)*19,Math.cos(z)*19,Math.sin(z)*19);}break;
+ case 'cross':l(0,-20,0,20);l(-20,0,20,0);break;
+ case 'chevrons':P([[-18,-10],[0,3],[18,-10]]);P([[-18,3],[0,16],[18,3]]);break;
+ case 'eye':P([[-22,0],[0,-13],[22,0],[0,13],[-22,0]]);b.ring(cx,cy,6,light,3);break;
+ case 'snow':for(let i=0;i<6;i++){const a=i*Math.PI/3;l(0,0,Math.cos(a)*21,Math.sin(a)*21);}break;
+ case 'scales':l(0,-20,0,20);l(-18,-9,18,-9);P([[-18,-9],[-25,9],[-11,9],[-18,-9]]);P([[18,-9],[11,9],[25,9],[18,-9]]);break;
+ case 'hourglass':P([[-16,-19],[16,-19],[-16,19],[16,19],[-16,-19]]);break;
+ case 'target':b.ring(cx,cy,19,light,3);b.ring(cx,cy,8,light,2);l(-25,0,-11,0);l(11,0,25,0);l(0,-25,0,-11);l(0,11,0,25);break;
+ case 'burst':for(let i=0;i<8;i++){const a=i*Math.PI/4;l(Math.cos(a)*7,Math.sin(a)*7,Math.cos(a)*22,Math.sin(a)*22);}break;
+ case 'coin':b.ring(cx,cy,21,light,3);b.text('D',cx,cy-10,3,light);break;
+ case 'scar':P([[-14,-20],[-4,-5],[-12,0],[8,21]]);P([[3,-20],[13,-5],[5,0],[20,20]]);break;
+ case 'flask':P([[-8,-20],[8,-20],[8,-5],[20,17],[-20,17],[-8,-5],[-8,-20]]);l(-13,7,13,7);break;
+ case 'spiral':P([[-19,-19],[19,-19],[19,19],[-19,19],[-19,-6],[6,-6],[6,7],[-6,7]]);break;
+ case 'split':P([[0,-21],[19,0],[0,21],[-19,0],[0,-21]]);l(0,-21,0,21);break;
+ case 'chain':b.ring(cx-8,cy-8,12,light,3);b.ring(cx+8,cy+8,12,light,3);break;
+ case 'clover':for(const [x,y] of [[-10,-10],[10,-10],[-10,10],[10,10]])b.dot(cx+x,cy+y,10,light);l(0,8,0,23);break;
+ case 'gift':P([[-19,-9],[19,-9],[19,18],[-19,18],[-19,-9]]);l(0,-9,0,18);P([[0,-9],[-15,-19],[-15,-7],[0,-9],[15,-19],[15,-7],[0,-9]]);break;
+ case 'medal':P([[-13,-22],[0,-3],[13,-22]]);b.ring(cx,cy+9,12,light,3);break;
+ }
+ b.rect(0,407,w,148,black);b.line(38,418,w-38,418,gold,1);
+ b.text(title,224,445,title.length>12?3:4,[238,232,220]);
+ const factionText={CITY:'TINCH AHOLI',MAFIA:'MAFIA',SOLO:'YAKKA ROL',NEUTRAL:'BETARAF',ZOMBIE:'ZOMBI'}[faction];
+ b.text(factionText,224,497,2,accent);
+ b.text('V2 CHARACTER SERIES',224,530,1,gold);
+ return png(b.data,w,h);
+}
+
 const assets={};
 roles.forEach(([code,category,title,paths],i)=>{assets['role_'+code.toLowerCase()]=png(art(title,category,String(i+1).padStart(2,'0'),paths));});
 for(const [key,title,category] of [['game_start','OYIN BOSHLANDI','BRAND'],['game_city','SHAHAR GALABA','CITY'],['game_mafia','MAFIYA GALABA','MAFIA'],['game_serial_killer','MANYAK GALABA','NEUTRAL'],['game_draw','DURRANG','BRAND']])assets[key]=png(art(title,category,'V5',brand));
 assets.intro=gif();
-if(Object.keys(assets).length!==36||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==36)throw new Error('visual manifest incomplete or duplicated');
+for(const key of ['v2_night','v2_dawn','v2_vote','v2_end'])assets[key]=gif(key);
+v2Portraits.forEach(([id,title,faction,costume,symbol],i)=>{assets['v2portrait_'+id]=noirPortrait(title,faction,costume,symbol,i);});
+assets.v2hero=noirPortrait('SHAXSIY GEROY','NEUTRAL','helmet','medal',27);
+if(v2Portraits.length!==27||Object.keys(assets).length!==68||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==68)throw new Error('visual manifest incomplete or duplicated');
+// Curated premium assets are actual Git binaries, not remote links or generated placeholders.
+const premium=JSON.parse(readFileSync(new URL('../assets/premium/manifest.json',import.meta.url),'utf8'));
+const premiumPhases=new Set(['v2_night','v2_dawn','v2_vote','v2_end']);
+const premiumMenus=new Set(['v2home','v2profile','v2hero','v2shop','v2inventory','v2para']);
+const premiumKeys=new Set();
+let premiumBytes=0;
+for(const [file,expected] of Object.entries(premium)){
+ const m=/^(v2[a-z_]+)\.(jpg|gif)$/.exec(file);if(!m)throw Error('invalid premium filename '+file);
+ const [,key,ext]=m;
+ if(premiumKeys.has(key))throw Error('duplicate premium key '+key);
+ if(ext==='gif'?!premiumPhases.has(key):!premiumMenus.has(key)&&!(key.startsWith('v2portrait_')&&Object.hasOwn(assets,key)))throw Error('unknown premium asset '+file);
+ const bytes=readFileSync(new URL('../assets/premium/'+file,import.meta.url));
+ const actual=createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+ if(actual!==expected)throw Error('premium integrity mismatch '+file);
+ const valid=ext==='gif'?bytes.subarray(0,6).toString()==='GIF89a'&&bytes.at(-1)===0x3b:bytes[0]===0xff&&bytes[1]===0xd8&&bytes.at(-2)===0xff&&bytes.at(-1)===0xd9;
+ if(!valid||bytes.length<100||bytes.length>(ext==='gif'?160000:110000))throw Error('invalid premium media '+file);
+ assets[key]=bytes;premiumKeys.add(key);premiumBytes+=bytes.length;
+}
+if(premiumKeys.size!==24||premiumBytes>2000000||Object.keys(assets).length!==73)throw Error('premium asset inventory or size budget mismatch');
+if(new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==Object.keys(assets).length)throw Error('duplicate final media');
 for(const [name,bytes] of Object.entries(assets))if(bytes.length>750000||bytes.length<100)throw new Error('bad asset size '+name);
 const dest=new URL('../src/generated/',import.meta.url);mkdirSync(dest,{recursive:true});
 writeFileSync(new URL('visual-assets.ts',dest),'// Generated deterministically by scripts/generate-visuals.mjs. Do not edit.\nexport const VISUAL_ASSETS: Readonly<Record<string, string>> = '+JSON.stringify(Object.fromEntries(Object.entries(assets).map(([k,b])=>[k,b.toString('base64')])) )+';\n');

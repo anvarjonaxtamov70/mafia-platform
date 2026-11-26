@@ -16,6 +16,8 @@ import {
   mainMenu,
   nightActionMessage,
   rolesText,
+  referenceRolesView,
+  referenceRoleDetail,
   learningView,
   SELECTABLE_MODES,
   settingsView,
@@ -144,9 +146,7 @@ export function createBot(token: string, deps: BotDeps): Bot {
   pm.command('rules', (ctx) => ctx.reply(t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), HTML));
   pm.command('characters', (ctx) => { const view = learningView('characters')!; return ctx.reply(view.text, { ...HTML, ...kb(view.keyboard) }); });
   pm.command('guide', (ctx) => { const view = learningView('guide')!; return ctx.reply(view.text, { ...HTML, ...kb(view.keyboard) }); });
-  pm.command('roles', async (ctx) => {
-    for (const part of splitLong(rolesText())) await ctx.reply(part, HTML);
-  });
+  pm.command('roles', (ctx) => {const view=referenceRolesView();return ctx.reply(view.text,{...HTML,...kb(view.keyboard)});});
   pm.command(['profile', 'mystats'], async (ctx) => {
     const u = from(ctx);
     if (!u) return;
@@ -305,10 +305,18 @@ export function createBot(token: string, deps: BotDeps): Bot {
   async function handleCallback(ctx: Context, u: TgUser, data: CallbackData): Promise<void> {
     const tgId = BigInt(u.id);
     switch (data.t) {
-      case 'menu':
+      case 'menu': {
+        if(data.section.startsWith('ref_')) {
+          const role=referenceRoleDetail(data.section);
+          if(!role||ctx.chat?.type!=='private'||ctx.chat.id!==u.id){await ctx.answerCallbackQuery({text:t('cb.stale')});return;}
+          if(role.alert){await ctx.answerCallbackQuery({text:role.text,show_alert:true});return;}
+          await ctx.reply(escapeHtml(role.text),HTML);
+          await ctx.answerCallbackQuery();return;
+        }
         await handleMenu(ctx, u, data.section);
         await ctx.answerCallbackQuery();
         return;
+      }
       case 'delme': {
         if (data.op === 'n') {
           await safeEdit(ctx, t('menu.welcome', { name: escapeHtml(u.first_name) }), mainMenu());

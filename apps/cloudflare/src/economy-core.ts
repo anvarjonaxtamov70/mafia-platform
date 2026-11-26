@@ -698,6 +698,6 @@ export class EconomyCore {
   // ───────────────────────────── Statistika ─────────────────────────────
 
   roleStats(tgId: number): RoleStatRow[] {
-    return this.sql.exec<RoleStatRow>(`SELECT role, played, won FROM role_stats WHERE telegram_id = ?`, tgId);
+    return this.sql.exec<RoleStatRow>(`SELECT role, played, won, 1 AS engineVersion FROM role_stats WHERE telegram_id = ? UNION ALL SELECT role, played, won, 2 AS engineVersion FROM v2_role_stats WHERE telegram_id = ?`, tgId,tgId);
   }
 }

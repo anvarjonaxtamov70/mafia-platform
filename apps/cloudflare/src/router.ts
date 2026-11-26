@@ -21,9 +21,14 @@ import {
   REFERRAL,
   roleStatsView,
   rolesText,
+  referenceRolesView,
+  referenceRoleDetail,
+  v2CatalogueView,
+  v2PortraitInfo,
   learningView,
   SELECTABLE_MODES,
   settingsView,
+  v2SettingsView,
   shopHomeView,
   splitLong,
   starsProduct,
@@ -43,11 +48,18 @@ import { MAX_PLAYERS_CEILING, MIN_PLAYERS_FLOOR, type EngineErrorCode, type Game
 import { escapeHtml, t } from '@mafia/localization';
 import type { BuyResult, CheckOrderResult, ClaimDailyResult, PaymentInput, PaymentResult, PaymentRow } from './economy-core';
 import type { TgUserInput, UserInfo } from './registry-core';
+import type {ParaRequest,ParaResult,ParaPair} from './para-core';
 import type { RoomResult, SilenceSnapshot, ViewResult } from './room-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
+import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
+import {heroV2TopView,heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
+import {decodeV2Button} from '@mafia/bot-core';
+import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView,v2HomeView,v2RulesView,v2ParaView,v2ParaConfirm,v2SceneInfo,withV2Scene} from './v2-economy-views';
+import {decodeSellerButton} from './v2-seller';
+import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
 
@@ -64,6 +76,7 @@ export interface TgMessage {
   chat: TgChat;
   from?: TgUser;
   sender_chat?: TgChat;
+  reply_to_message?: {message_id:number;chat:TgChat;from?:TgUser;sender_chat?:TgChat};
   text?: string;
   migrate_to_chat_id?: number;
   refunded_payment?: { currency: string; total_amount: number; invoice_payload: string; telegram_payment_charge_id: string };
@@ -92,6 +105,11 @@ export interface TgUpdate {
 // ───────────────────────────── Portlar ─────────────────────────────
 
 export interface RegistryApi {
+  paraRequest(sender:number,target:number):Promise<ParaRequest>;
+  paraFailed(sender:number,id:number):Promise<void>;
+  paraAnswer(target:number,id:number,accept:boolean):Promise<ParaResult>;
+  paraPair(user:number):Promise<ParaPair|null>;
+  paraLeave(user:number,pair:number):Promise<ParaResult>;
   upsertUser(u: TgUserInput, dmOpened: boolean): Promise<UserInfo>;
   onStart(u: TgUserInput, payload: string): Promise<{ user: UserInfo; referred: boolean }>;
   // iqtisodiyot
@@ -125,6 +143,7 @@ export interface RegistryApi {
   getSettings(chatId: number): Promise<GroupSettingsData>;
   saveSettings(chatId: number, data: GroupSettingsData, by: string): Promise<GroupSettingsData>;
   profileText(tgId: number): Promise<string>;
+  v2ProfileSummary(tgId:number):Promise<ReturnType<import('./registry-core').RegistryCore['v2ProfileSummary']>>;
   singleHero(tgId: number): Promise<ReturnType<HeroCore['single']>>;
   setOwnHeroLevel(tgId: number, level: number): Promise<boolean>;
   buyHero(tgId: number, idem: string): Promise<BuyResult>;
@@ -141,7 +160,7 @@ export interface RegistryApi {
 }
 
 export interface RoomApi {
-  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; quick?: boolean; commandMessageId?: number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
+  createLobby(input: { title: string; host: UserInfo; isAdmin: boolean; mode?: GameMode; v2Mode?: V2Mode; quick?: boolean; commandMessageId?: number }): Promise<RoomResult<{ number: number; hostJoined: boolean; refreshed?: boolean }>>;
   join(user: UserInfo, number?: number, commandMessageId?: number): Promise<RoomResult<{ title: string }>>;
   leave(tgId: number, number?: number): Promise<RoomResult>;
   leaveLobbyForTransfer(tgId:number,number:number):Promise<RoomResult>;
@@ -149,6 +168,7 @@ export interface RoomApi {
   cancel(trigger: { by: number; isAdmin: boolean; commandMessageId?: number }, text?: string, number?: number): Promise<RoomResult>;
   cleanupCommand(messageId: number): Promise<void>;
   devFill(count: number): Promise<RoomResult<{ added: number }>>;
+  v2Button(input:{tgId:number;privateChatId:number;number:number;raw:string;messageId?:number}):Promise<RoomResult>;
   nightAction(input: { tgId: number; number: number; seq: number; kind: import('@mafia/game-engine').ActionKind; seats: number[] }): Promise<RoomResult<ViewResult>>;
   skip(input: { tgId: number; number: number; seq: number }): Promise<RoomResult<ViewResult>>;
   mafiaVote(input: { tgId: number; number: number; seq: number; seat: number }): Promise<RoomResult<ViewResult>>;
@@ -159,15 +179,29 @@ export interface RoomApi {
   relayMafia(input: { tgId: number; text: string }): Promise<boolean>;
   silenceSnapshot(): Promise<SilenceSnapshot>;
   statusText(): Promise<string>;
+  v2RecoveryStatus(game:number):Promise<import('./room-core').V2RecoveryHold|null>;
+  retryV2Recovery(game:number,op:number):Promise<boolean>;
   migrate(newChatId: number): Promise<void>;
 }
 
+/** Only injected into isolated test routers until production v1/v2 migration. */
+export interface HeroV2ShopPort{
+ top():Promise<ReturnType<HeroV2Core['top']>>;
+ view(id:number):Promise<ReturnType<HeroV2Core['view']>>;
+ quote(id:number,op:HeroV2Purchase,argument?:string):Promise<HeroV2QuoteResult>;
+ confirm(id:number,quoteId:number):Promise<HeroV2BuyResult>;
+ cancel(id:number,quoteId:number):Promise<void>;
+}
 export interface RouterDeps {
+  heroV2Shop?:HeroV2ShopPort;
   tg: Telegram;
   registry: RegistryApi;
   room(chatId: number): RoomApi;
   admins: ReadonlySet<number>;
   devFake: boolean;
+  v2Preview?: boolean;
+  /** Strict staging UX: no direct mode override; group settings only. */
+  v2SettingsMode?: boolean;
   visuals?: boolean;
   /** Telegram Stars: off | admins (faqat bot egalari sinaydi) | all */
   starsMode: StarsMode;
@@ -371,7 +405,22 @@ export class Router {
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
         }
-        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
+        const view=this.homeView(from.first_name);
+        return this.reply(chatId,view.text,view.keyboard);
+      }
+      case 'mypara': {
+        if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(from.id)),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
+        return this.reply(chatId,await this.paraText(from.id));
+      }
+      case 'qpara': {
+        const pair=await this.d.registry.paraPair(from.id);
+        if(this.d.v2SettingsMode){const v=pair?v2ParaConfirm(pair):withV2Scene(v2ParaView(null),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
+        if(!pair)return this.reply(chatId,'Sizda para mavjud emas.');
+        return this.reply(chatId,'Parangizni bekor qilasizmi?',[[{text:'✅ Ha',callback_data:encode({t:'eco',op:'paraq',arg:String(pair.id)})},{text:'❌ Yo‘q',callback_data:encode({t:'eco',op:'paranop',arg:String(pair.id)})}]]);
+      }
+      case 'para':{
+        if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(from.id)),'para',!!this.d.visuals);return this.reply(chatId,v.text,v.keyboard);}
+        return this.reply(chatId,'Guruhda foydalanuvchining xabariga javob qilib /para yozing.');
       }
       case 'help':
         return this.reply(chatId, t('help.text'));
@@ -396,26 +445,42 @@ export class Router {
       case 'privacy':
         return this.reply(chatId, t('privacy.text'));
       case 'rules':
+        if(this.d.v2SettingsMode){const v=v2RulesView();return this.reply(chatId,v.text,v.keyboard);}
         return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }));
       case 'intro':
         return this.showVisual(from.id, 'intro');
       case 'characters':
       case 'guide': {
-        const view = learningView(c.cmd, !!this.d.visuals)!;
+        const view = (this.d.v2SettingsMode?(c.cmd==='guide'?v2RulesView():v2CatalogueView(c.cmd)):null)??learningView(c.cmd, !!this.d.visuals)!;
         return this.reply(chatId, view.text, view.keyboard);
       }
-      case 'roles':
-        for (const part of splitLong(rolesText())) await this.reply(chatId, part);
-        return;
+      case 'roles': {
+        const view=this.d.v2SettingsMode?v2CatalogueView('roles')!:referenceRolesView();
+        return this.reply(chatId,view.text,view.keyboard);
+      }
       case 'admin_hero_level': {
         if (!this.isSuperadmin(from.id)) return this.reply(chatId,t('admin.no_access'));
         const level = /^\d{1,7}$/.test(c.args.trim()) ? Number(c.args.trim()) : 0;
         const ok=await this.d.registry.setOwnHeroLevel(from.id,level);
         return this.reply(chatId,ok?t('hero.level_saved',{level}):t('hero.owner_level_help'));
       }
+      case 'herov2': {
+        if(!this.d.heroV2Shop||chatId!==from.id)return this.reply(chatId,'Geroy V2 sinov do‘koni mavjud emas.');
+        await this.d.registry.upsertUser(from,true);
+        const v=heroV2Profile(await this.d.heroV2Shop.view(from.id),!!this.d.visuals);
+        return this.reply(chatId,v.text,v.keyboard);
+      }
+      case 'herov2name': {
+        if(!this.d.heroV2Shop||chatId!==from.id)return this.reply(chatId,'Geroy V2 sinov do‘koni mavjud emas.');
+        if(!this.clicks.allow('hv2:'+from.id,this.d.now()))return this.reply(chatId,t('common.rate_limited'));
+        const result=await this.d.heroV2Shop.quote(from.id,'RENAME',c.args);
+        if(result.status!=='OK')return this.reply(chatId,heroV2Status(result.status));
+        const v=heroV2Confirm(result.quote);return this.reply(chatId,v.text,v.keyboard);
+      }
       case 'hero':
       case 'heroes':
       case 'herotop': {
+        if(this.d.v2SettingsMode&&chatId!==from.id)return this.reply(chatId,'Geroy bo‘limini botning shaxsiy chatida oching.');
         await this.d.registry.upsertUser(from, true);
         const v = await this.heroSection(from.id, c.cmd);
         return this.reply(chatId, v.text, v.keyboard);
@@ -446,6 +511,18 @@ export class Router {
         const v = await this.d.registry.setGlobalMinPlayers(n, String(from.id));
         return this.reply(chatId, t('admin.min_set', { min: v }));
       }
+      case 'admin_v2_recovery':
+      case 'admin_v2_retry': {
+        if(!this.isSuperadmin(from.id)||chatId!==from.id)return this.reply(chatId,t('admin.no_access'));
+        const args=c.args.trim().split(/\s+/),game=Number(args[0]),op=Number(args[1]);
+        const retry=c.cmd==='admin_v2_retry';
+        if(args.length!==(retry?2:1)||!Number.isSafeInteger(game)||game<1||(retry&&(!Number.isSafeInteger(op)||op<1)))return this.reply(chatId,retry?'/admin_v2_retry OYIN OPERATSIYA':'/admin_v2_recovery OYIN');
+        const room=await this.roomOfGame(game);
+        if(!room)return this.reply(chatId,'O‘yin topilmadi.');
+        if(retry)return this.reply(chatId,await room.retryV2Recovery(game,op)?'Aniq saqlangan operatsiya qayta tekshirishga yuborildi.':'Operatsiya mos emas yoki kutish holatida emas.');
+        const hold=await room.v2RecoveryStatus(game);
+        return this.reply(chatId,hold?'O‘yin #'+hold.game+'\nOperatsiya #'+hold.op+' · '+hold.kind+'\nUrinishlar: '+hold.failures+'\nTekshiruvdan keyin: /admin_v2_retry '+hold.game+' '+hold.op:'O‘yin uchun kutish holati mavjud emas.');
+      }
       case 'admin_stats':
         if (!this.isSuperadmin(from.id)) return this.reply(chatId, t('admin.no_access'));
         return this.reply(chatId, await this.d.registry.adminStats());
@@ -460,10 +537,14 @@ export class Router {
     const chatId = m.chat.id;
     const anonymous = m.sender_chat?.id === chatId && (m.sender_chat.type === 'group' || m.sender_chat.type === 'supergroup');
     const from = m.from ?? (anonymous ? { id: chatId, first_name: m.chat.title ?? 'Guruh administratori', is_bot: true } : undefined);
-    const c = await this.parseCommand(m.text);
+    const parsed = await this.parseCommand(m.text);
+    // Telegram's command menu cannot contain spaces. Normalize the explicit
+    // V2 aliases to the same owner-gated route, without changing legacy /game.
+    const alias = parsed && /^game_v2(classic|zombie|hypernova|vs)$/.exec(parsed.cmd);
+    const c = alias && parsed ? {cmd:'game',args:parsed.args?'v2invalid':'v2'+alias[1]} : parsed;
     // Handled commands use response-linked cleanup, not immediate night/dead deletion.
     // Unsupported commands still follow ordinary moderation.
-    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill'].includes(c.cmd);
+    const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill','para','mypara'].includes(c.cmd);
     if (!c || !from || (m.sender_chat && !anonymous) || (from.is_bot && !anonymous) || !handled ||
         (anonymous && !['game','quick','startgame','stop','cancelgame','settings','top','top1','top7','top30','leaderboard'].includes(c.cmd)) ||
         (c.cmd === 'devfill' && (!this.d.devFake || !this.isSuperadmin(from.id)))) {
@@ -475,12 +556,39 @@ export class Router {
     const isAdmin = async () => anonymous || await this.isChatAdmin(chatId, from.id);
     const replyTo = m.message_id;
     switch (c.cmd) {
+      case 'para':
+      case 'mypara': {
+        if(await this.silenceCheck(m,true))return;
+        if(c.cmd==='mypara')return this.reply(chatId,await this.paraText(from.id),undefined,replyTo);
+        const reply=m.reply_to_message;
+        if(m.sender_chat||c.args||!reply||reply.sender_chat||reply.chat.id!==chatId||!reply.from||reply.from.is_bot||reply.from.id===from.id)return this.reply(chatId,'Foydalanuvchining xabariga javob qilib /para yozing.',undefined,replyTo);
+        if(!this.chats.allow('para:'+from.id,this.d.now()))return this.reply(chatId,'Birozdan keyin urinib ko‘ring.',undefined,replyTo);
+        await this.d.registry.upsertUser(from,false);
+        const request=await this.d.registry.paraRequest(from.id,reply.from.id);
+        if(!request.ok)return this.reply(chatId,this.paraError(request.error),undefined,replyTo);
+        try {
+          await this.d.tg.call('sendMessage',{chat_id:reply.from.id,text:'💞 <b>Para taklifi!</b>\n\n'+escapeHtml(request.name)+' siz bilan para bo‘lishni xohlayapti.'+(this.d.v2SettingsMode?'\n\nTaklif 10 daqiqa amal qiladi.':''),...HTML,reply_markup:{inline_keyboard:[[{text:'✅ Qabul qilish',callback_data:encode({t:'eco',op:'parayes',arg:String(request.id)})},{text:'❌ Rad etish',callback_data:encode({t:'eco',op:'parano',arg:String(request.id)})}]]}});
+        }catch{await this.d.registry.paraFailed(from.id,request.id);return this.reply(chatId,'Taklif yetkazilmadi. Foydalanuvchi botni ochishi kerak.',undefined,replyTo);}
+        return this.reply(chatId,'💌 Para so‘rovi yuborildi!',undefined,replyTo);
+      }
       case 'quick':
       case 'game': {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const host = anonymous ? { id: chatId, name: m.chat.title ?? 'Guruh administratori', dmAvailable: false, banned: false, badge: '' } : await this.d.registry.upsertUser(from, false);
+        if(this.d.v2SettingsMode){
+          if(c.args)return this.reply(chatId,'Rejimni faqat admin /settings orqali o‘zgartiradi. O‘yin uchun /game yozing.',undefined,replyTo);
+          const s=await this.d.registry.getSettings(chatId);
+          const r=await room.createLobby({title:m.chat.title??'',host,isAdmin:anonymous,v2Mode:s.v2Mode??'CLASSIC',mode:'CLASSIC',...(c.cmd==='quick'?{quick:true}:{}),commandMessageId:replyTo});
+          if(!r.ok)return this.reply(chatId,this.errText(r),undefined,replyTo);
+          this.gameChats.set(r.number,chatId);
+          if(!r.hostJoined&&!r.refreshed&&!anonymous)return this.reply(chatId,t('lobby.need_dm'),undefined,replyTo);
+          return;
+        }
         const arg = c.args.toUpperCase() as GameMode;
-        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(replyTo ? {commandMessageId:replyTo}:{}), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
+        const preview=c.cmd==='game'&&c.args.toLowerCase().startsWith('v2');
+        const v2Mode=c.args.slice(2).toUpperCase() as V2Mode;
+        if(preview&&(!this.d.v2Preview||!this.isSuperadmin(from.id)||anonymous||!V2_MODES.includes(v2Mode)))return this.reply(chatId,'V2 sinov rejimi mavjud emas.',undefined,replyTo);
+        const r = await room.createLobby({ title: m.chat.title ?? '', host, isAdmin: anonymous, ...(replyTo ? {commandMessageId:replyTo}:{}), ...(preview?{v2Mode}:{}), ...(c.cmd === 'quick' ? { mode: 'PRIVATE' as const, quick: true } : SELECTABLE_MODES.includes(arg) ? { mode: arg } : {}) });
         if (!r.ok) return this.reply(chatId, this.errText(r), undefined, replyTo);
         this.gameChats.set(r.number, chatId);
         if (!r.hostJoined && !r.refreshed && !anonymous) return this.reply(chatId, t('lobby.need_dm'), undefined, replyTo);
@@ -500,7 +608,7 @@ export class Router {
       case 'status':
         return this.reply(chatId, await room.statusText(), undefined, replyTo);
       case 'rules':
-        return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), undefined, replyTo);
+        return this.reply(chatId,this.d.v2SettingsMode?v2RulesView().text:t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), undefined, replyTo);
       case 'help':
         return this.reply(chatId, t('help.text'), undefined, replyTo);
       case 'leaderboard':
@@ -540,7 +648,7 @@ export class Router {
         await this.d.registry.upsertGroup(chatId, m.chat.title ?? '');
         const s = await this.d.registry.getSettings(chatId);
         const g = await this.d.registry.group(chatId);
-        const view = settingsView(s, chatId);
+        const view = this.d.v2SettingsMode?v2SettingsView(s,chatId):settingsView(s, chatId);
         const note = (s.silenceDead || s.silenceNight) && !g?.botIsAdmin ? `\n\n${t('gsettings.no_delete_rights')}` : '';
         return this.reply(chatId, view.text + note, view.keyboard, replyTo);
       }
@@ -589,6 +697,50 @@ export class Router {
 
   private async onCallback(cb: TgCallback): Promise<void> {
     const from = cb.from;
+    if(cb.data?.startsWith('hv2:')){
+      const shop=this.d.heroV2Shop,b=decodeHeroV2Button(cb.data);
+      if(!shop||!b||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+      if(!this.clicks.allow('hv2:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
+      if(b.kind==='ART'){
+        if(!this.d.visuals)return this.answer(cb,t('visual.unavailable'));
+        if(!this.media.allow(String(from.id),this.d.now()))return this.answer(cb,t('common.rate_limited'));
+        const ok=await sendVisual(this.d.tg,from.id,'v2hero','HYPERNOVA — SHAXSIY GEROY');
+        return this.answer(cb,ok?undefined:t('visual.unavailable'));
+      }
+      if(b.kind==='RENAME_HELP'){
+        if(!(await shop.view(from.id)))return this.answer(cb,heroV2Status('UNAVAILABLE'),true);
+        const v=heroV2RenameHelp();await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      if(b.kind==='HOME'){
+        const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      if(b.kind==='QUOTE'){
+        const result=await shop.quote(from.id,b.op);
+        if(result.status!=='OK')return this.answer(cb,heroV2Status(result.status),true);
+        const v=heroV2Confirm(result.quote);await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      if(b.kind==='CANCEL'){
+        await shop.cancel(from.id,b.id);
+        const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);return this.answer(cb,'Bekor qilindi.');
+      }
+      const result=await shop.confirm(from.id,b.id);
+      const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);
+      return this.answer(cb,heroV2Status(result),true);
+    }
+    if(cb.data?.startsWith('v2:')||cb.data?.startsWith('v2s:')){
+      const v2=decodeV2Button(cb.data);
+      const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):v2;
+      const verdict=v2?.op==='Y'||v2?.op==='N';
+      const message=cb.message;
+      if(!button||from.is_bot||!message||(verdict?(message.chat.type!=='group'&&message.chat.type!=='supergroup'):(message.chat.type!=='private'||message.chat.id!==from.id)))return this.answer(cb,t('cb.stale'));
+      if(!this.clicks.allow('cb:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
+      // Registry membership is authoritative; do not route old/foreign game buttons via cached chat mappings.
+      const active=await this.d.registry.activeOf(from.id);
+      if(!active||active.number!==button.game||(verdict&&active.chatId!==message.chat.id))return this.answer(cb,t('cb.stale'));
+      const room=this.d.room(active.chatId);
+      const result=await room.v2Button({tgId:from.id,privateChatId:message.chat.id,number:button.game,raw:cb.data,messageId:message.message_id});
+      return this.answer(cb,result.ok?'Qabul qilindi':t('cb.stale'));
+    }
     const data = cb.data ? decode(cb.data) : null;
     if (!data || from.is_bot) return this.answer(cb, t('cb.stale'));
     // Private menus, economy and deletion must never be invoked from a group or another user's message.
@@ -612,14 +764,28 @@ export class Router {
     const from = cb.from;
     const chat = cb.message?.chat;
     switch (data.t) {
-      case 'menu':
+      case 'menu': {
+        if(data.section.startsWith('ref_')) {
+          if(this.d.v2SettingsMode){
+            const view=v2CatalogueView(data.section,!!this.d.visuals);
+            if(!view)return this.answer(cb,t('cb.stale'));
+            await this.edit(cb,view.text,view.keyboard);return this.answer(cb);
+          }
+          const role=referenceRoleDetail(data.section);
+          if(!role||chat?.type!=='private'||chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+          if(role.alert)return this.answer(cb,role.text,true);
+          await this.reply(from.id,escapeHtml(role.text));
+          return this.answer(cb);
+        }
         await this.menu(cb, data.section);
         return this.answer(cb);
+      }
       case 'eco':
+        if(['parayes','parano','paraq','paranop'].includes(data.op))return this.paraCallback(cb,data.op,data.arg);
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
-          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
+          const view=this.homeView(from.first_name);await this.edit(cb,view.text,view.keyboard);
           return this.answer(cb);
         }
         const r = await this.d.registry.anonymize(from.id);
@@ -652,15 +818,17 @@ export class Router {
         return this.answer(cb, r.ok ? undefined : this.errText(r), !r.ok);
       }
       case 'gs': {
-        if (!chat || chat.id !== data.chat || !(await this.isChatAdmin(chat.id, from.id))) return this.answer(cb, t('gsettings.only_admin'), true);
+        if (!chat || chat.id !== data.chat || (chat.type!=='group'&&chat.type!=='supergroup') || !(await this.isChatAdmin(chat.id, from.id))) return this.answer(cb, t('gsettings.only_admin'), true);
         if (data.op === 'close') {
           await this.d.tg.call('deleteMessage', { chat_id: chat.id, message_id: cb.message!.message_id }).catch(() => undefined);
           return this.answer(cb);
         }
         if (data.op === 'auto' || data.op === 'lobby') return this.answer(cb,t('cb.stale'));
         const cur = await this.d.registry.getSettings(chat.id);
-        const saved = await this.d.registry.saveSettings(chat.id, applySettingsOp(cur, data.op), String(from.id));
-        const view = settingsView(saved, chat.id);
+        const mode=data.op.startsWith('v2mode_')?data.op.slice(7) as V2Mode:undefined;
+        if(this.d.v2SettingsMode?(!mode||!V2_MODES.includes(mode)):mode!==undefined)return this.answer(cb,t('cb.stale'));
+        const saved = await this.d.registry.saveSettings(chat.id, this.d.v2SettingsMode?{...cur,v2Mode:mode!}:applySettingsOp(cur, data.op), String(from.id));
+        const view = this.d.v2SettingsMode?v2SettingsView(saved,chat.id):settingsView(saved, chat.id);
         await this.edit(cb, view.text, view.keyboard);
         return this.answer(cb, t('gsettings.saved'));
       }
@@ -704,9 +872,31 @@ export class Router {
     }
   }
 
+  private homeView(name:string){return this.d.v2SettingsMode?withV2Scene(v2HomeView(name),'home',!!this.d.visuals):{text:t('menu.welcome',{name:escapeHtml(name||'do‘st')}),keyboard:mainMenu(true,!!this.d.visuals,true)};}
+
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
+    if(section.startsWith('vscene_')){
+      if(!this.d.v2SettingsMode||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return;
+      const scene=v2SceneInfo(section.slice('vscene_'.length));
+      if(!scene)return this.reply(from.id,t('cb.stale'));
+      if(!this.d.visuals)return this.reply(from.id,t('visual.unavailable'));
+      if(!this.media.allow(String(from.id),this.d.now()))return this.reply(from.id,t('common.rate_limited'));
+      if(!(await sendVisual(this.d.tg,from.id,scene.key,scene.caption)))await this.reply(from.id,t('visual.unavailable'));
+      return;
+    }
+    if(section.startsWith('vportrait_')){
+      const portrait=v2PortraitInfo(section);
+      if(!portrait||!this.d.v2Preview)return this.reply(from.id,t('cb.stale'));
+      if(!this.d.visuals)return this.reply(from.id,t('visual.unavailable'));
+      if(!this.media.allow(String(from.id),this.d.now()))return this.reply(from.id,t('common.rate_limited'));
+      if(!(await sendVisual(this.d.tg,from.id,portrait.key,portrait.caption)))await this.reply(from.id,t('visual.unavailable'));
+      return;
+    }
+    if(this.d.v2SettingsMode&&(section==='characters'||section==='roles'||section.startsWith('roles_')||section.startsWith('role_')||section.startsWith('art_'))){
+      const view=v2CatalogueView()!;return this.edit(cb,view.text,view.keyboard);
+    }
     if (section === 'intro' || section.startsWith('art_')) return this.showVisual(from.id, section);
     if (section.startsWith('pick_')) { const v=await this.heroSection(from.id,'hero'); return this.edit(cb,v.text,v.keyboard); }
     if (section === 'buy_dollars' || section === 'buy_diamonds') return this.edit(cb,t('currency.packs_pending'),[backRow()]);
@@ -714,12 +904,18 @@ export class Router {
       const v = await this.heroSection(from.id, section);
       return this.edit(cb, v.text, v.keyboard);
     }
+    if(this.d.v2SettingsMode&&section==='guide'){const v=v2RulesView();return this.edit(cb,v.text,v.keyboard);}
+    if(this.d.v2SettingsMode&&(section==='para'||section==='paraconfirm')){
+      const pair=await this.d.registry.paraPair(from.id);
+      const v=section==='paraconfirm'&&pair?v2ParaConfirm(pair):withV2Scene(v2ParaView(pair),'para',!!this.d.visuals);return this.edit(cb,v.text,v.keyboard);
+    }
     const learning = learningView(section, !!this.d.visuals);
     if (learning) return this.edit(cb, learning.text, learning.keyboard);
     const username = await this.d.botUsername();
     switch (section) {
-      case 'home':
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
+      case 'home': {
+        const view=this.homeView(from.first_name);return this.edit(cb,view.text,view.keyboard);
+      }
       case 'play':
         return this.edit(cb, t('play.text'), [
           ...(username ? [[{ text: t('play.add_to_group'), url: `https://t.me/${username}?startgroup=true` }]] : []),
@@ -734,6 +930,7 @@ export class Router {
         return this.edit(cb, v.text, v.keyboard);
       }
       case 'rules':
+        if(this.d.v2SettingsMode){const v=v2RulesView();return this.edit(cb,v.text,v.keyboard);}
         return this.edit(cb, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), [
           [{ text: t('menu.characters'), callback_data: encode({ t: 'menu', section: 'characters' }) }],
           backRow(),
@@ -751,7 +948,7 @@ export class Router {
       default: {
         const v = await this.section(from, section, cb.message?.chat.type === 'private');
         if (v) return this.edit(cb, v.text, v.keyboard);
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
+        const home=this.homeView(from.first_name);return this.edit(cb,home.text,home.keyboard);
       }
     }
   }
@@ -767,6 +964,11 @@ export class Router {
   }
 
   private async heroSection(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
+    if(this.d.v2SettingsMode){
+      if(!this.d.heroV2Shop)return {text:'Geroy V2 sinov do‘koni mavjud emas. Sinov iqtisodiyoti yoqilishi kerak.',keyboard:[backRow()]};
+      if(section==='herotop')return heroV2TopView(await this.d.heroV2Shop.top());
+      return heroV2Profile(await this.d.heroV2Shop.view(id),!!this.d.visuals);
+    }
     if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
     return heroView(await this.d.registry.singleHero(id));
   }
@@ -793,11 +995,20 @@ export class Router {
       case 'profile': {
         await this.d.registry.upsertUser(from, dmOpened);
         const inv=await this.d.registry.inventory(id);
+        if(this.d.v2SettingsMode){
+          if(section==='inventory')return withV2Scene(v2InventoryView(inv),'inventory',!!this.d.visuals);
+          const p=await this.d.registry.v2ProfileSummary(id);
+          if(!p)return {text:t('common.error'),keyboard:[backRow()]};
+          const pair=await this.d.registry.paraPair(id);
+          const hero=this.d.heroV2Shop?await this.d.heroV2Shop.view(id):null;
+          return withV2Scene(v2ProfileView(p,inv,hero,pair?.partner??null),'profile',!!this.d.visuals);
+        }
         const menu=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
         const arm=(code:string,label:string)=>({text:label+' · '+(inv.items.find(i=>i.code===code)?.armed?'ON':'OFF'),callback_data:encode({t:'eco',op:'arm',arg:code})});
         return {text:await this.d.registry.profileText(id),keyboard:[[arm('SHIELD','🛡'),arm('FAKE_DOC','📁')],[arm('VOTE_SHIELD','⚖️'),arm('HERO_SHIELD','Geroy himoyasi')],[menu('Do‘kon','shop')],[menu('Xarid qilish 💎','buy_diamonds'),menu('Xarid qilish 💵','buy_dollars')],[menu('Mening geroyim','hero')],backRow()]};
       }
       case 'shop': {
+        if(this.d.v2SettingsMode)return withV2Scene(v2ShopView(await this.d.registry.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals);
         const w = await this.d.registry.wallet(id);
         return shopHomeView(w.coins, w.diamonds ?? 0);
       }
@@ -815,30 +1026,51 @@ export class Router {
     }
   }
 
+  private paraError(error:ParaResult):string {
+    if(error==='PAIRED')return 'Siz yoki foydalanuvchi allaqachon paraga ega.';
+    if(error==='RATE')return 'So‘rovlar juda ko‘p. Keyinroq urinib ko‘ring.';
+    if(error==='UNAVAILABLE')return 'Foydalanuvchi mavjud emas yoki botni ochmagan.';
+    return 'Bu so‘rov eskirgan.';
+  }
+  private async paraText(id:number){const p=await this.d.registry.paraPair(id);return p?'💞 Parangiz: <b>'+escapeHtml(p.partner)+'</b>':'Sizda para mavjud emas.';}
+  private async paraCallback(cb:TgCallback,op:string,arg:string){
+    const id=Number(arg);
+    if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
+    if(op==='paranop'){
+      if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(cb.from.id),'Bekor qilinmadi.'),'para',!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);}
+      else await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);
+    }
+    const result=op==='paraq'?await this.d.registry.paraLeave(cb.from.id,id):await this.d.registry.paraAnswer(cb.from.id,id,op==='parayes');
+    if(result!=='OK')return this.answer(cb,this.paraError(result),true);
+    if(this.d.v2SettingsMode){const v=withV2Scene(v2ParaView(await this.d.registry.paraPair(cb.from.id),op==='parayes'?'Taklif qabul qilindi.':op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.'),'para',!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);}
+    else await this.edit(cb,op==='parayes'?await this.paraText(cb.from.id):op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');return this.answer(cb);
+  }
+
   private async eco(cb: TgCallback, op: string, arg: string): Promise<void> {
     const id = cb.from.id;
     const reg = this.d.registry;
     switch (op) {
       case 'shop': {
         const w = await reg.wallet(id);
-        const v = shopHomeView(w.coins, w.diamonds ?? 0);
+        const v = this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
       case 'cat': {
-        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb,v.text,v.keyboard); return this.answer(cb);
       }
       case 'buy': {
         const item = catalogItem(arg);
         if (!item || item.kind !== 'ARCADE' || item.price === null) return this.answer(cb, t('shop.unknown'));
         const w = await reg.wallet(id);
-        const v = buyConfirmView(item, w.coins, w.diamonds ?? 0);
+        const v = this.d.v2SettingsMode?v2BuyView(item,await reg.inventory(id)):buyConfirmView(item, w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
       case 'buyok': {
         const item = catalogItem(arg);
+        if(this.d.v2SettingsMode&&(!item||item.kind!=='ARCADE'||item.price===null))return this.answer(cb,t('cb.stale'));
         // callback_query id har bosishda noyob: Telegram qayta yuborsa ham ikki marta yechilmaydi
         const r = await reg.buy(id, arg, `buy:${cb.id}`);
         if (!r.ok) {
@@ -852,22 +1084,24 @@ export class Router {
                   : t('shop.unknown');
           return this.answer(cb, msg, true);
         }
-        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?withV2Scene(v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop),'shop',!!this.d.visuals):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb, t(item!.currency === 'DIAMOND' ? 'shop.diamond_bought' : 'shop.bought', { name: itemName(arg), coins: r.balance }), true);
       }
       case 'arm': {
         const ok=await reg.toggleArm(id,arg);
-        const v=await this.section(cb.from,'profile',true);
+        const v=await this.section(cb.from,this.d.v2SettingsMode?'inventory':'profile',true);
         await this.edit(cb,v!.text,v!.keyboard);
         return this.answer(cb,ok?t('inv.saved'):t('inv.not_owned'));
       }
       case 'herobuy': {
+        if(this.d.v2SettingsMode)return this.answer(cb,t('cb.stale'));
         if(arg) return this.answer(cb,t('cb.stale'));
         await this.edit(cb,t('hero.confirm'),[[{text:t('common.yes'),callback_data:encode({t:'eco',op:'herook',arg:''})},{text:t('common.no'),callback_data:encode({t:'menu',section:'hero'})}]]);
         return this.answer(cb);
       }
       case 'herook': {
+        if(this.d.v2SettingsMode)return this.answer(cb,t('cb.stale'));
         if(arg) return this.answer(cb,t('cb.stale'));
         const result=await reg.buyHero(id,'hero:'+cb.id);
         const v=await this.heroSection(id,'hero'); await this.edit(cb,v.text,v.keyboard);

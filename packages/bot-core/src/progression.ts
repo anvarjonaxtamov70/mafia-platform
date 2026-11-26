@@ -31,7 +31,7 @@ export const RATING_START = 1000;
 
 /** RatingService strategiyasi — keyinchalik rol/fraksiya ehtimollarini hisobga oluvchi model bilan almashtiriladi. */
 export interface RatingStrategy {
-  change(result: PlayerResult, ranked: boolean): number;
+  change(result: Pick<PlayerResult,'outcome'|'left'>, ranked: boolean): number;
 }
 
 export const simpleRating: RatingStrategy = {
@@ -42,7 +42,7 @@ export const simpleRating: RatingStrategy = {
   },
 };
 
-export function xpFor(result: PlayerResult, active: boolean): number {
+export function xpFor(result: Pick<PlayerResult,'outcome'|'left'>, active: boolean): number {
   if (result.left) return 0;
   let xp = XP_RULES.completed;
   if (result.outcome === 'WIN') xp += XP_RULES.win;

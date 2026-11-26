@@ -15,9 +15,13 @@ import { t } from '@mafia/localization';
 import type { PaymentInput } from './economy-core';
 import { RegistryCore, type Sql, type TgUserInput } from './registry-core';
 import { reentrantTx } from './sql';
-import { RoomCore, type RoomData, type RoomDeps } from './room-core';
+import { RoomCore, type RoomData, type RoomDeps,type V2SettlementPort } from './room-core';
+import type {HeroV2Purchase,HeroV2ShotRequest} from './hero-v2-core';
+import type {GrenchDebit,DawnRoleAction} from './role-v2-economy';
+import type {RecordGameInput} from './registry-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
+import {stagingAllowed,stagingWebhookAllowed,stagingV2Ledger} from './staging-guard';
 import { readTelegramUpdate } from './webhook-input';
 import { reconcileRefunds } from './refund-reconcile';
 
@@ -25,9 +29,18 @@ export interface Env {
   ROOMS: DurableObjectNamespace<GameRoom>;
   REGISTRY: DurableObjectNamespace<Registry>;
   BOT_TOKEN: string;
+  STAGING_MODE?:string;
+  STAGING_BOT_ID?:string;
+  PRODUCTION_BOT_ID?:string;
+  STAGING_ORIGIN?:string;
+  STAGING_V2_LEDGER?:string;
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
+  /** Explicit owner-only, no-economy v2 preview. Off by default. */
+  V2_PREVIEW?: string;
+  /** Only local fake-Telegram workerd E2E. Never a production economy switch. */
+  V2_LOCAL_LEDGER?: string;
   VISUAL_MEDIA?: string;
   /** Telegram Stars: off | admins | all (standart: admins) */
   STARS_MODE?: string;
@@ -37,7 +50,14 @@ export interface Env {
   TEST_HOOKS?: string;
 }
 
+function localV2Ledger(env:Env):boolean{
+  if(env.V2_LOCAL_LEDGER!=='true'||env.V2_PREVIEW!=='true'||env.TEST_HOOKS!=='true'||!env.TELEGRAM_API)return false;
+  try{const url=new URL(env.TELEGRAM_API);return url.protocol==='http:'&&url.hostname==='127.0.0.1'&&!!url.port;}
+  catch{return false;}
+}
+function v2LedgerEnabled(env:Env):boolean{return localV2Ledger(env)||stagingV2Ledger(env);}
 function telegram(env: Env): Telegram {
+  if(!stagingAllowed(env))throw Error('staging configuration rejected');
   return new TelegramClient(env.BOT_TOKEN, env.TELEGRAM_API || 'https://api.telegram.org');
 }
 
@@ -210,9 +230,33 @@ export class Registry extends DurableObject<Env> {
   saveSettings(chatId: number, data: Parameters<RegistryCore['saveSettings']>[1], by: string) {
     return this.core.saveSettings(chatId, data, by);
   }
+  v2ProfileSummary(tgId:number){return this.core.v2ProfileSummary(tgId);}
   profileText(tgId: number) {
     return this.core.profileText(tgId);
   }
+  paraRequest(sender:number,target:number){return this.core.paraRequest(sender,target);}
+  paraFailed(sender:number,id:number){return this.core.paraFailed(sender,id);}
+  paraAnswer(target:number,id:number,accept:boolean){return this.core.paraAnswer(target,id,accept);}
+  paraPair(user:number){return this.core.paraPair(user);}
+  paraLeave(user:number,pair:number){return this.core.paraLeave(user,pair);}
+  // Private DO RPC only. No generic HTTP endpoint or Telegram command accepts these ledger parameters.
+  private requireV2Ledger(){if(!v2LedgerEnabled(this.env))throw Error('v2 ledger disabled');}
+  v2Snapshots(ids:number[]){
+    this.requireV2Ledger();
+    if(ids.length<4||ids.length>30||new Set(ids).size!==ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<1))throw Error('invalid roster');
+    return Object.fromEntries(ids.flatMap(id=>{const h=this.core.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];}));
+  }
+  v2MarkRunning(game:number,chat:number,ids:readonly number[],allowItems:boolean){this.requireV2Ledger();return this.core.markV2Running(game,chat,ids,allowItems);}
+  v2SettleNight(game:number,round:number,debits:readonly GrenchDebit[]){this.requireV2Ledger();return this.core.roleV2Economy.settleGrenchBatch(game,round,debits);}
+  v2SettleDawn(game:number,round:number,actions:readonly DawnRoleAction[]){this.requireV2Ledger();return this.core.roleV2Economy.settleDawn(game,round,actions);}
+  v2SettleHero(request:HeroV2ShotRequest){this.requireV2Ledger();return this.core.heroV2.settleShot(request);}
+  v2BuyOffer(game:number,attempt:number,buyer:number,offer:number,code:string){this.requireV2Ledger();return this.core.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code);}
+  v2RecordResult(input:RecordGameInput){this.requireV2Ledger();return this.core.recordV2Game(input);}
+  v2HeroTop(){this.requireV2Ledger();return this.core.heroV2.top();}
+  v2HeroView(id:number){this.requireV2Ledger();return this.core.heroV2.view(id);}
+  v2HeroQuote(id:number,op:HeroV2Purchase,arg?:string){this.requireV2Ledger();return this.core.heroV2.quote(id,op,arg);}
+  v2HeroConfirm(id:number,quoteId:number){this.requireV2Ledger();return this.core.heroV2.confirm(id,quoteId);}
+  v2HeroCancel(id:number,quoteId:number){this.requireV2Ledger();return this.core.heroV2.cancel(id,quoteId);}
   singleHero(tgId: number) { return this.core.singleHero(tgId); }
   setOwnHeroLevel(tgId: number, level: number) { return this.core.setOwnHeroLevel(tgId, level); }
   buyHero(tgId: number, idem: string) { return this.core.eco.buyHero(tgId, idem); }
@@ -289,6 +333,7 @@ const ROOM_METHODS = [
   'start',
   'cancel',
   'devFill',
+  'v2Button',
   'nightAction',
   'skip',
   'mafiaVote',
@@ -299,6 +344,8 @@ const ROOM_METHODS = [
   'relayMafia',
   'silenceSnapshot',
   'statusText',
+  'v2RecoveryStatus',
+  'retryV2Recovery',
   'migrate',
   'forceDeadline',
 ] as const;
@@ -328,6 +375,7 @@ export class GameRoom extends DurableObject<Env> {
         },
       },
       registry: lazyRegistry(env),
+      ...(v2LedgerEnabled(env)?{v2Settlement:v2SettlementPort(env)}:{}),
       telegram: telegram(env),
       clock: Date.now,
       rng: cryptoRng,
@@ -335,6 +383,7 @@ export class GameRoom extends DurableObject<Env> {
       devFakePlayers: env.DEV_FAKE_PLAYERS === 'true',
       visuals: env.VISUAL_MEDIA !== 'false',
       reportRegistryFailure: () => this.ctx.waitUntil(reportFailure(env, 'registry')),
+      reportV2Hold: hold=>this.ctx.waitUntil(Promise.allSettled([...ownerIds(env)].map(id=>telegram(env).call('sendMessage',{chat_id:id,text:'⚠️ V2 o‘yin #'+hold.game+' hisob-kitobi kutmoqda. /admin_v2_recovery '+hold.game}))).then(()=>undefined)),
     };
   }
 
@@ -398,6 +447,9 @@ function getRouter(env: Env): Router {
       room: (chatId) => roomApi(env, chatId),
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
+      v2Preview: env.V2_PREVIEW === 'true',
+      v2SettingsMode: env.STAGING_MODE==='true'&&env.V2_PREVIEW==='true'&&stagingAllowed(env),
+      ...(v2LedgerEnabled(env)?{heroV2Shop:{top:()=>registryStub(env).v2HeroTop(),view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
@@ -407,6 +459,18 @@ function getRouter(env: Env): Router {
   );
 }
 
+/** Fresh stub per invocation, including after alarms/restarts. */
+function v2SettlementPort(env:Env):V2SettlementPort{
+  return {
+    snapshots:ids=>registryStub(env).v2Snapshots(ids),
+    markRunning:(game,chat,ids,allowItems)=>registryStub(env).v2MarkRunning(game,chat,ids,allowItems),
+    settleNight:(game,round,debits)=>registryStub(env).v2SettleNight(game,round,debits),
+    settleDawn:(game,round,actions)=>registryStub(env).v2SettleDawn(game,round,actions),
+    settleHero:request=>registryStub(env).v2SettleHero(request),
+    buyOffer:(game,attempt,buyer,offer,code)=>registryStub(env).v2BuyOffer(game,attempt,buyer,offer,code),
+    recordResult:input=>registryStub(env).v2RecordResult(input),
+  };
+}
 /** Registry stubini har chaqiruvda yangidan oladi (DO ichida ham xavfsiz). */
 function lazyRegistry(env: Env) {
   return new Proxy({} as ReturnType<typeof registryStub>, {
@@ -419,8 +483,12 @@ function lazyRegistry(env: Env) {
 
 async function setup(env: Env, origin: string): Promise<Response> {
   const tg = telegram(env);
-  const me = await tg.call<{ username: string }>('getMe');
+  const me = await tg.call<{ username: string;id:number }>('getMe');
   const url = `${origin}/telegram/webhook`;
+  if(env.STAGING_MODE==='true'){
+    const existing=await tg.call<{url:string}>('getWebhookInfo');
+    if(!stagingAllowed(env,origin)||!stagingWebhookAllowed(env,me.id,existing.url))return Response.json({ok:false,error:'staging identity or existing webhook rejected'},{status:403});
+  }
   await tg.call('setWebhook', {
     url,
     secret_token: await webhookSecret(env.BOT_TOKEN),
@@ -436,6 +504,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
       { command: 'hero', description: 'Mening shaxsiy geroyim' },
+      ...(v2LedgerEnabled(env)?[{command:'herov2',description:'V2 shaxsiy geroy sinov do‘koni'}]:[]),
       { command: 'herotop', description: 'Geroylar TOP 10' },
       { command: 'history', description: 'Oxirgi 10 o‘yin' },
       { command: 'rating', description: 'Umumiy reyting' },
@@ -447,6 +516,8 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'invite', description: 'Do‘stlarni taklif qilish' },
       { command: 'rules', description: 'Qoidalar' },
       { command: 'roles', description: 'Rollar' },
+      { command: 'mypara', description: 'Parangizni ko‘rish' },
+      { command: 'qpara', description: 'Parani bekor qilish' },
       { command: 'characters', description: 'Personajlar katalogi' },
       { command: 'intro', description: 'Hypernova animatsiyasi' },
       { command: 'guide', description: 'Boshlovchilar qo‘llanmasi' },
@@ -460,6 +531,14 @@ async function setup(env: Env, origin: string): Promise<Response> {
     scope: { type: 'all_group_chats' },
     commands: [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
+      ...(env.V2_PREVIEW==='true'&&env.STAGING_MODE!=='true' ? [
+        { command: 'game_v2classic', description: 'V2 Classic o‘yini (bot egasi)' },
+        { command: 'game_v2zombie', description: 'V2 Zombi o‘yini (bot egasi)' },
+        { command: 'game_v2hypernova', description: 'V2 Hypernova o‘yini (bot egasi)' },
+        { command: 'game_v2vs', description: 'V2 VS o‘yini (bot egasi)' },
+      ] : []),
+      { command: 'para', description: 'Xabarga javob qilib para taklifi' },
+      { command: 'mypara', description: 'Parangizni ko‘rish' },
       { command: 'quick', description: 'Tezkor, reytingsiz o‘yin' },
       { command: 'join', description: 'O‘yinga qo‘shilish' },
       { command: 'leave', description: 'O‘yindan chiqish' },
@@ -516,7 +595,7 @@ async function diag(env: Env): Promise<Response> {
 
 export default {
   async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    if (!env.BOT_TOKEN) return;
+    if (!env.BOT_TOKEN||!stagingAllowed(env)) return;
     const reg = registryStub(env);
     try {
       const info = await telegram(env).call<{ url: string; pending_update_count: number; last_error_date?: number }>('getWebhookInfo');
@@ -538,8 +617,9 @@ export default {
   },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if(!stagingAllowed(env,url.origin))return new Response('staging configuration rejected',{status:503});
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-      return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token' });
+      return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token', ...(env.STAGING_MODE==='true'?{staging:true,v2Ledger:stagingV2Ledger(env)}:{}) });
     }
     if (!env.BOT_TOKEN) return new Response('BOT_TOKEN missing', { status: 503 });
 

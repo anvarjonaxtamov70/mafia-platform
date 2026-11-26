@@ -200,6 +200,7 @@ export interface ReferralInfo {
 }
 
 export interface RoleStatRow {
+  engineVersion?:1|2;
   role: string;
   played: number;
   won: number;

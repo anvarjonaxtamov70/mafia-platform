@@ -1,0 +1,72 @@
+import {describe,it,expect} from 'vitest';
+import {World,privateText,groupText,callback,GROUP} from './harness';
+import {encodeV2Button} from '@mafia/bot-core';
+describe('owner-only v2 preview in actual RoomCore',()=>{
+ it('off by default and ordinary users cannot create previews',async()=>{
+  const off=new World();await off.send(privateText(1,'/start'));await off.send(groupText(1,'/game v2classic'));
+  expect((await off.loaded(GROUP)).data.game).toBeNull();
+  const on=new World({v2Preview:true});await on.send(privateText(2,'/start'));await on.send(groupText(2,'/game v2classic'));
+  expect((await on.loaded(GROUP)).data.game).toBeNull();
+ });
+ it('running preview /leave forfeits participation and releases only that player',async()=>{
+  const w=new World({v2Preview:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game v2classic'));
+  const core=await w.loaded(GROUP),n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  await w.send(groupText(2,'/leave'));
+  expect(core.data.game!.v2Session!.state.players.find(p=>p.id==='2')).toMatchObject({left:true,hp:0,personal:'LOSS'});
+  expect(w.registryCore.activeOf(2)).toBeNull();
+  expect(w.registryCore.activeOf(1)?.number).toBe(n);
+  expect(w.registryCore.eco.coins(2)).toBe(0);
+ });
+ it('foreign, expired and previous-game callbacks cannot mutate a room',async()=>{
+  const w=new World({v2Preview:true}),other=GROUP-1;
+  for(const id of [1,2,3,4,5,6,7,8])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game v2classic'));
+  const a=await w.loaded(GROUP),n=a.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  // Create a second actual room directly, with non-overlapping registered users.
+  const b=await w.loaded(other);
+  const created=await b.createLobby({title:'Other',host:{id:5,name:'U5',dmAvailable:true,banned:false,badge:''},isAdmin:true,v2Mode:'CLASSIC'});
+  expect(created.ok).toBe(true);
+  const m=b.data.game!.number;
+  for(const id of [6,7,8])await w.send(callback(id,'l:j:'+m,other));
+  expect((await b.start({by:5,isAdmin:true})).ok).toBe(true);
+  const state=a.data.game!.v2Session!.state,don=state.players.find(p=>p.role==='DON')!;
+  const raw=encodeV2Button({game:n,seq:state.seq,op:'K',seat:0});
+  await w.send(callback(5,raw));
+  expect(a.data.game!.v2Session!.state.intents).toHaveLength(0);
+  expect(b.data.game!.v2Session!.state.intents).toHaveLength(0);
+  expect((await b.v2Button({tgId:Number(don.id),privateChatId:Number(don.id),number:n,raw})).ok).toBe(false);
+  await w.send(callback(Number(don.id),raw,GROUP));
+  expect(a.data.game!.v2Session!.state.intents).toHaveLength(0);
+  await w.advance(30001);
+  await w.send(callback(Number(don.id),raw));
+  expect(a.data.game!.v2Session!.state.phase).not.toBe('NIGHT');
+  expect(b.data.game!.number).toBe(m);
+ });
+ it('native callbacks, durable phase progression, no wallet changes and /stop',async()=>{
+  const w=new World({v2Preview:true});
+  for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/game v2classic'));
+  const core=await w.loaded(GROUP);const n=core.data.game!.number;
+  for(const id of [2,3,4])await w.send(callback(id,'l:j:'+n,GROUP));
+  await w.send(groupText(1,'/startgame'));
+  const s=core.data.game!.v2Session!;
+  expect(s.state.phase).toBe('NIGHT');
+  expect(w.tg.texts(GROUP).join(' ')).toContain('V2 SINOV');
+  const don=s.state.players.find(p=>p.role==='DON')!;
+  const seat=s.state.players.findIndex(p=>p.role==='CITIZEN')+1;
+  const action=encodeV2Button({game:n,seq:1,op:'C',seat});
+  await w.send(callback(Number(don.id),action,GROUP));expect(core.data.game!.v2Session!.state.intents).toHaveLength(0);
+  await w.send(callback(Number(don.id),action));expect(core.data.game!.v2Session!.state.intents).toHaveLength(1);
+  await w.advance(30001);
+  expect(core.data.game!.v2Session!.state.phase).toBe('DAWN');
+  expect(w.registryCore.eco.coins(Number(don.id))).toBe(0);
+  await w.send(groupText(1,'/stop'));
+  expect(core.data.game).toBeNull();expect(w.registryCore.activeOf(1)).toBeNull();
+ });
+});

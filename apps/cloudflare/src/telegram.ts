@@ -35,7 +35,7 @@ export class TelegramClient implements Telegram {
       if (multipart) {
         const form = new FormData();
         for (const [key, value] of Object.entries(params)) {
-          if (value instanceof Blob) form.append(key, value, value.type === 'image/gif' ? 'hypernova.gif' : 'hypernova.png');
+          if (value instanceof Blob) form.append(key, value, value.type === 'image/gif' ? 'hypernova.gif' : value.type === 'image/jpeg' ? 'hypernova.jpg' : 'hypernova.png');
           else if (value !== undefined && value !== null) form.append(key, typeof value === 'string' ? value : JSON.stringify(value));
         }
         res = await this.fetchFn(url, {

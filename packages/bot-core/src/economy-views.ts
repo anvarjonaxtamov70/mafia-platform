@@ -2,7 +2,7 @@
  * Iqtisodiyot ko'rinishlari: do'kon, inventar, kunlik mukofot, VIP, taklif, rol statistikasi.
  * Faqat ma'lumotdan matn va tugma yasaydi — saqlash va tekshiruv serverda.
  */
-import { getRole, type RoleCode } from '@mafia/game-engine';
+import { getRole, type RoleCode,V2_ROLES,type V2Role } from '@mafia/game-engine';
 import { escapeHtml, t } from '@mafia/localization';
 import { encode } from './callback-data';
 import {
@@ -23,6 +23,7 @@ import {
 } from './economy';
 import { rows, type Button, type Keyboard } from './outbox-types';
 import { backRow } from './views';
+import {v2RoleLabel} from './v2-presenter';
 
 export interface View {
   text: string;
@@ -202,8 +203,8 @@ export function roleStatsView(stats: RoleStatRow[], w: WalletInfo): View {
         }
       })();
       return t('stats.line', {
-        emoji: def?.emoji ?? '🎭',
-        role: t(`role.${s.role}.name`),
+        emoji: s.engineVersion===2?'':def?.emoji ?? '🎭',
+        role: s.engineVersion===2&&V2_ROLES.includes(s.role as V2Role)?v2RoleLabel(s.role as V2Role)+' (V2)':t(`role.${s.role}.name`),
         played: s.played,
         won: s.won,
         rate: ((s.won / s.played) * 100).toFixed(0),

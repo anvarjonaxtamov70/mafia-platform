@@ -1,0 +1,64 @@
+import {describe,it,expect} from 'vitest';
+import {World,privateText,groupText,callback,user,GROUP} from './harness';
+const request=(sender:number,target:number)=>({message:{...groupText(sender,'/para').message!,reply_to_message:{message_id:123,chat:{id:GROUP,type:'supergroup' as const},from:user(target)}}});
+describe('para private delivery and mutual pairing',()=>{
+ it('reply only, private recipient only, accepts once, confirms breakup',async()=>{
+  const w=new World();for(const id of [1,2,3])await w.send(privateText(id,'/start'));
+  await w.send(groupText(1,'/para'));
+  await w.send(request(1,2));
+  const msg=w.tg.sent(2).at(-1)!;
+  const data=(msg.params['reply_markup'] as {inline_keyboard:{callback_data:string}[][]}).inline_keyboard[0]![0]!.callback_data;
+  expect(data).toMatch(/^e:parayes:/);
+  expect(w.tg.texts(GROUP).join(' ')).toContain('Para so‘rovi yuborildi');
+  expect(w.tg.texts(GROUP).join(' ')).not.toContain('Para taklifi!');
+  await w.send(callback(3,data));expect(w.registryCore.paraPair(2)).toBeNull();
+  await w.send(callback(2,data,GROUP));expect(w.registryCore.paraPair(2)).toBeNull();
+  await w.send(callback(2,data));expect(w.registryCore.paraPair(1)?.partner).toBe('U2');
+  expect(w.registryCore.paraPair(2)?.partner).toBe('U1');
+  await w.send(callback(2,data));expect(w.registryCore.paraPair(1)?.partner).toBe('U2');
+  const id=w.registryCore.paraPair(1)!.id;
+  await w.send(groupText(1,'/mypara'));expect(w.tg.texts(GROUP).join(' ')).toContain('U2');
+  await w.send(privateText(1,'/qpara'));
+  await w.send(callback(3,'e:paraq:'+id));expect(w.registryCore.paraPair(1)).not.toBeNull();
+  await w.send(callback(1,'e:paraq:'+id));expect(w.registryCore.paraPair(1)).toBeNull();expect(w.registryCore.paraPair(2)).toBeNull();
+ });
+ it('rejects unregistered, self, expiry, competing acceptance and stale breakup',async()=>{
+  const w=new World();for(const id of [1,2,3,4])await w.send(privateText(id,'/start'));
+  expect(w.registryCore.paraRequest(1,1).ok).toBe(false);
+  expect(w.registryCore.paraRequest(1,999).ok).toBe(false);
+  const a=w.registryCore.paraRequest(1,2),b=w.registryCore.paraRequest(3,2);
+  if(!a.ok||!b.ok)throw Error('fixture');
+  expect(w.registryCore.paraAnswer(2,a.id,true)).toBe('OK');
+  expect(w.registryCore.paraAnswer(2,b.id,true)).not.toBe('OK');
+  expect(w.registryCore.paraLeave(3,a.id)).toBe('STALE');
+  expect(w.registryCore.paraLeave(2,a.id)).toBe('OK');
+  const c=w.registryCore.paraRequest(4,2);if(!c.ok)throw Error('fixture');
+  await w.advance(600001);expect(w.registryCore.paraAnswer(2,c.id,true)).toBe('STALE');
+ });
+ it('staging navigation, private pair screen and cancelled breakup retain the pair',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true,v2Ledger:true});
+  for(const id of [1,2,3])await w.send(privateText(id,'/start'));
+  const markup=(params:Record<string,unknown>)=>(params.reply_markup as {inline_keyboard:{callback_data?:string}[][]}).inline_keyboard.flat();
+  expect(markup(w.tg.sent(1).at(-1)!.params).some(b=>b.callback_data==='m:para')).toBe(true);
+  await w.send(request(1,2));
+  const accept=markup(w.tg.sent(2).at(-1)!.params).find(b=>b.callback_data?.startsWith('e:parayes:'))!.callback_data!;
+  expect(w.tg.texts(GROUP).at(-1)).toContain('Para so‘rovi yuborildi');
+  await w.send(callback(2,accept));
+  const edit=()=>w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+  expect(edit().params.text).toContain('HYPERNOVA | PARA');
+  expect(edit().params.text).toContain('U1');
+  const pair=w.registryCore.paraPair(1)!;
+  await w.advance(3100);await w.send(callback(1,'m:paraconfirm'));
+  expect(edit().params.text).toContain('U2');
+  await w.advance(3100);await w.send(callback(1,'e:paranop:'+pair.id));
+  expect(w.registryCore.paraPair(1)?.id).toBe(pair.id);
+  expect(edit().params.text).toContain('Bekor qilinmadi');
+  await w.advance(3100);await w.send(callback(1,'e:paraq:'+pair.id,GROUP));
+  expect(w.registryCore.paraPair(1)).not.toBeNull();
+  await w.advance(3100);await w.send(callback(1,'e:paraq:'+pair.id));
+  expect(w.registryCore.paraPair(1)).toBeNull();expect(w.registryCore.paraPair(2)).toBeNull();
+  expect(edit().params.text).toContain('parangiz yo‘q');
+  await w.send(privateText(1,'/rules'));expect(w.tg.texts(1).at(-1)).toContain('29 soniya');
+ });
+
+});
