@@ -1,7 +1,7 @@
 /** Native Telegram views for v2. The room adapter must enforce game/phase,
  * authenticated actor, audience and deadline again; callback data is untrusted.
  */
-import {V2_ROLES,V2_DEFS,v2Eligible,v2Submit,type V2State,type V2Role,type V2Action,type V2Effect,type V2NightSession} from '@mafia/game-engine';
+import {V2_ROLES,V2_DEFS,v2Eligible,v2Submit,v2SameMafia,type V2State,type V2Role,type V2Action,type V2Effect,type V2NightSession} from '@mafia/game-engine';
 import {escapeHtml} from '@mafia/localization';
 import {REFERENCE_ROLES} from './reference-roles';
 import {rows,buttonLabel,type Button,type Keyboard,type OutboxDraft} from './outbox-types';
@@ -32,8 +32,8 @@ const roleDescription=(role:V2Role)=>REFERENCE_ROLES[V2_ROLES.indexOf(role)]!.de
 function make(game:number,s:V2State,op:V2Op,seat:number,text:string):Button{return {text,callback_data:encodeV2Button({game,seq:s.seq,op,seat})};}
 export function v2PrivateRoleView(s:V2State,id:string,names:PlayerNames):V2View|null{
  const p=s.players.find(x=>x.id===id);if(!p)return null;
- const mafia=V2_DEFS[p.role].faction==='MAFIA'?s.players.filter(x=>x.id!==id&&V2_DEFS[x.role].faction==='MAFIA').map(x=>named(names,x.id)+' — '+escapeHtml(v2RoleLabel(x.role))):[];
- return {text:'Sizning rolingiz: <b>'+escapeHtml(v2RoleLabel(p.role))+'</b>\n\n'+escapeHtml(roleDescription(p.role))+(p.colour?'\n\nJamoangiz: '+(p.colour==='RED'?'🔴 Qizillar':'🔵 Ko‘klar'):'')+(mafia.length?'\n\nMafia jamoasi:\n'+mafia.join('\n'):'')};
+ const mafia=V2_DEFS[p.role].faction==='MAFIA'?s.players.filter(x=>x.id!==id&&v2SameMafia(s,p,x)).map(x=>named(names,x.id)+' — '+escapeHtml(v2RoleLabel(x.role))):[];
+ return {text:'Sizning rolingiz: <b>'+escapeHtml(v2RoleLabel(p.role))+'</b>\n\n'+escapeHtml(roleDescription(p.role))+(p.colour?'\n\nJamoangiz: '+(p.colour==='RED'?'🔴 Qizillar':'🔵 Ko‘klar')+'\n'+s.players.filter(x=>x.id!==id&&x.colour===p.colour).map(x=>named(names,x.id)).join(', '):'')+(mafia.length?'\n\nMafia jamoasi:\n'+mafia.join('\n'):'')};
 }
 export function v2PrivatePhaseView(s:V2State,game:number,id:string,names:PlayerNames):V2View|null{
  const p=s.players.find(x=>x.id===id);if(!p||p.left)return null;

@@ -155,6 +155,21 @@ describe('v2 independent engine',()=>{
   const s=v2CreateFixed(['0','1','2','3'],['DON','ZOMBIE','ZOMBIE','COMMISSAR'],'ZOMBIE',0,rng());
   expect(()=>act(s,1,2)).toThrow();
  });
+ it('VS mafia ballots stay within colour teams; no-Don colour has independent attack',()=>{
+  let s=v2CreateFixed(['0','1','2','3','4','5'],['DON','MAFIOSO','MAFIOSO','DOCTOR','COMMISSAR','DOCTOR'],'VS',0,rng());
+  for(const p of s.players)p.colour=['0','2','4'].includes(p.id)?'RED':'BLUE';
+  expect(()=>act(s,0,2)).toThrow();expect(()=>act(s,1,3)).toThrow();
+  s=act(act(s,0,3),1,4);
+  const r=night(s);expect(r.state.players[3]!.hp).toBe(0);expect(r.state.players[4]!.hp).toBe(0);
+  expect(r.effects).toContainEqual({kind:'DEATH',target:'4',reason:'MAFIA',attackers:['1']});
+ });
+ it('Spy shares a masked result with own mafia but never opposite colour in VS',()=>{
+  let s=v2CreateFixed(['0','1','2','3','4','5'],['DON','SPY','MAFIOSO','MAFIOSO','COMMISSAR','DOCTOR'],'VS',0,rng());
+  for(const p of s.players)p.colour=['0','1','2'].includes(p.id)?'RED':'BLUE';
+  s.players[4]!.document=true;s=act(s,1,4);
+  const checks=night(s).effects.filter(e=>e.kind==='CHECK');
+  expect(checks).toEqual(['1','0','2'].map(recipient=>({kind:'CHECK',recipient,target:'4',role:'CITIZEN'})));
+ });
  it('all ordered role pairs accept or reject with immutable original state',()=>{
   for(const a of V2_ROLES)for(const b of V2_ROLES){
     const mode=a==='ZOMBIE'||b==='ZOMBIE'?'ZOMBIE':'CLASSIC';

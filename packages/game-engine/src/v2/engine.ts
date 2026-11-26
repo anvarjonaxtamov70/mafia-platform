@@ -34,6 +34,7 @@ export type V2Resolution={state:V2State;effects:V2Effect[]};
 export type V2NightChoices={wizard?:ReadonlyMap<string,'FORGIVE'|'REFUSE'>;grench?:ReadonlyMap<string,'HP'|'MONEY'>;/** Ledger adapter must attest that a debit was actually committed; absent means pending effect, not free debit. */paidGrench?:ReadonlySet<string>};
 const alive=(p:V2Player)=>p.hp>0&&!p.left;
 const faction=(p:V2Player)=>V2_DEFS[p.role].faction;
+export const v2SameMafia=(s:V2State,a:V2Player,b:V2Player)=>faction(a)==='MAFIA'&&faction(b)==='MAFIA'&&(s.mode!=='VS'||a.colour===b.colour);
 const clone=(s:V2State):V2State=>JSON.parse(JSON.stringify(s)) as V2State;
 const player=(s:V2State,id:string)=>s.players.find(p=>p.id===id);
 const asleep=(s:V2State,p:V2Player)=>p.blockedUntil>=s.round;
@@ -67,7 +68,7 @@ export function v2Submit(s:V2State,intent:V2Intent,seq:number):V2State{
     if(a.role==='LAWYER'&&faction(t)!=='MAFIA')throw new Error('invalid lawyer target');
     if(a.role==='ZOMBIE'&&t.role==='ZOMBIE')throw new Error('invalid zombie target');
     if(a.role==='KRAMPOUS'&&a.marks.includes(t.id))throw new Error('repeated mark');
-    if((a.role==='DON'||a.role==='MAFIOSO')&&faction(t)==='MAFIA'&&s.mode!=='VS')throw new Error('mafia teammate');
+    if((a.role==='DON'||a.role==='MAFIOSO')&&(s.mode==='VS'?a.colour===t.colour:v2SameMafia(s,a,t)))throw new Error('mafia teammate');
   }else if(intent.target!==null)throw new Error('skip with target');
   const n=clone(s);n.intents=n.intents.filter(x=>x.actor!==a.id);n.intents.push({...intent});return n;
 }
@@ -93,12 +94,23 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   const usable=intents.filter(i=>!frozen.has(i.actor)||player(s,i.actor)!.role==='FROZEN');
   const attacks:Attack[]=[];
   const hit=(a:V2Player,t:string,cause:string=a.role,force=false)=>attacks.push({actor:a.id,target:t,role:initial.get(a.id)!,cause,force});
-  const don=s.players.find(p=>p.role==='DON'&&alive(p));
   const mafiaIntents=usable.filter(i=>['DON','MAFIOSO'].includes(player(s,i.actor)!.role));
-  const mafiaTarget=don&&!frozen.has(don.id)&&!asleep(s,don)?mafiaIntents.find(i=>i.actor===don.id)?.target??uniqueTop(mafiaIntents.filter(i=>i.actor!==don.id).map(i=>({target:i.target!,weight:1}))):null;
-  // The effective Don visit, not each ordinary mafia ballot, is the actual attack.
+  // Classic has one Don. VS has one global Don, but independent colour ballots;
+  // a colour without Don uses the first valid voter of the winning target.
+  const mafiaHits:{actor:V2Player;target:string}[]=[];
+  const groups=s.mode==='VS'?['RED','BLUE'] as const:[null];
+  for(const colour of groups){
+    const members=s.players.filter(p=>alive(p)&&['DON','MAFIOSO'].includes(p.role)&&(s.mode!=='VS'||p.colour===colour));
+    const don=members.find(p=>p.role==='DON');
+    const ballots=mafiaIntents.filter(i=>members.some(p=>p.id===i.actor));
+    if(don&&(frozen.has(don.id)||asleep(s,don)))continue;
+    if(!don&&s.mode!=='VS')continue;
+    const target=don?ballots.find(i=>i.actor===don.id)?.target??uniqueTop(ballots.filter(i=>i.actor!==don.id).map(i=>({target:i.target!,weight:1}))):uniqueTop(ballots.map(i=>({target:i.target!,weight:1})));
+    const actor=don??members.find(p=>ballots.some(i=>i.actor===p.id&&i.target===target));
+    if(actor&&target)mafiaHits.push({actor,target});
+  }
   const visits=usable.filter(i=>!['DON','MAFIOSO'].includes(player(s,i.actor)!.role));
-  if(don&&mafiaTarget)visits.push({actor:don.id,target:mafiaTarget,kind:'CHOOSE'});
+  for(const h of mafiaHits)visits.push({actor:h.actor.id,target:h.target,kind:'CHOOSE'});
   const trapped=new Set<string>();
   for(const i of visits.filter(i=>player(s,i.actor)!.role==='MINIOR')){
     const miner=player(s,i.actor)!;
@@ -115,7 +127,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     if(a.role==='LAWYER'&&faction(t)==='MAFIA'){masked.add(t.id);t.hangingProtection=true;}
     if(a.role==='TENTAK'&&faction(t)==='CITY')t.hangingProtection=true;
   }
-  if(don&&mafiaTarget&&!trapped.has(don.id))hit(don,mafiaTarget,'MAFIA');
+  for(const h of mafiaHits)if(!trapped.has(h.actor.id))hit(h.actor,h.target,'MAFIA');
   const conversions:{actor:string;target:string}[]=[];
   const detonations:V2Player[]=[];
   const grenchHp:{actor:string;target:string}[]=[];
@@ -128,7 +140,8 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
         const role=masked.has(t.id)||t.document?'CITIZEN':t.role;
         if(t.document&&!masked.has(t.id))t.document=false;
         effects.push({kind:'CHECK',recipient:a.id,target:t.id,role});
-        if(a.role==='COMMISSAR')for(const p of s.players.filter(p=>p.role==='SERGEANT'&&alive(p)))effects.push({kind:'CHECK',recipient:p.id,target:t.id,role});
+        if(a.role==='COMMISSAR')for(const p of s.players.filter(p=>p.role==='SERGEANT'&&alive(p)&&(s.mode!=='VS'||p.colour===a.colour)))effects.push({kind:'CHECK',recipient:p.id,target:t.id,role});
+        if(a.role==='SPY')for(const p of s.players.filter(p=>p.id!==a.id&&alive(p)&&v2SameMafia(s,a,p)))effects.push({kind:'CHECK',recipient:p.id,target:t.id,role});
         break;
       }
       case 'MANYAK':case 'MERGAN':hit(a,t.id);break;

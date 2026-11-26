@@ -48,7 +48,7 @@ import { escapeHtml, t } from '@mafia/localization';
 import type { ClaimResult, RecordGameInput, RecordResult, UserInfo } from './registry-core';
 import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
-import {V2_DEFS,v2CanEndNight,v2NightSessionReady,type V2Mode} from '@mafia/game-engine';
+import {V2_DEFS,v2CanEndNight,v2NightSessionReady,v2SameMafia,type V2Mode} from '@mafia/game-engine';
 import {decodeV2Button,v2PublicPhaseView} from '@mafia/bot-core';
 import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-hero-settlement';
 import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
@@ -987,7 +987,7 @@ export class RoomCore {
       const word=v.lastWords[id];
       if(word&&!word.sent&&word.until>this.now){try{this.acceptV2(g,v2RoomLastWord(v,input.tgId,input.text,this.now));await this.commit();return true;}catch{return false;}}
       if(v.state.phase!=='NIGHT'||me.hp<=0||me.left||me.blockedUntil>=v.state.round||V2_DEFS[me.role].faction!=='MAFIA')return false;
-      for(const p of v.state.players)if(p.id!==id&&p.hp>0&&!p.left&&p.blockedUntil<v.state.round&&V2_DEFS[p.role].faction==='MAFIA'&&!g.players.some(u=>u.fake&&String(u.id)===p.id))this.send(Number(p.id),t('dm.mafia_chat',{name:escapeHtml(v.names[id]??'O‘yinchi'),text:escapeHtml(input.text.slice(0,1000))}));
+      for(const p of v.state.players)if(p.id!==id&&p.hp>0&&!p.left&&p.blockedUntil<v.state.round&&v2SameMafia(v.state,me,p)&&!g.players.some(u=>u.fake&&String(u.id)===p.id))this.send(Number(p.id),t('dm.mafia_chat',{name:escapeHtml(v.names[id]??'O‘yinchi'),text:escapeHtml(input.text.slice(0,1000))}));
       await this.commit();return true;
     }
     const s = g?.state;
