@@ -55,8 +55,9 @@ import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
 import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
-import {heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
+import {heroV2TopView,heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
 import {decodeV2Button} from '@mafia/bot-core';
+import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView} from './v2-economy-views';
 import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
@@ -142,6 +143,7 @@ export interface RegistryApi {
   getSettings(chatId: number): Promise<GroupSettingsData>;
   saveSettings(chatId: number, data: GroupSettingsData, by: string): Promise<GroupSettingsData>;
   profileText(tgId: number): Promise<string>;
+  v2ProfileSummary(tgId:number):Promise<ReturnType<import('./registry-core').RegistryCore['v2ProfileSummary']>>;
   singleHero(tgId: number): Promise<ReturnType<HeroCore['single']>>;
   setOwnHeroLevel(tgId: number, level: number): Promise<boolean>;
   buyHero(tgId: number, idem: string): Promise<BuyResult>;
@@ -184,6 +186,7 @@ export interface RoomApi {
 
 /** Only injected into isolated test routers until production v1/v2 migration. */
 export interface HeroV2ShopPort{
+ top():Promise<ReturnType<HeroV2Core['top']>>;
  view(id:number):Promise<ReturnType<HeroV2Core['view']>>;
  quote(id:number,op:HeroV2Purchase,argument?:string):Promise<HeroV2QuoteResult>;
  confirm(id:number,quoteId:number):Promise<HeroV2BuyResult>;
@@ -936,8 +939,8 @@ export class Router {
 
   private async heroSection(id: number, section: string): Promise<{ text: string; keyboard: Keyboard }> {
     if(this.d.v2SettingsMode){
-      if(section==='herotop')return {text:'V2 geroy reytingi hali ulanmagan.',keyboard:[[ {text:'Mening geroyim',callback_data:encode({t:'menu',section:'hero'})} ],backRow()]};
       if(!this.d.heroV2Shop)return {text:'Geroy V2 sinov do‘koni mavjud emas. Sinov iqtisodiyoti yoqilishi kerak.',keyboard:[backRow()]};
+      if(section==='herotop')return heroV2TopView(await this.d.heroV2Shop.top());
       return heroV2Profile(await this.d.heroV2Shop.view(id),!!this.d.visuals);
     }
     if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
@@ -966,11 +969,20 @@ export class Router {
       case 'profile': {
         await this.d.registry.upsertUser(from, dmOpened);
         const inv=await this.d.registry.inventory(id);
+        if(this.d.v2SettingsMode){
+          if(section==='inventory')return v2InventoryView(inv);
+          const p=await this.d.registry.v2ProfileSummary(id);
+          if(!p)return {text:t('common.error'),keyboard:[backRow()]};
+          const pair=await this.d.registry.paraPair(id);
+          const hero=this.d.heroV2Shop?await this.d.heroV2Shop.view(id):null;
+          return v2ProfileView(p,inv,hero,pair?.partner??null);
+        }
         const menu=(text:string,section:string)=>({text,callback_data:encode({t:'menu',section})});
         const arm=(code:string,label:string)=>({text:label+' · '+(inv.items.find(i=>i.code===code)?.armed?'ON':'OFF'),callback_data:encode({t:'eco',op:'arm',arg:code})});
         return {text:await this.d.registry.profileText(id),keyboard:[[arm('SHIELD','🛡'),arm('FAKE_DOC','📁')],[arm('VOTE_SHIELD','⚖️'),arm('HERO_SHIELD','Geroy himoyasi')],[menu('Do‘kon','shop')],[menu('Xarid qilish 💎','buy_diamonds'),menu('Xarid qilish 💵','buy_dollars')],[menu('Mening geroyim','hero')],backRow()]};
       }
       case 'shop': {
+        if(this.d.v2SettingsMode)return v2ShopView(await this.d.registry.inventory(id),!!this.d.heroV2Shop);
         const w = await this.d.registry.wallet(id);
         return shopHomeView(w.coins, w.diamonds ?? 0);
       }
@@ -1010,24 +1022,25 @@ export class Router {
     switch (op) {
       case 'shop': {
         const w = await reg.wallet(id);
-        const v = shopHomeView(w.coins, w.diamonds ?? 0);
+        const v = this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
       case 'cat': {
-        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb,v.text,v.keyboard); return this.answer(cb);
       }
       case 'buy': {
         const item = catalogItem(arg);
         if (!item || item.kind !== 'ARCADE' || item.price === null) return this.answer(cb, t('shop.unknown'));
         const w = await reg.wallet(id);
-        const v = buyConfirmView(item, w.coins, w.diamonds ?? 0);
+        const v = this.d.v2SettingsMode?v2BuyView(item,await reg.inventory(id)):buyConfirmView(item, w.coins, w.diamonds ?? 0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb);
       }
       case 'buyok': {
         const item = catalogItem(arg);
+        if(this.d.v2SettingsMode&&(!item||item.kind!=='ARCADE'||item.price===null))return this.answer(cb,t('cb.stale'));
         // callback_query id har bosishda noyob: Telegram qayta yuborsa ham ikki marta yechilmaydi
         const r = await reg.buy(id, arg, `buy:${cb.id}`);
         if (!r.ok) {
@@ -1041,13 +1054,13 @@ export class Router {
                   : t('shop.unknown');
           return this.answer(cb, msg, true);
         }
-        const w=await reg.wallet(id); const v=shopHomeView(w.coins,w.diamonds??0);
+        const w=await reg.wallet(id); const v=this.d.v2SettingsMode?v2ShopView(await reg.inventory(id),!!this.d.heroV2Shop):shopHomeView(w.coins,w.diamonds??0);
         await this.edit(cb, v.text, v.keyboard);
         return this.answer(cb, t(item!.currency === 'DIAMOND' ? 'shop.diamond_bought' : 'shop.bought', { name: itemName(arg), coins: r.balance }), true);
       }
       case 'arm': {
         const ok=await reg.toggleArm(id,arg);
-        const v=await this.section(cb.from,'profile',true);
+        const v=await this.section(cb.from,this.d.v2SettingsMode?'inventory':'profile',true);
         await this.edit(cb,v!.text,v!.keyboard);
         return this.answer(cb,ok?t('inv.saved'):t('inv.not_owned'));
       }

@@ -1,9 +1,10 @@
-import {backRow,heroV2Stats,HERO_V2_PRICE,HERO_V2_XP_PACKS,HERO_V2_RENAME_PRICE,heroV2Threshold,type Keyboard} from '@mafia/bot-core';
+import {backRow,displayName,encode,heroV2Stats,HERO_V2_PRICE,HERO_V2_XP_PACKS,HERO_V2_RENAME_PRICE,heroV2Threshold,type Keyboard} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
 import type {HeroV2Core,HeroV2Purchase,HeroV2Quote,HeroV2BuyResult} from './hero-v2-core';
 type View={text:string;keyboard:Keyboard};
 const names:Record<HeroV2Purchase,string>={BUY:'Geroy sotib olish',XP500:'500 ball',XP1000:'1000 ball',RESTORE:'Himoyani to‘ldirish',RELOAD:'O‘qni to‘ldirish',RENAME:'Nomni o‘zgartirish'};
 const home={text:'⬅️ Geroy',callback_data:'hv2:home'};
+const top={text:'🏆 Geroylar TOP',callback_data:'m:herotop'};
 const picture={text:'🖼 Geroy rasmi',callback_data:'hv2:art'};
 const rename={text:'✏️ Nomini o‘zgartirish',callback_data:'hv2:rename'};
 const bar=(value:number,max:number)=>{const n=Math.max(0,Math.min(10,Math.floor(value/Math.max(1,max)*10)));return '▰'.repeat(n)+'▱'.repeat(10-n);};
@@ -24,7 +25,7 @@ export function heroV2Profile(a:ReturnType<HeroV2Core['view']>,visuals=false):Vi
  const separator='━━━━━━━━━━━━━━━━━━';
  if(!a){
   const stats=heroV2Stats(1);
-  return {text:header+'\n'+separator+'\n🔒 <b>Geroy hali olinmagan</b>\n\nDoimiy shaxsiy geroy · 1-daraja\n⚔️ Zarar: '+stats.damage+' HP\n🛡 Himoya: '+stats.maxDefense+' / '+stats.maxDefense+'\n🔋 O‘q: '+stats.maxCharges+' / '+stats.maxCharges+'\n⭐ Keyingi daraja: '+number(heroV2Threshold(2))+' ball\n\n<b>Narx: '+HERO_V2_PRICE+' 💎</b>\nDon, Komissar va Mergan tongda bir marta foydalanishi mumkin.',keyboard:[quote('BUY','Geroy olish · '+HERO_V2_PRICE+' 💎'),...(visuals?[[picture]]:[]),backRow()]};
+  return {text:header+'\n'+separator+'\n🔒 <b>Geroy hali olinmagan</b>\n\nDoimiy shaxsiy geroy · 1-daraja\n⚔️ Zarar: '+stats.damage+' HP\n🛡 Himoya: '+stats.maxDefense+' / '+stats.maxDefense+'\n🔋 O‘q: '+stats.maxCharges+' / '+stats.maxCharges+'\n⭐ Keyingi daraja: '+number(heroV2Threshold(2))+' ball\n\n<b>Narx: '+HERO_V2_PRICE+' 💎</b>\nDon, Komissar va Mergan tongda bir marta foydalanishi mumkin.',keyboard:[quote('BUY','Geroy olish · '+HERO_V2_PRICE+' 💎'),...(visuals?[[picture]]:[]),[top],backRow()]};
  }
  const start=heroV2Threshold(a.level),inLevel=Math.max(0,a.points-start),needed=Math.max(1,a.nextPoints-start);
  const keyboard:Keyboard=[
@@ -32,7 +33,7 @@ export function heroV2Profile(a:ReturnType<HeroV2Core['view']>,visuals=false):Vi
   ...(a.charges<a.maxCharges?[quote('RELOAD','🔋 To‘ldirish · '+a.reloadPrice+' $')]:[]),
   [...quote('XP500','+500 · '+HERO_V2_XP_PACKS[0].diamonds+' 💎'),...quote('XP1000','+1000 · '+HERO_V2_XP_PACKS[1].diamonds+' 💎')],
   [rename],...(visuals?[[picture]]:[]),
-  [home],backRow(),
+  [top],backRow(),
  ];
  return {text:header+'\n'+separator+'\n👤 <b>'+escapeHtml(a.name)+'</b> · '+number(a.level)+'-daraja\n\n'+
   '⭐ <b>Tajriba</b>\n'+bar(inLevel,needed)+'\n'+number(a.points)+' / '+number(a.nextPoints)+' ball\n'+
@@ -51,4 +52,9 @@ export function heroV2Confirm(q:HeroV2Quote):View{
 }
 export function heroV2Status(s:HeroV2BuyResult):string{
  return {OK:'✅ Xarid tasdiqlandi.',UNAVAILABLE:'Taklif mavjud emas yoki siz o‘yindasiz.',INSUFFICIENT:'Mablag‘ yetarli emas.',FULL:'Bu buyum yoki resurs allaqachon to‘la.',INVALID:'Noto‘g‘ri qiymat.',CONFLICT:'Narx yoki taklif o‘zgardi. Yangidan oching.'}[s];
+}
+
+export function heroV2TopView(rows:ReturnType<HeroV2Core['top']>):View{
+ const lines=rows.map((r,i)=>(['🥇','🥈','🥉'][i]??(i+1)+'.')+' <b>'+escapeHtml(displayName({firstName:r.first_name,lastName:r.last_name,username:r.username}))+'</b>\n     '+escapeHtml(r.name)+' · '+number(r.level)+'-daraja · '+number(r.points)+' ball');
+ return {text:'🏆 <b>HYPERNOVA | GEROYLAR TOP 10</b>\n━━━━━━━━━━━━━━━━━━\n'+(lines.join('\n\n')||'Hozircha reyting bo‘sh.')+'\n\n<i>V2 hisoblari · yig‘ilgan geroy ballari bo‘yicha. Admin daraja sozlamalari hisoblanmaydi.</i>',keyboard:[[top],[{text:'🥷 Mening geroyim',callback_data:encode({t:'menu',section:'hero'})}],backRow()]};
 }

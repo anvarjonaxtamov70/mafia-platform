@@ -19,6 +19,7 @@ export class HeroV2Core {
  constructor(private readonly sql:Sql,private readonly eco:EconomyCore,private readonly clock:()=>number){}
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_accounts(telegram_id INTEGER PRIMARY KEY,name TEXT NOT NULL,points INTEGER NOT NULL CHECK(points>=0),defense INTEGER NOT NULL CHECK(defense>=0),charges INTEGER NOT NULL CHECK(charges>=0 AND charges<=10))`);
+  this.sql.exec(`CREATE INDEX IF NOT EXISTS hero_v2_points_top ON hero_v2_accounts(points DESC,telegram_id)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_legacy_import(telegram_id INTEGER PRIMARY KEY,legacy_points INTEGER NOT NULL CHECK(legacy_points>=0),imported_at INTEGER NOT NULL,unverified INTEGER NOT NULL DEFAULT 0)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_purchases(idem TEXT PRIMARY KEY,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,created INTEGER NOT NULL)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_quotes(id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,price INTEGER NOT NULL,currency TEXT NOT NULL,expires INTEGER NOT NULL,result TEXT)`);
@@ -81,6 +82,10 @@ export class HeroV2Core {
    const stats=this.stats(row);
    return {name:row.name,points:row.points,defense:Math.min(row.defense,stats.maxDefense),charges:row.charges,...stats,nextPoints:heroV2Threshold(stats.level+1)};
   });
+ }
+ /** Rank earned V2 points, not owner level overrides or unimported legacy XP. Read-only. */
+ top(){
+  return this.sql.exec<{name:string;first_name:string;last_name:string|null;username:string|null;points:number}>(`SELECT h.name,u.first_name,u.last_name,u.username,h.points FROM hero_v2_accounts h JOIN users u ON u.telegram_id=h.telegram_id WHERE u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM bans b WHERE b.telegram_id=u.telegram_id AND (b.expires_at IS NULL OR b.expires_at>?)) ORDER BY h.points DESC,h.telegram_id ASC LIMIT 10`,this.clock()).map(row=>({...row,level:heroV2Level(row.points)}));
  }
  private price(id:number,op:HeroV2Purchase,argument:string):{price:number;currency:'DOLLAR'|'DIAMOND'}|Exclude<HeroV2BuyResult,'OK'>{
   if(!this.eligible(id)||this.busy(id))return 'UNAVAILABLE';

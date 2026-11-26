@@ -593,6 +593,13 @@ export class RegistryCore {
   selectHero(tgId: number, code: string) { return this.heroes.select(tgId, code); }
   heroTop() { return this.heroes.top(); }
 
+  /** Authoritative summary for the new private profile; no game or wallet mutation. */
+  v2ProfileSummary(tgId:number){
+    const u=this.one<UserRow>(`SELECT * FROM users WHERE telegram_id=? AND deleted_at IS NULL`,tgId);
+    if(!u)return null;
+    const p=this.one<{games_played:number;games_won:number}>(`SELECT games_played,games_won FROM profiles WHERE telegram_id=?`,tgId);
+    return {name:displayName({firstName:u.first_name,lastName:u.last_name,username:u.username}),points:this.points(tgId),played:p?.games_played??0,wins:p?.games_won??0,heroOwned:this.eco.hasHero(tgId)};
+  }
   profileText(tgId: number): string {
     const u = this.one<UserRow>(`SELECT * FROM users WHERE telegram_id = ?`, tgId);
     if (!u) return t('common.error');

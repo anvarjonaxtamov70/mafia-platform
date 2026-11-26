@@ -230,6 +230,7 @@ export class Registry extends DurableObject<Env> {
   saveSettings(chatId: number, data: Parameters<RegistryCore['saveSettings']>[1], by: string) {
     return this.core.saveSettings(chatId, data, by);
   }
+  v2ProfileSummary(tgId:number){return this.core.v2ProfileSummary(tgId);}
   profileText(tgId: number) {
     return this.core.profileText(tgId);
   }
@@ -251,6 +252,7 @@ export class Registry extends DurableObject<Env> {
   v2SettleHero(request:HeroV2ShotRequest){this.requireV2Ledger();return this.core.heroV2.settleShot(request);}
   v2BuyOffer(game:number,attempt:number,buyer:number,offer:number,code:string){this.requireV2Ledger();return this.core.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code);}
   v2RecordResult(input:RecordGameInput){this.requireV2Ledger();return this.core.recordV2Game(input);}
+  v2HeroTop(){this.requireV2Ledger();return this.core.heroV2.top();}
   v2HeroView(id:number){this.requireV2Ledger();return this.core.heroV2.view(id);}
   v2HeroQuote(id:number,op:HeroV2Purchase,arg?:string){this.requireV2Ledger();return this.core.heroV2.quote(id,op,arg);}
   v2HeroConfirm(id:number,quoteId:number){this.requireV2Ledger();return this.core.heroV2.confirm(id,quoteId);}
@@ -447,7 +449,7 @@ function getRouter(env: Env): Router {
       devFake: env.DEV_FAKE_PLAYERS === 'true',
       v2Preview: env.V2_PREVIEW === 'true',
       v2SettingsMode: env.STAGING_MODE==='true'&&env.V2_PREVIEW==='true'&&stagingAllowed(env),
-      ...(v2LedgerEnabled(env)?{heroV2Shop:{view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
+      ...(v2LedgerEnabled(env)?{heroV2Shop:{top:()=>registryStub(env).v2HeroTop(),view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),

@@ -155,7 +155,7 @@ export class World {
       devFake: this.devFake,
       v2Preview: !!opts.v2Preview,
       v2SettingsMode: !!opts.v2SettingsMode,
-      ...(opts.v2Ledger?{heroV2Shop:{view:async id=>this.registryCore.heroV2.view(id),quote:async (id,op,arg)=>this.registryCore.heroV2.quote(id,op,arg),confirm:async (id,quoteId)=>this.registryCore.heroV2.confirm(id,quoteId),cancel:async (id,quoteId)=>this.registryCore.heroV2.cancel(id,quoteId)}}:{}),
+      ...(opts.v2Ledger?{heroV2Shop:{top:async()=>this.registryCore.heroV2.top(),view:async id=>this.registryCore.heroV2.view(id),quote:async (id,op,arg)=>this.registryCore.heroV2.quote(id,op,arg),confirm:async (id,quoteId)=>this.registryCore.heroV2.confirm(id,quoteId),cancel:async (id,quoteId)=>this.registryCore.heroV2.cancel(id,quoteId)}}:{}),
       visuals: this.visuals,
       starsMode: this.starsMode,
       botUsername: async () => 'test_mafia_bot',
