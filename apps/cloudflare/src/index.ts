@@ -334,6 +334,8 @@ const ROOM_METHODS = [
   'relayMafia',
   'silenceSnapshot',
   'statusText',
+  'v2RecoveryStatus',
+  'retryV2Recovery',
   'migrate',
   'forceDeadline',
 ] as const;
@@ -371,6 +373,7 @@ export class GameRoom extends DurableObject<Env> {
       devFakePlayers: env.DEV_FAKE_PLAYERS === 'true',
       visuals: env.VISUAL_MEDIA !== 'false',
       reportRegistryFailure: () => this.ctx.waitUntil(reportFailure(env, 'registry')),
+      reportV2Hold: hold=>this.ctx.waitUntil(Promise.allSettled([...ownerIds(env)].map(id=>telegram(env).call('sendMessage',{chat_id:id,text:'⚠️ V2 o‘yin #'+hold.game+' hisob-kitobi kutmoqda. /admin_v2_recovery '+hold.game}))).then(()=>undefined)),
     };
   }
 

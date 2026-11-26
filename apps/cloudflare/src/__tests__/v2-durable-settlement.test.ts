@@ -72,6 +72,40 @@ describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
   expect((await w.loaded(GROUP)).data.game).toBeNull();
   expect(r.heroV2.view(1)?.charges).toBe(9);expect(r.activeOf(1)).toBeNull();
  });
+ it('permanent failure holds exact operation across restart; only owner can retry after repair',async()=>{
+  const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);
+  s.state.phase='DAWN';s.state.seq=2;s.state.deadline=w.now+30000;
+  const raw=encodeV2Button({game:n,seq:2,op:'H',seat:2});
+  const original=w.v2Settlement!.settleHero;let calls=0;
+  w.v2Settlement!.settleHero=async request=>{
+    calls++;await original(request);throw Error('persistent response loss');
+  };
+  expect((await core.v2Button({tgId:1,privateChatId:1,number:n,raw})).ok).toBe(true);
+  await w.runAlarms();
+  for(const delay of [2000,4000,8000,16000,32000])await w.advance(delay+1);
+  expect(calls).toBe(6);
+  const hold=core.v2RecoveryStatus(n)!;expect(hold).toMatchObject({game:n,kind:'v2Hero',failures:6});
+  expect(w.stores.get(GROUP)!.data?.v2RecoveryHold).toEqual(hold);
+  expect(r.heroV2.view(1)?.charges).toBe(9);
+  w.restart(GROUP);await w.advance(120000);
+  const restored=await w.loaded(GROUP);
+  expect(calls).toBe(6);expect(restored.v2RecoveryStatus(n)).toEqual(hold);
+  await w.send(privateText(2,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(6);
+  await w.send(privateText(1,'/admin_v2_recovery '+n));
+  expect(w.tg.texts(1).at(-1)).toContain('Operatsiya #'+hold.op);
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+(hold.op+1)));
+  expect(calls).toBe(6);
+  // A failed manual retry re-enters hold immediately, not another six attempts.
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(7);expect(restored.v2RecoveryStatus(n)?.op).toBe(hold.op);
+  w.v2Settlement!.settleHero=async request=>{calls++;return original(request);};
+  expect((await restored.cancel({by:1,isAdmin:true})).ok).toBe(true);
+  await w.send(privateText(1,'/admin_v2_retry '+n+' '+hold.op));
+  expect(calls).toBe(8);expect(restored.v2RecoveryStatus(n)).toBeNull();
+  expect(restored.data.game).toBeNull();expect(r.heroV2.view(1)?.charges).toBe(9);
+  expect(r.activeOf(1)).toBeNull();
+ });
  it('Klaus gift and Seller offer resolve through night queue even without Grench',async()=>{
   const {w,r,core,n,s}=await start(['DON','KLAUS','SELLER','CITIZEN']);
   s.state=v2Submit(s.state,{actor:'1',target:null,kind:'SKIP'},1);

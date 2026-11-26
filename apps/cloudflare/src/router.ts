@@ -174,6 +174,8 @@ export interface RoomApi {
   relayMafia(input: { tgId: number; text: string }): Promise<boolean>;
   silenceSnapshot(): Promise<SilenceSnapshot>;
   statusText(): Promise<string>;
+  v2RecoveryStatus(game:number):Promise<import('./room-core').V2RecoveryHold|null>;
+  retryV2Recovery(game:number,op:number):Promise<boolean>;
   migrate(newChatId: number): Promise<void>;
 }
 
@@ -491,6 +493,18 @@ export class Router {
         if (!Number.isInteger(n) || n < MIN_PLAYERS_FLOOR || n > MAX_PLAYERS_CEILING) return this.reply(chatId, t('admin.min_usage'));
         const v = await this.d.registry.setGlobalMinPlayers(n, String(from.id));
         return this.reply(chatId, t('admin.min_set', { min: v }));
+      }
+      case 'admin_v2_recovery':
+      case 'admin_v2_retry': {
+        if(!this.isSuperadmin(from.id)||chatId!==from.id)return this.reply(chatId,t('admin.no_access'));
+        const args=c.args.trim().split(/\s+/),game=Number(args[0]),op=Number(args[1]);
+        const retry=c.cmd==='admin_v2_retry';
+        if(args.length!==(retry?2:1)||!Number.isSafeInteger(game)||game<1||(retry&&(!Number.isSafeInteger(op)||op<1)))return this.reply(chatId,retry?'/admin_v2_retry OYIN OPERATSIYA':'/admin_v2_recovery OYIN');
+        const room=await this.roomOfGame(game);
+        if(!room)return this.reply(chatId,'O‘yin topilmadi.');
+        if(retry)return this.reply(chatId,await room.retryV2Recovery(game,op)?'Aniq saqlangan operatsiya qayta tekshirishga yuborildi.':'Operatsiya mos emas yoki kutish holatida emas.');
+        const hold=await room.v2RecoveryStatus(game);
+        return this.reply(chatId,hold?'O‘yin #'+hold.game+'\nOperatsiya #'+hold.op+' · '+hold.kind+'\nUrinishlar: '+hold.failures+'\nTekshiruvdan keyin: /admin_v2_retry '+hold.game+' '+hold.op:'O‘yin uchun kutish holati mavjud emas.');
       }
       case 'admin_stats':
         if (!this.isSuperadmin(from.id)) return this.reply(chatId, t('admin.no_access'));

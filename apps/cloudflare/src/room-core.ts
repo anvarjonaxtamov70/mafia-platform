@@ -130,6 +130,8 @@ type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : n
 
 type LobbyTask = { id: number; kind: 'pin' | 'clear' | 'unpin' | 'deleteCommand'; chatId: number; messageId: number; number: number; attempts: number; at: number };
 
+/** No player identity, callback payload or financial request in the diagnostic. */
+export type V2RecoveryHold={game:number;op:number;kind:PendingOp['type'];since:number;failures:number};
 export interface RoomData {
   v: 1;
   chatId: number;
@@ -140,6 +142,7 @@ export interface RoomData {
   ops: PendingOp[];
   opsRetryAt?: number;
   opsFailures?: number;
+  v2RecoveryHold?:V2RecoveryHold;
   nextId: number;
   alarmAt: number | null;
   lobbyTasks?: LobbyTask[];
@@ -187,6 +190,7 @@ export interface RoomDeps {
   devFakePlayers: boolean;
   visuals?: boolean;
   reportRegistryFailure?: () => void;
+  reportV2Hold?: (hold:V2RecoveryHold)=>void;
 }
 
 export type RoomResult<T = object> = ({ ok: true } & T) | { ok: false; error: LobbyError | EngineErrorCode | 'NOT_FOUND'; details?: Record<string, string | number> };
@@ -257,7 +261,7 @@ export class RoomCore {
   private async reschedule(): Promise<void> {
     const g = this.data.game;
     const candidates: number[] = [];
-    if (this.data.ops.length > 0) candidates.push(Math.max(this.now, this.data.opsRetryAt ?? 0));
+    if (this.data.ops.length > 0&&!this.data.v2RecoveryHold) candidates.push(Math.max(this.now, this.data.opsRetryAt ?? 0));
     if (this.data.outbox.length > 0) candidates.push(Math.max(this.now, this.data.outbox[0]!.notBefore));
 
     for (const task of this.data.lobbyTasks ?? []) candidates.push(task.at);
@@ -1096,7 +1100,7 @@ export class RoomCore {
     try { await this.processOpsOnce(); } finally { this.processingOps=false; }
   }
   private async processOpsOnce(): Promise<void> {
-    if ((this.data.opsRetryAt ?? 0) > this.now) return;
+    if (this.data.v2RecoveryHold||(this.data.opsRetryAt ?? 0) > this.now) return;
     while (this.data.ops.length > 0 && this.externalCalls < 8) {
       const op = this.data.ops[0]!;
       this.externalCalls++;
@@ -1249,7 +1253,14 @@ export class RoomCore {
         const failures = Math.min(6, (this.data.opsFailures ?? 0) + 1);
         this.data.opsFailures = failures;
         this.data.opsRetryAt = this.now + Math.min(60_000, 1000 * 2 ** failures);
-        await this.deps.store.save(this.data);
+        const v2=op.type==='v2Night'||op.type==='v2Hero'||op.type==='v2Buy'||op.type==='v2Running'||op.type==='v2Record';
+        if(v2&&failures>=6){
+          const hold:V2RecoveryHold={game:op.number,op:op.id,kind:op.type,since:this.now,failures};
+          this.data.v2RecoveryHold=hold;
+          this.send(this.chatId,'⏸ Hisob-kitob vaqtincha to‘xtatildi. O‘yin #'+op.number+' xavfsiz holatda; bot egasi tekshirishi kerak.');
+          await this.deps.store.save(this.data);
+          this.deps.reportV2Hold?.(hold);
+        }else await this.deps.store.save(this.data);
         this.deps.reportRegistryFailure?.();
         return;
       }
@@ -1262,6 +1273,21 @@ export class RoomCore {
     }
   }
 
+  /** Internal owner command: inspect metadata, then retry the exact persisted
+   * operation. No option to discard, refund or fabricate a receipt. */
+  v2RecoveryStatus(game:number):V2RecoveryHold|null{
+    const hold=this.data.v2RecoveryHold;
+    return hold?.game===game?{...hold}:null;
+  }
+  async retryV2Recovery(game:number,op:number):Promise<boolean>{
+    const hold=this.data.v2RecoveryHold,head=this.data.ops[0];
+    if(this.processingOps||!hold||hold.game!==game||hold.op!==op||!head||head.id!==op||!('number' in head)||head.number!==game)return false;
+    delete this.data.v2RecoveryHold;
+    // One deliberate retry; if it fails it is held again rather than looping.
+    this.data.opsRetryAt=this.now;
+    await this.commit();
+    return true;
+  }
   /** Non-critical Telegram pin/cleanup retries cannot block game delivery or erase unrelated pins. */
   private async processLobbyTasks(budget:number):Promise<void>{
     for(let i=0;i<budget;i++){

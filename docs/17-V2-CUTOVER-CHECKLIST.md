@@ -31,3 +31,6 @@ Current situation: PR #16 is draft. The only money-enabled V2 runtime is local w
 
 ## Rollback
 Stop new V2 admissions first. Keep in-flight V2 receipt processing available; do not reapply V1 accounting to a V2 game or clear uncertain operations. Preserve both versions of tables, wallet ledger and migration markers. Resolve pending transactions before considering code rollback. If V2 points need reverse migration, use an explicit reviewed reconciliation; never sum the two XP totals blindly.
+
+## Held V2 settlement recovery
+After six automatic failures, the precise queued operation is durably held, with no further automatic ledger retries. The group receives a generic pause notice; bot owners receive game number only. In bot DM, `/admin_v2_recovery GAME` shows metadata, and `/admin_v2_retry GAME OP` schedules one exact retry after the underlying issue is repaired. Failure returns immediately to hold. Inspect logs and the authoritative Registry receipt; never delete or rewrite the queue, invent a receipt, or release a game with uncertain settlement. An accepted deferred stop is applied only after reconciliation. This mechanism does not repair contradictory/corrupt ledger data by itself. If a permanent conflict remains, retain the hold and investigate a reviewed code/data correction.
