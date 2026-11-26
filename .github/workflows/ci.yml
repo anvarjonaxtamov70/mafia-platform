@@ -61,5 +61,9 @@ jobs:
       - name: Integratsiya testlari (PostgreSQL, Redis)
         run: npm run test:integration
 
+      - name: Isolated staging Worker bundle (no deploy)
+        working-directory: apps/cloudflare
+        run: npx wrangler deploy --config wrangler.staging.toml --dry-run --outdir "$RUNNER_TEMP/v2-staging-bundle"
+
       - name: Cloudflare E2E (workerd + Durable Objects + soxta Telegram)
         run: npm run cf:e2e

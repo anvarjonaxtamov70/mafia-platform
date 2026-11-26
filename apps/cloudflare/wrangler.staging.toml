@@ -1,0 +1,44 @@
+# Separate Worker + independent Durable Object namespaces. No production deploy workflow uses this file.
+# For manual real-Telegram preview only; real economy intentionally disabled.
+name = "hypernova-v2-staging"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoom"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom", "Registry"]
+
+[alias]
+"@mafia/game-engine" = "../../packages/game-engine/src/index.ts"
+"@mafia/localization" = "../../packages/localization/src/index.ts"
+"@mafia/bot-core" = "../../packages/bot-core/src/index.ts"
+
+[build]
+command = "node scripts/generate-visuals.mjs"
+
+[observability]
+enabled = true
+
+[vars]
+# Explicitly set staging owner IDs at deployment. No owners by default.
+ADMIN_IDS = ""
+DEV_FAKE_PLAYERS = "false"
+VISUAL_MEDIA = "true"
+STARS_MODE = "off"
+V2_PREVIEW = "true"
+V2_LOCAL_LEDGER = "false"
+TEST_HOOKS = "false"
+
+# BOT_TOKEN must be a separate staging bot secret, never the production token.
+# Do not set TELEGRAM_API or enable test hooks on this Worker.

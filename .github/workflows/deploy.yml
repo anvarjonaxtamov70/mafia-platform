@@ -19,6 +19,8 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   deploy:
+    # A manual dispatch from a feature branch must never overwrite production.
+    if: github.ref == 'refs/heads/main'
     name: Cloudflare + Telegram
     needs: test
     runs-on: ubuntu-latest
