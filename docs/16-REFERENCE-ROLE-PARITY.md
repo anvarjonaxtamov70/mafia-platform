@@ -180,3 +180,5 @@ Anti-farming review signal: admin stats count recipients of Klaus gifts in at le
 
 ## Actual workerd RPC integration (local only)
 Added explicit internal Registry DO RPC methods for v2 snapshots, start reservation, hero/Grench/dawn/Seller settlements, results and shop quotes. GameRoom uses fresh Registry stubs per call. The switch requires V2_LOCAL_LEDGER=true, V2_PREVIEW=true, TEST_HOOKS=true and a loopback HTTP fake Telegram URL with explicit port. Production config is unchanged; even V2_PREVIEW=true alone cannot enable the real ledger. Existing v1 commands and hero account semantics stay unchanged. The existing local E2E script now includes a second V2 match through webhook, Room DO and Registry DO, checks role DMs, local hero price and persisted result. This is runtime integration, not production migration or real Telegram playtesting. Do not enable TEST_HOOKS in production; live coexistence/hero migration and permanent failure recovery remain blockers.
+
+Local E2E also checks actual Registry DO hero quote creation, another user's rejected confirmation, insufficient diamonds and no hero granted on decline. Uses no payment provider or real Telegram token.

@@ -277,6 +277,18 @@ try {
   for(const p of v2Players.slice(1))await pm(p,'/start');
   await pm(11,'/herov2');
   check(texts(11).at(-1)?.includes('90 💎'),'local v2 shop RPC reads real Registry SQLite');
+  // A user with no diamonds can obtain a quote, but cannot spend another user's quote or buy the hero.
+  const v2Buy=buttons(11).find(x=>x==='hv2:q:BUY');
+  if(!v2Buy)throw Error('V2 hero buy button missing');
+  await cb(11,v2Buy);
+  const quote=calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===11).at(-1)?.params.reply_markup?.inline_keyboard?.flat().find(b=>b.callback_data?.startsWith('hv2:c:'))?.callback_data;
+  if(!quote)throw Error('V2 hero confirmation missing');
+  await cb(12,quote);
+  check((calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text??'').includes('Taklif mavjud emas'),'foreign user cannot confirm v2 quote');
+  await cb(11,quote);
+  check((calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text??'').includes('Mablag‘ yetarli emas'),'insufficient diamonds rejected by real Registry DO');
+  await pm(11,'/herov2');
+  check(texts(11).at(-1)?.includes('90 💎'),'declined v2 purchase did not grant hero');
   const beforeV2=texts(GROUP).length;
   await gm(1,'/game v2classic');await sleep(1200);
   const v2Lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
