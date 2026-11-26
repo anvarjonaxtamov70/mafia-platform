@@ -1,5 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {World,privateText,callback,GROUP} from './harness';
+import {heroV2Profile,decodeHeroV2Button} from '../hero-v2-views';
+import {visualBlob} from '../visuals';
 describe('private v2 hero test shop',()=>{
  it('disabled by default, quote is private and cannot charge twice',async()=>{
   const normal=new World();await normal.send(privateText(2,'/start'));await normal.send(privateText(2,'/herov2'));
@@ -19,4 +21,35 @@ describe('private v2 hero test shop',()=>{
   expect(w.registryCore.heroV2.view(2)).toMatchObject({level:1,charges:10,defense:8});
   await w.send(privateText(2,'/herov2'));expect(w.tg.texts(2).at(-1)).toContain('45 HP');
  });
+ it('V2 hero card uses authoritative live stats, safe name, private artwork and rename help',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true,v2Ledger:true,visuals:true});
+  await w.send(privateText(2,'/start'));
+  const r=w.registryCore;
+  r.eco.creditDiamonds(2,200,'TEST','design-gems');r.eco.credit(2,1000,'TEST',null,'design-cash');
+  expect(r.heroV2.purchase(2,'BUY','design-buy')).toBe('OK');
+  expect(r.heroV2.purchase(2,'RENAME','design-rename','<Nova>')).toBe('OK');
+  expect(r.heroV2.purchase(2,'XP500','design-xp')).toBe('OK');
+  const before=r.eco.wallet(2);
+  await w.send(callback(2,'m:hero'));
+  const edit=()=>w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+  expect(edit().params.text).toContain('&lt;Nova&gt;');expect(edit().params.text).toContain('500 / 1 100 ball');
+  expect(edit().params.text).toContain('Keyingi darajagacha: 600 ball');
+  expect(edit().params.text).toContain('▰▰▰▰▱▱▱▱▱▱');
+  expect(edit().params.text).toContain('45 HP');
+  const buttons=(edit().params.reply_markup as {inline_keyboard:{callback_data:string}[][]}).inline_keyboard.flat();
+  const art=buttons.find(b=>b.callback_data==='hv2:art')?.callback_data;
+  expect(art).toBeTruthy();expect(decodeHeroV2Button(art!)).toEqual({kind:'ART'});
+  expect(visualBlob('v2hero')?.type).toBe('image/png');
+  await w.send(callback(2,art!,GROUP));expect(w.tg.calls.filter(c=>c.method==='sendPhoto')).toHaveLength(0);
+  await w.send(callback(2,art!));expect(w.tg.calls.filter(c=>c.method==='sendPhoto'&&c.params.chat_id===2)).toHaveLength(1);
+  await w.send(callback(2,'hv2:rename'));expect(edit().params.text).toContain('/herov2name Nova');
+  expect(r.eco.wallet(2)).toEqual(before);
+  const a=r.heroV2.view(2)!;
+  const depleted=heroV2Profile({...a,defense:2,charges:3},true);
+  expect(depleted.keyboard.flat()).toContainEqual({text:'🛡 Tiklash · 200 $',callback_data:'hv2:q:RESTORE'});
+  expect(depleted.keyboard.flat()).toContainEqual({text:'🔋 To‘ldirish · 205 $',callback_data:'hv2:q:RELOAD'});
+  expect(depleted.text).toContain('2 / 8');expect(depleted.text).toContain('3 / 10');
+  expect(heroV2Profile(a,true).keyboard.flat().some(b=>'callback_data'in b&&b.callback_data==='hv2:q:RESTORE')).toBe(false);
+ });
+
 });

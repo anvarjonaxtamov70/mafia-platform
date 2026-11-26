@@ -55,7 +55,7 @@ import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
 import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
-import {heroV2Profile,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
+import {heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
 import {decodeV2Button} from '@mafia/bot-core';
 import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
@@ -456,7 +456,7 @@ export class Router {
       case 'herov2': {
         if(!this.d.heroV2Shop||chatId!==from.id)return this.reply(chatId,'Geroy V2 sinov do‘koni mavjud emas.');
         await this.d.registry.upsertUser(from,true);
-        const v=heroV2Profile(await this.d.heroV2Shop.view(from.id));
+        const v=heroV2Profile(await this.d.heroV2Shop.view(from.id),!!this.d.visuals);
         return this.reply(chatId,v.text,v.keyboard);
       }
       case 'herov2name': {
@@ -469,6 +469,7 @@ export class Router {
       case 'hero':
       case 'heroes':
       case 'herotop': {
+        if(this.d.v2SettingsMode&&chatId!==from.id)return this.reply(chatId,'Geroy bo‘limini botning shaxsiy chatida oching.');
         await this.d.registry.upsertUser(from, true);
         const v = await this.heroSection(from.id, c.cmd);
         return this.reply(chatId, v.text, v.keyboard);
@@ -689,8 +690,18 @@ export class Router {
       const shop=this.d.heroV2Shop,b=decodeHeroV2Button(cb.data);
       if(!shop||!b||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
       if(!this.clicks.allow('hv2:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
+      if(b.kind==='ART'){
+        if(!this.d.visuals)return this.answer(cb,t('visual.unavailable'));
+        if(!this.media.allow(String(from.id),this.d.now()))return this.answer(cb,t('common.rate_limited'));
+        const ok=await sendVisual(this.d.tg,from.id,'v2hero','HYPERNOVA — SHAXSIY GEROY');
+        return this.answer(cb,ok?undefined:t('visual.unavailable'));
+      }
+      if(b.kind==='RENAME_HELP'){
+        if(!(await shop.view(from.id)))return this.answer(cb,heroV2Status('UNAVAILABLE'),true);
+        const v=heroV2RenameHelp();await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
       if(b.kind==='HOME'){
-        const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+        const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
       }
       if(b.kind==='QUOTE'){
         const result=await shop.quote(from.id,b.op);
@@ -699,10 +710,10 @@ export class Router {
       }
       if(b.kind==='CANCEL'){
         await shop.cancel(from.id,b.id);
-        const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);return this.answer(cb,'Bekor qilindi.');
+        const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);return this.answer(cb,'Bekor qilindi.');
       }
       const result=await shop.confirm(from.id,b.id);
-      const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);
+      const v=heroV2Profile(await shop.view(from.id),!!this.d.visuals);await this.edit(cb,v.text,v.keyboard);
       return this.answer(cb,heroV2Status(result),true);
     }
     if(cb.data?.startsWith('v2:')||cb.data?.startsWith('v2s:')){
@@ -927,7 +938,7 @@ export class Router {
     if(this.d.v2SettingsMode){
       if(section==='herotop')return {text:'V2 geroy reytingi hali ulanmagan.',keyboard:[[ {text:'Mening geroyim',callback_data:encode({t:'menu',section:'hero'})} ],backRow()]};
       if(!this.d.heroV2Shop)return {text:'Geroy V2 sinov do‘koni mavjud emas. Sinov iqtisodiyoti yoqilishi kerak.',keyboard:[backRow()]};
-      return heroV2Profile(await this.d.heroV2Shop.view(id));
+      return heroV2Profile(await this.d.heroV2Shop.view(id),!!this.d.visuals);
     }
     if (section === 'herotop') return heroTopView(await this.d.registry.heroTop());
     return heroView(await this.d.registry.singleHero(id));

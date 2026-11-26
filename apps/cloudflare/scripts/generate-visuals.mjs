@@ -254,7 +254,8 @@ for(const [key,title,category] of [['game_start','OYIN BOSHLANDI','BRAND'],['gam
 assets.intro=gif();
 for(const key of ['v2_night','v2_dawn','v2_vote','v2_end'])assets[key]=gif(key);
 v2Portraits.forEach(([id,title,faction,costume,symbol],i)=>{assets['v2portrait_'+id]=noirPortrait(title,faction,costume,symbol,i);});
-if(v2Portraits.length!==27||Object.keys(assets).length!==67||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==67)throw new Error('visual manifest incomplete or duplicated');
+assets.v2hero=noirPortrait('SHAXSIY GEROY','NEUTRAL','helmet','medal',27);
+if(v2Portraits.length!==27||Object.keys(assets).length!==68||new Set(Object.values(assets).map(b=>createHash('sha256').update(b).digest('hex'))).size!==68)throw new Error('visual manifest incomplete or duplicated');
 for(const [name,bytes] of Object.entries(assets))if(bytes.length>750000||bytes.length<100)throw new Error('bad asset size '+name);
 const dest=new URL('../src/generated/',import.meta.url);mkdirSync(dest,{recursive:true});
 writeFileSync(new URL('visual-assets.ts',dest),'// Generated deterministically by scripts/generate-visuals.mjs. Do not edit.\nexport const VISUAL_ASSETS: Readonly<Record<string, string>> = '+JSON.stringify(Object.fromEntries(Object.entries(assets).map(([k,b])=>[k,b.toString('base64')])) )+';\n');

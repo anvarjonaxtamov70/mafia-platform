@@ -92,3 +92,6 @@ User reported old Personajlar page in Telegram. `/roles` used reference catalogu
 
 ### Portrait callback correction
 CI 45828016394: 312 of 313 unit tests passed, including all PNG checks; the first private photo callback was rejected by the existing menu decoder because `v2art_` contains a digit. Switched the new, not-yet-deployed namespace to `vportrait_` (letters/underscore only, <=20 chars for every role) across role DM, catalogue and router. Added round-trip decoder assertions for all 27 and now exercise the actual emitted catalogue detail button. Existing decoder/security policy unchanged. CI pending.
+
+## V2 personal hero presentation
+New private profile with branded header, explicit ownership, current/next-level XP and separate defense/ammo bars, server-derived damage and prices, two-column XP choices, conditional restoration controls, rename help and on-demand original noir hero portrait. Artwork is a generic series illustration, not individualized or photorealistic. Existing transactional quote and receipt logic untouched. Read-only artwork and rename help do not debit balances. V2 /hero family commands restricted to private chat in staging; legacy routing unchanged. V2 ranking still pending. CI pending.
