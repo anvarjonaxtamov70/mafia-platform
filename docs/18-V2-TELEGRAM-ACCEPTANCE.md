@@ -58,3 +58,5 @@ The four V2 commands are now `/game_v2classic`, `/game_v2zombie`, `/game_v2hyper
 
 ## No-audience automated acceptance
 Added three deterministic active-mode scenarios via real Router, RoomCore and SQLite Registry harness using emitted callback buttons and normal randomly assigned roles: Zombie conversion with healing, Hypernova protected target and Commissar shot, VS opposing-team kill and vote. Each checks no AFK, final history, released membership and stable balance after extra alarms. This is synthetic Telegram traffic, not human acceptance; CI pending. Existing local workerd smoke covers all four modes.
+
+Active-mode CI initially passed 294/296 tests; Zombie and Hypernova fixtures tried to read an already-settled room after normal immediate cleanup. Revised fixtures observe the successful real Registry settlement instead, asserting exact game/mode/outcome, expected winner IDs, every participant active and not AFK, released memberships and no repeat settlement. No runtime behavior changed. New CI pending.
