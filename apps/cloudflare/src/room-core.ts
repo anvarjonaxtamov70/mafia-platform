@@ -53,7 +53,8 @@ import {decodeV2Button,v2PublicPhaseView} from '@mafia/bot-core';
 import {prepareV2HeroShot,finalizeV2HeroShot,type PendingV2HeroShot} from './v2-hero-settlement';
 import {prepareV2NightSettlement,finalizeV2NightSettlement,type PendingV2NightSettlement} from './v2-night-settlement';
 import type {HeroV2ShotRequest,HeroV2ShotReceipt} from './hero-v2-core';
-import type {GrenchBatchReceipt,GrenchDebit,DawnRoleAction,DawnRoleReceipt} from './role-v2-economy';
+import type {GrenchBatchReceipt,GrenchDebit,DawnRoleAction,DawnRoleReceipt,Receipt} from './role-v2-economy';
+import {decodeSellerButton,sellerKeyboard,type V2SellerOffer} from './v2-seller';
 import {createV2RoomSession,v2RoomButton,v2RoomTick,v2RoomLastWord,v2RoomLeave,v2RoomDeadline,type V2RoomSession,type V2RoomTransition} from './v2-room-session';
 
 export type { ConfigSnapshot };
@@ -87,6 +88,7 @@ export interface RoomGame {
   /** Persist the ledger choice: a missing dependency on reload must never downgrade to simulation. */
   v2Ledger?: true;
   v2DeferredMigration?: number;
+  v2Offers?: V2SellerOffer[];
   version: number;
   createdAt: number;
   startedAt?: number;
@@ -115,7 +117,8 @@ export type PendingOp =
   | { id: number; type: 'settleItems'; number: number; used: Record<string, string[]> }
   | { id: number; type: 'releaseItems'; number: number }
   | { id: number; type: 'v2Night'; number: number; pending: PendingV2NightSettlement }
-  | { id: number; type: 'v2Hero'; number: number; pending: PendingV2HeroShot };
+  | { id: number; type: 'v2Hero'; number: number; pending: PendingV2HeroShot }
+  | { id: number; type: 'v2Buy'; number: number; buyer:number; offer:number; code:string };
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
@@ -165,6 +168,7 @@ export interface V2SettlementPort {
   settleNight(game:number,round:number,debits:readonly GrenchDebit[]):Promise<GrenchBatchReceipt>;
   settleHero(request:HeroV2ShotRequest):Promise<HeroV2ShotReceipt>;
   settleDawn(game:number,round:number,actions:readonly DawnRoleAction[]):Promise<DawnRoleReceipt>;
+  buyOffer(game:number,attempt:number,buyer:number,offer:number,code:string):Promise<Receipt>;
 }
 export interface RoomDeps {
   v2Settlement?: V2SettlementPort;
@@ -684,7 +688,7 @@ export class RoomCore {
     await this.commit();return {ok:true};
   }
   private v2Pending(number:number):boolean{
-    return this.data.ops.some(op=>(op.type==='v2Night'||op.type==='v2Hero')&&op.number===number);
+    return this.data.ops.some(op=>(op.type==='v2Night'||op.type==='v2Hero'||op.type==='v2Buy')&&op.number===number);
   }
   private v2Due(s:V2RoomSession):number|null{
     if(s.state.phase==='ENDED'){
@@ -720,6 +724,16 @@ export class RoomCore {
     const g=this.data.game;
     if(!g||g.number!==input.number||!g.v2Session||g.status!=='RUNNING'||this.v2Pending(g.number))return {ok:false,error:'STALE_PHASE'};
     try{
+      if(input.raw.startsWith('v2s:')){
+        const button=decodeSellerButton(input.raw),s=g.v2Session.state;
+        const offer=g.v2Offers?.find(o=>o.id===button?.offer&&o.buyer===input.tgId);
+        const living=(id:number)=>s.players.some(p=>p.id===String(id)&&p.hp>0&&!p.left);
+        if(!g.v2Ledger||!this.deps.v2Settlement||!button||button.game!==g.number||input.privateChatId!==input.tgId||
+          !offer||offer.expires<=this.now||offer.round!==s.round||!['DAWN','DISCUSSION'].includes(s.phase)||
+          !living(offer.buyer)||!living(offer.seller))return {ok:false,error:'STALE_PHASE'};
+        this.addOp({type:'v2Buy',number:g.number,buyer:input.tgId,offer:offer.id,code:button.code});
+        await this.commit();return {ok:true};
+      }
       if(decodeV2Button(input.raw)?.op==='H'){
         if(!g.v2Ledger||!this.deps.v2Settlement)return {ok:false,error:'STALE_PHASE'};
         const pending=prepareV2HeroShot(g.v2Session,input.tgId,input.privateChatId,input.raw,this.now);
@@ -1129,13 +1143,35 @@ export class RoomCore {
                     this.send(entry.target,'🎁 Klaus sizga '+entry.amount+' Dollar sovg‘a qildi.');
                     this.send(entry.actor,'🎁 '+entry.amount+' Dollar sovg‘angiz yetkazildi.');
                   }else if(entry.expires>this.now){
-                    this.send(entry.target,'🛒 Sotuvchidan 50% chegirmali taklif. Taklif raqami: '+entry.offer+'. Xarid tugmalari hali sinovga ulanmagan.');
+                    const offer={id:entry.offer,seller:entry.actor,buyer:entry.target,expires:entry.expires,round:p.round};
+                    g.v2Offers=[...(g.v2Offers??[]).filter(o=>o.expires>this.now&&o.id!==offer.id),offer];
+                    this.send(entry.target,'🛒 Sotuvchidan 50% chegirmali taklif. Bitta buyum tanlang. Xarid keyingi o‘yinlar inventariga qo‘shiladi.',sellerKeyboard(g.number,offer.id));
                   }
                 }
                 break;
               }
             }
             this.acceptV2(g,resolved);
+            break;
+          }
+          case 'v2Buy': {
+            const g=this.data.game,ledger=this.deps.v2Settlement;
+            if(!g||g.number!==op.number||!g.v2Ledger||!ledger)throw Error('offer settlement unavailable');
+            const offer=g.v2Offers?.find(o=>o.id===op.offer&&o.buyer===op.buyer);
+            if(!offer)throw Error('missing offer');
+            await this.deps.store.save(this.data);
+            const status=await ledger.buyOffer(op.number,op.id,op.buyer,op.offer,op.code);
+            if(this.data.game!==g)throw Error('settlement room changed');
+            if(status==='PAID'){
+              g.v2Offers=(g.v2Offers??[]).filter(o=>o.id!==offer.id);
+              this.send(op.buyer,'✅ Chegirmali xarid bajarildi.');
+              this.send(offer.seller,'✅ Sotuvchi taklifingiz xarid qilindi. Komissiya hisoblandi.');
+            }else if(status==='INSUFFICIENT'){
+              this.send(op.buyer,'Mablag‘ yetarli emas. Taklif muddati tugamagan bo‘lsa, qayta urinishingiz mumkin.');
+            }else if(status==='UNAVAILABLE'||status==='CONFLICT'){
+              g.v2Offers=(g.v2Offers??[]).filter(o=>o.id!==offer.id);
+              this.send(op.buyer,'Bu taklif endi mavjud emas.');
+            }else throw Error('unknown purchase receipt');
             break;
           }
           case 'v2Hero': {

@@ -52,6 +52,7 @@ import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
 import {decodeV2Button} from '@mafia/bot-core';
+import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
 // ───────────────────────────── Telegram update tiplari (kerakli qismi) ─────────────────────────────
@@ -629,8 +630,8 @@ export class Router {
 
   private async onCallback(cb: TgCallback): Promise<void> {
     const from = cb.from;
-    if(cb.data?.startsWith('v2:')){
-      const button=decodeV2Button(cb.data);
+    if(cb.data?.startsWith('v2:')||cb.data?.startsWith('v2s:')){
+      const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):decodeV2Button(cb.data);
       if(!button||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
       if(!this.clicks.allow('cb:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
       const room=await this.roomOfGame(button.game);

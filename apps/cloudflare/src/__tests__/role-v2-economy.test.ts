@@ -49,6 +49,18 @@ describe('v2 role economy',()=>{
   expect(roles.settleDawn(n,1,[gift,offer])).toEqual(receipt);
   expect(e.coins(2)).toBe(150);
  });
+ it('declined offer attempt is replayed without later charging; fresh attempt can pay',async()=>{
+  const {n,e,roles}=await fixture();
+  const offer=roles.offer(n,1,1,2)!;
+  expect(roles.settleOfferPurchase(n,1,2,offer,'SHIELD')).toBe('INSUFFICIENT');
+  e.credit(2,200,'TEST',null,'purchase-seed');
+  expect(roles.settleOfferPurchase(n,1,2,offer,'SHIELD')).toBe('INSUFFICIENT');
+  expect(e.coins(2)).toBe(200);
+  expect(roles.settleOfferPurchase(n,2,2,offer,'SHIELD')).toBe('PAID');
+  expect(roles.settleOfferPurchase(n,2,2,offer,'SHIELD')).toBe('PAID');
+  expect(roles.settleOfferPurchase(n,2,2,offer,'FAKE_DOC')).toBe('CONFLICT');
+  expect(e.coins(2)).toBe(50);expect(e.coins(1)).toBe(15);
+ });
  it('Klaus pays once, seller half-price purchase and commission atomic',async()=>{
   const {n,e,roles}=await fixture();
   expect(roles.klaus(n,1,1,2,200)).toBe('PAID');

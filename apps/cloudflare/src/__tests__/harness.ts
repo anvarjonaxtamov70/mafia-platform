@@ -142,6 +142,7 @@ export class World {
       settleNight:async (game,round,debits)=>this.registryCore.roleV2Economy.settleGrenchBatch(game,round,debits),
       settleHero:async request=>this.registryCore.heroV2.settleShot(request),
       settleDawn:async (game,round,actions)=>this.registryCore.roleV2Economy.settleDawn(game,round,actions),
+      buyOffer:async (game,attempt,buyer,offer,code)=>this.registryCore.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code),
     };
     this.registry = rpc(this.registryCore, this.registryCore.eco) as unknown as RegistryPort & RegistryApi;
     this.router = new Router({

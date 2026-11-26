@@ -76,6 +76,15 @@ describe('v2 durable RoomCore settlement with isolated test ledger',()=>{
   expect(w.tg.texts(4).join(' ')).toContain('Klaus');
   expect(w.tg.texts(4).join(' ')).toContain('50% chegirmali');
   expect(w.tg.texts(GROUP).join(' ')).not.toContain('Klaus sizga');
+  const offer=restored.data.game!.v2Offers![0]!;
+  const raw='v2s:'+n+':'+offer.id+':FAKE_DOC';
+  r.eco.credit(4,200,'TEST',null,'offer-money');
+  expect((await restored.v2Button({tgId:3,privateChatId:3,number:n,raw})).ok).toBe(false);
+  expect((await restored.v2Button({tgId:4,privateChatId:GROUP,number:n,raw})).ok).toBe(false);
+  await w.send(callback(4,raw));
+  expect(r.eco.coins(4)).toBe(amount+100);expect(r.eco.coins(3)).toBe(10);
+  expect(restored.data.game!.v2Offers).toHaveLength(0);
+  expect((await restored.v2Button({tgId:4,privateChatId:4,number:n,raw})).ok).toBe(false);
  });
  it('hero shot is persisted before charge, replayed after restart and applied once',async()=>{
   const {w,r,core,n,s}=await start(['DON','CITIZEN','CITIZEN','CITIZEN'],true);

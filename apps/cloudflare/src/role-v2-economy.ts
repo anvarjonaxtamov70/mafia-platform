@@ -19,6 +19,7 @@ export class RoleV2Economy {
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_receipts(game INTEGER NOT NULL,round INTEGER NOT NULL,kind TEXT NOT NULL,actor INTEGER NOT NULL,target INTEGER NOT NULL,amount INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(game,round,kind,actor))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_grench_batches(game INTEGER NOT NULL,round INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,round))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_dawn_batches(game INTEGER NOT NULL,round INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,round))`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_offer_purchases(game INTEGER NOT NULL,attempt INTEGER NOT NULL,request TEXT NOT NULL,status TEXT NOT NULL,PRIMARY KEY(game,attempt))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS role_v2_offers(id INTEGER PRIMARY KEY AUTOINCREMENT,game INTEGER NOT NULL,round INTEGER NOT NULL,seller INTEGER NOT NULL,buyer INTEGER NOT NULL,expires INTEGER NOT NULL,item TEXT,UNIQUE(game,round,seller))`);
  }
  private valid(game:number,round:number,actor:number,target:number){
@@ -119,6 +120,21 @@ export class RoleV2Economy {
    this.sql.exec(`INSERT INTO role_v2_dawn_batches(game,round,request,receipt) VALUES(?,?,?,?)`,game,round,request,JSON.stringify(receipt));
    return receipt;
   });}catch(error){if(error instanceof GrenchBatchAbort)return {status:error.status};throw error;}
+ }
+ /** A durable room operation has its own attempt ID, including declined purchases.
+  * A lost insufficient-funds response must not unexpectedly charge a later top-up.
+  */
+ settleOfferPurchase(game:number,attempt:number,buyer:number,id:number,code:string):Receipt{
+  if(![game,attempt,buyer,id].every(x=>Number.isSafeInteger(x)&&x>0)||!catalogItem(code))return 'UNAVAILABLE';
+  const request=JSON.stringify({buyer,id,code});
+  return this.sql.tx(()=>{
+   const prior=this.sql.exec<{request:string;status:Receipt}>(`SELECT request,status FROM role_v2_offer_purchases WHERE game=? AND attempt=?`,game,attempt)[0];
+   if(prior)return prior.request===request?prior.status:'CONFLICT';
+   const offer=this.sql.exec<Offer>(`SELECT * FROM role_v2_offers WHERE id=? AND game=? AND buyer=?`,id,game,buyer)[0];
+   const status=offer?this.buyOffer(buyer,id,code):'UNAVAILABLE';
+   this.sql.exec(`INSERT INTO role_v2_offer_purchases(game,attempt,request,status) VALUES(?,?,?,?)`,game,attempt,request,status);
+   return status;
+  });
  }
  /** One discounted consumable per offer. No VIP, hero, real-money or legacy cosmetics.
   * Commission is 10% of actual amount paid, floored in the same currency.
