@@ -35,7 +35,29 @@ describe('V2 active play through actual Telegram router and durable registry',()
   await w.advance(30001);expect(state().phase).toBe('VERDICT');expect(state().candidate).toBe(String(don));
   const verdictMessage=core.data.refs['v2phase:'+number+':'+state().seq]!.messageId;
   const yes=ids.filter(id=>id!==don);
-  for(const id of yes)await press(id,'Y',0);
+  const verdictSeq=state().seq;
+  const keyboard=w.tg.sent(GROUP).flatMap(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat()??[]);
+  const rawYes=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='Y';})?.callback_data!;
+  const rawNo=keyboard.find(k=>{const b=decodeV2Button(k.callback_data??'');return b?.game===number&&b.seq===verdictSeq&&b.op==='N';})?.callback_data!;
+  expect(rawYes).toBeTruthy();expect(rawNo).toBeTruthy();
+  const privateVerdict=w.tg.sent(yes[0]).some(c=>(c.params.reply_markup as {inline_keyboard?:{callback_data?:string}[][]}|undefined)?.inline_keyboard?.flat().some(k=>k.callback_data===rawYes||k.callback_data===rawNo));
+  expect(privateVerdict).toBe(false);
+  await w.send(callback(yes[0]!,rawYes)); // DM is not a verdict surface
+  await w.send(callback(yes[0]!,rawYes,GROUP-1,verdictMessage)); // wrong group
+  await w.send(callback(yes[0]!,rawYes,GROUP,verdictMessage+1)); // wrong message
+  await w.send(callback(99,rawYes,GROUP,verdictMessage)); // nonparticipant
+  expect(state().verdicts).toHaveLength(0);
+  // The callback rate limit must not mask the one-vote assertion.
+  await w.advance(3100);
+  await press(yes[0]!,'Y',0);
+  await w.advance(3100);
+  await w.send(callback(yes[0]!,rawNo,GROUP,verdictMessage));
+  expect(state().verdicts).toEqual([{actor:String(yes[0]),yes:true}]);
+  w.restart(GROUP);core=await w.loaded(GROUP);
+  await w.advance(3100);
+  await w.send(callback(yes[0]!,rawNo,GROUP,verdictMessage));
+  expect(state().verdicts).toEqual([{actor:String(yes[0]),yes:true}]);
+  for(const id of yes.slice(1))await press(id,'Y',0);
   const live=w.tg.calls.filter(c=>c.method==='editMessageText'&&c.params.chat_id===GROUP&&c.params.message_id===verdictMessage).at(-1);
   expect(JSON.stringify(live?.params.reply_markup)).toContain('👍 3');
   await w.advance(30001);expect(state().phase).toBe('ENDED');
