@@ -307,6 +307,41 @@ try {
   await sleep(1800);
   await pm(11,'/profile');
   check(texts(11).at(-1)?.includes('Barcha o‘yinlar: 1'),'V2 result stored through Registry RPC');
+  // Finish each remaining mode through real webhook and DO alarm/RPC paths.
+  // Fresh participants avoid historical profile/DM assertions passing by accident.
+  let previousJoin=v2Join;
+  for(const [mode,first] of [['zombie',21],['hypernova',31],['vs',41]]){
+    await sleep(3100);
+    const ids=[1,first,first+1,first+2];
+    for(const id of ids.slice(1))await pm(id,'/start');
+    const beforeGroup=texts(GROUP).length,beforeDM=new Map(ids.map(id=>[id,texts(id).length]));
+    await gm(1,'/game v2'+mode);await sleep(1200);
+    const lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
+    const join=lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
+    if(!join||join===previousJoin)throw Error('new '+mode+' lobby missing');
+    previousJoin=join;
+    for(const id of ids.slice(1))await cb(id,join,true);
+    await gm(1,'/startgame');await sleep(1800);
+    check(texts(GROUP).slice(beforeGroup).some(t=>t.includes('V2 SINOV — '+mode.toUpperCase())&&t.includes('Ichki test hisobi')),mode+' real ledger starts');
+    const roleDMs=ids.map(id=>texts(id).slice(beforeDM.get(id)).find(t=>t.includes('Sizning rolingiz:')));
+    check(roleDMs.every(Boolean),mode+' all private roles delivered');
+    check(!texts(GROUP).slice(beforeGroup).some(t=>t.includes('Sizning rolingiz:')),mode+' no public role assignment');
+    if(mode==='vs'){
+      check(roleDMs.filter(t=>t?.includes('Jamoangiz: 🔴')).length===2&&roleDMs.filter(t=>t?.includes('Jamoangiz: 🔵')).length===2,'VS equal private colour teams');
+    }
+    // Timeout path intentionally exercises AFK cleanup without synthetic role selection.
+    for(let round=0;round<24;round++){
+      if(texts(GROUP).slice(beforeGroup).some(t=>t.includes('🏁 O‘yin tugadi')))break;
+      const result=await force();if(!result.ok)throw Error(mode+' force failed');
+      await sleep(500);
+    }
+    check(texts(GROUP).slice(beforeGroup).some(t=>t.includes('🏁 O‘yin tugadi')),mode+' terminal phase through actual DO alarms');
+    await sleep(1800);
+    for(const id of ids.slice(1)){
+      await pm(id,'/profile');
+      check(texts(id).at(-1)?.includes('Barcha o‘yinlar: 1'),mode+' result recorded for '+id);
+    }
+  }
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');
