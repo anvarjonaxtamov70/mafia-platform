@@ -172,7 +172,7 @@ describe('v2 independent engine',()=>{
   expect(()=>act(s,0,2)).toThrow();expect(()=>act(s,1,3)).toThrow();
   s=act(act(s,0,3),1,4);
   const r=night(s);expect(r.state.players[3]!.hp).toBe(0);expect(r.state.players[4]!.hp).toBe(0);
-  expect(r.effects).toContainEqual({kind:'DEATH',target:'4',reason:'MAFIA',attackers:['1']});
+  expect(r.effects).toContainEqual({kind:'DEATH',target:'4',reason:'MAFIA',attackers:['1'],victimRole:'COMMISSAR',attackerRoles:['MAFIOSO']});
  });
  it('Spy shares a masked result with own mafia but never opposite colour in VS',()=>{
   let s=v2CreateFixed(['0','1','2','3','4','5'],['DON','SPY','MAFIOSO','MAFIOSO','COMMISSAR','DOCTOR'],'VS',0,rng());

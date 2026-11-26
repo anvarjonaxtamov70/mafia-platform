@@ -5,7 +5,7 @@
 import {v2Create,v2Submit,v2CanEndNight,v2BeginNightSession,v2AnswerNightSession,v2NightSessionReady,v2NightDebits,v2FinishNightSession,v2Advance,v2Leave,v2HeroShot,v2Vote,v2Verdict,v2Revenge,type V2State,type V2Mode,type V2Effect,type V2NightSession,type V2NightAnswer,type Rng} from '@mafia/game-engine';
 import {decodeV2Button,v2PrivateRoleView,v2PrivatePhaseView,v2PublicPhaseView,v2PromptViews,v2EffectDrafts,v2RoleLabel,v2GroupVerdictView,type OutboxDraft,type V2Op} from '@mafia/bot-core';
 import {escapeHtml} from '@mafia/localization';
-export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number};
+export type V2RoomSession={version:2;game:number;chatId:number;state:V2State;names:Record<string,string>;night:V2NightSession|null;lastWords:Record<string,{until:number;sent:boolean}>;revision:number;startedAt?:number;finishedAt?:number};
 export type V2RoomTransition={room:V2RoomSession;outbox:OutboxDraft[];effects:V2Effect[]};
 const copy=(room:V2RoomSession):V2RoomSession=>JSON.parse(JSON.stringify(room)) as V2RoomSession;
 function empty(room:V2RoomSession):V2RoomTransition{return {room,outbox:[],effects:[]};}
@@ -17,7 +17,7 @@ function send(result:V2RoomTransition,chat:number,text:string,keyboard?:import('
 }
 function publishPhase(result:V2RoomTransition){
  const r=result.room;
- const v=r.state.phase==='VERDICT'?v2GroupVerdictView(r.state,r.game,r.names):v2PublicPhaseView(r.state,r.names);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
+ const v=r.state.phase==='VERDICT'?v2GroupVerdictView(r.state,r.game,r.names):v2PublicPhaseView(r.state,r.names,r.startedAt!==undefined&&r.finishedAt!==undefined?r.finishedAt-r.startedAt:undefined);send(result,r.chatId,v.text,v.keyboard,groupRef(r));
  for(const p of r.state.players){const view=v2PrivatePhaseView(r.state,r.game,p.id,r.names);if(view)send(result,Number(p.id),view.text,view.keyboard,choiceRef(r,p.id));}
 }
 function confirm(result:V2RoomTransition,source:V2RoomSession,actor:string,text:string,selection:string,key='phase'){
@@ -39,7 +39,7 @@ function editVerdict(result:V2RoomTransition,source:V2RoomSession,closed=false){
 function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:number){
  const r=result.room,oldSeq=r.state.seq;
  if(r.state.phase==='VERDICT'&&oldSeq!==state.seq)editVerdict(result,r,true);
- r.state=state;result.effects.push(...effects);
+ r.state=state;if(state.phase==='ENDED'&&r.finishedAt===undefined)r.finishedAt=now;result.effects.push(...effects);
  result.outbox.push(...v2EffectDrafts(effects,BigInt(r.chatId),r.names,r.game,r.revision));
  for(const e of effects)if(e.kind==='DEATH'&&e.reason!=='AFK'&&e.reason!=='LEAVE'&&!r.lastWords[e.target]){
   r.lastWords[e.target]={until:now+29000,sent:false};
@@ -51,7 +51,7 @@ function apply(result:V2RoomTransition,state:V2State,effects:V2Effect[],now:numb
 export function createV2RoomSession(game:number,chatId:number,mode:V2Mode,users:readonly {id:number;name:string}[],now:number,rng:Rng):V2RoomTransition{
  if(!Number.isSafeInteger(game)||game<1||!Number.isSafeInteger(chatId)||chatId>=0||users.some(u=>!Number.isSafeInteger(u.id)||u.id<=0))throw Error('invalid room');
  const state=v2Create(users.map(u=>String(u.id)),mode,now,rng);
- const room:V2RoomSession={version:2,game,chatId,state,names:Object.fromEntries(users.map(u=>[String(u.id),u.name])),night:null,lastWords:{},revision:1};
+ const room:V2RoomSession={version:2,game,chatId,state,names:Object.fromEntries(users.map(u=>[String(u.id),u.name])),night:null,lastWords:{},revision:1,startedAt:now};
  const result=empty(room);
  for(const p of state.players){const view=v2PrivateRoleView(state,p.id,room.names);if(view)send(result,Number(p.id),view.text,view.keyboard);}
  publishPhase(result);return result;
@@ -145,7 +145,8 @@ export function v2RoomLastWord(input:V2RoomSession,actorId:number,text:string,no
  if(!word||word.sent||now>=word.until||!body||body.startsWith('/'))throw Error('no valid last word window');
  const room=copy(input);room.revision++;room.lastWords[id]!.sent=true;
  const result=empty(room);
- send(result,room.chatId,'🗣 <b>'+escapeHtml(room.names[id]??'O‘yinchi')+'</b>ning oxirgi so‘zi:\n'+escapeHtml(body.slice(0,1000)));
+ const p=room.state.players.find(p=>p.id===id);
+ send(result,room.chatId,'🗣 <b>'+escapeHtml(room.names[id]??'O‘yinchi')+'</b>'+(p?' — '+escapeHtml(v2RoleLabel(p.role)):'')+'\nOxirgi so‘zi:\n'+escapeHtml(body.slice(0,1000)));
  return result;
 }
 export function v2RoomSilence(room:V2RoomSession,id:number):boolean{

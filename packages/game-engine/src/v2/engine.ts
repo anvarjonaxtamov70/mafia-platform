@@ -23,7 +23,7 @@ export type V2Effect=
   |{kind:'WIZARD_CHOICE';recipient:string;attackers:string[]}
   |{kind:'KLAUS';actor:string;target:string;amount:number}
   |{kind:'SELLER';actor:string;target:string}
-  |{kind:'DEATH';target:string;reason:string;attackers:string[]}
+  |{kind:'DEATH';target:string;reason:string;attackers:string[];victimRole?:V2Role;attackerRoles?:V2Role[]}
   |{kind:'ROLE';target:string;role:V2Role}
   |{kind:'HERO';actor:string;target:string;hpLost:number;killed:boolean;absorbed:number}
   |{kind:'HP';target:string;hp:number}
@@ -217,7 +217,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
   }
   for(const [id,as] of deaths){
     const p=player(s,id)!;if(!alive(p))continue;
-    p.hp=0;p.death=as[0]!.cause;effects.push({kind:'DEATH',target:id,reason:p.death,attackers:[...new Set(as.map(a=>a.actor))]});
+    p.hp=0;p.death=as[0]!.cause;effects.push({kind:'DEATH',target:id,reason:p.death,attackers:[...new Set(as.map(a=>a.actor))],victimRole:p.role,attackerRoles:[...new Set(as.map(a=>a.role))]});
   }
   for(const [id,hp] of hpAfter){const p=player(s,id)!;if(p.hp>0){p.hp=hp;effects.push({kind:'HP',target:id,hp});}}
   for(const i of actions.filter(i=>initial.get(i.actor)==='DAYDI')){
@@ -240,7 +240,7 @@ export function v2ResolveNight(input:V2State,now:number,rng:Rng,choices:V2NightC
     const acted=s.intents.some(i=>i.actor===p.id);
     if(!acted)p.missedTotal=(p.missedTotal??0)+1;
     p.missed=acted?0:p.missed+1;
-    if(p.missed>=2){p.hp=0;p.left=true;p.personal='LOSS';p.death='AFK';effects.push({kind:'DEATH',target:p.id,reason:'AFK',attackers:[]});}
+    if(p.missed>=2){p.hp=0;p.left=true;p.personal='LOSS';p.death='AFK';effects.push({kind:'DEATH',target:p.id,reason:'AFK',attackers:[],victimRole:p.role,attackerRoles:[]});}
   }
   promote(s,effects);phase(s,'DAWN',now);return {state:s,effects};
 }
@@ -290,7 +290,7 @@ export function v2Leave(input:V2State,id:string,now:number):V2Resolution{
   s.intents=s.intents.filter(i=>i.actor!==id&&i.target!==id);
   s.votes=s.votes.filter(v=>v.actor!==id&&v.target!==id);
   s.verdicts=s.verdicts.filter(v=>v.actor!==id);
-  if(wasAlive)effects.push({kind:'DEATH',target:id,reason:'LEAVE',attackers:[]});
+  if(wasAlive)effects.push({kind:'DEATH',target:id,reason:'LEAVE',attackers:[],victimRole:p.role,attackerRoles:[]});
   promote(s,effects);
   if(s.phase==='REVENGE'&&s.revenge===id){
     const next=v2Advance(s,now,s.seq);
@@ -307,7 +307,7 @@ export function v2HeroShot(input:V2State,actor:string,target:string,seq:number):
   if(victim.heroShield)victim.heroShield=false;
   else {absorbed=Math.min(victim.heroDefense,shooter.heroDamage);victim.heroDefense-=absorbed;lostHp=Math.min(victim.hp,shooter.heroDamage-absorbed);victim.hp-=lostHp;}
   const effects:V2Effect[]=[{kind:'HERO',actor,target,hpLost:lostHp,killed:!victim.hp,absorbed},{kind:'HP',target,hp:victim.hp}];
-  if(!victim.hp){victim.death='HERO';if(victim.role==='KAMIKAZE')victim.personal='WIN';effects.push({kind:'DEATH',target,reason:'HERO',attackers:[actor]});promote(s,effects);}
+  if(!victim.hp){victim.death='HERO';if(victim.role==='KAMIKAZE')victim.personal='WIN';effects.push({kind:'DEATH',target,reason:'HERO',attackers:[actor],victimRole:victim.role,attackerRoles:[player(s,actor)!.role]});promote(s,effects);}
   return {state:s,effects};
 }
 export function v2Vote(input:V2State,actor:string,target:string,seq:number):V2State{
@@ -343,7 +343,7 @@ export function v2Advance(input:V2State,now:number,seq:number):V2Resolution{
       if(candidate.hangingProtection)effects.push({kind:'HANGING_PROTECTED',target:candidate.id,reason:'LAWYER_OR_TENTAK'});
       else if(candidate.voteShield){candidate.voteShield=false;effects.push({kind:'HANGING_PROTECTED',target:candidate.id,reason:'ITEM'});}
       else{
-        candidate.hp=0;candidate.death='VOTE';effects.push({kind:'DEATH',target:candidate.id,reason:'VOTE',attackers:[]});
+        candidate.hp=0;candidate.death='VOTE';effects.push({kind:'DEATH',target:candidate.id,reason:'VOTE',attackers:[],victimRole:candidate.role,attackerRoles:[]});
         if(candidate.role==='SUIDSID')candidate.personal='WIN';
         if(candidate.role==='KAMIKAZE'){candidate.personal='WIN';s.revenge=candidate.id;phase(s,'REVENGE',now);return {state:s,effects};}
         promote(s,effects);
@@ -357,6 +357,6 @@ export function v2Revenge(input:V2State,actor:string,target:string,seq:number,no
   if(input.phase!=='REVENGE'||input.seq!==seq||input.revenge!==actor||!player(input,target)||!alive(player(input,target)!))throw new Error('invalid revenge');
   const s=clone(input),t=player(s,target)!;t.hp=0;t.death='KAMIKAZE';
   const result=v2Advance(s,now,seq);
-  result.effects.unshift({kind:'DEATH',target,reason:'KAMIKAZE',attackers:[actor]});return result;
+  result.effects.unshift({kind:'DEATH',target,reason:'KAMIKAZE',attackers:[actor],victimRole:t.role,attackerRoles:['KAMIKAZE']});return result;
 }
 export function v2LastWordUntil(deathAt:number){return deathAt+V2_LAST_WORD_SECONDS*1000;}

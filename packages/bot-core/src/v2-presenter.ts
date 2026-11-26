@@ -24,6 +24,7 @@ type PlayerNames=Readonly<Record<string,string>>;
 type V2View={text:string;keyboard?:Keyboard};
 const named=(names:PlayerNames,id:string)=>escapeHtml(names[id]??'O‘yinchi');
 const short=(names:PlayerNames,id:string)=>buttonLabel(names[id]??'O‘yinchi');
+const rosterName=(names:PlayerNames,id:string)=>{let out='';for(const ch of Array.from(short(names,id))){const next=escapeHtml(ch);if(out.length+next.length>64)return out+'…';out+=next;}return out;};
 export function v2RoleLabel(role:V2Role){
  const ref=REFERENCE_ROLES[V2_ROLES.indexOf(role)]!;
  return ref.emoji+' '+ref.name;
@@ -56,11 +57,27 @@ export function v2GroupVerdictView(s:V2State,game:number,names:PlayerNames,close
  if(closed)return {text:question+'\n\nOvoz berish yakunlandi.\n👍 Ha: '+yes+'   👎 Yo‘q: '+no,keyboard:[]};
  return {text:question+'\n\n30 soniya. Har bir o‘yinchi bir marta ovoz beradi.',keyboard:[[make(game,s,'Y',0,'👍 '+yes),make(game,s,'N',0,'👎 '+no)]]};
 }
-export function v2PublicPhaseView(s:V2State,names:PlayerNames):V2View{
+const outcomeLabels:Record<string,string>={CITY:'Tinch aholi g‘alaba qozondi!',MAFIA:'Mafia g‘alaba qozondi!',ZOMBIE:'Zombilar g‘alaba qozondi!',SOLO:'Yakka rol g‘alaba qozondi!',NEUTRAL:'Betaraflar g‘alaba qozondi!',SUIDSID:'Suidsid g‘alaba qozondi!',TEAM:'Jamoa g‘alaba qozondi!',DRAW:'Durrang!'};
+const factionLabels={CITY:'Tinch aholi',MAFIA:'Mafia',SOLO:'Yakka rollar',NEUTRAL:'Betaraflar',ZOMBIE:'Zombilar'};
+export function v2PublicPhaseView(s:V2State,names:PlayerNames,durationMs?:number):V2View{
  const phases={NIGHT:'🌙 Tun boshlandi',DAWN:'🌅 Tong otdi',DISCUSSION:'☀️ Muhokama',VOTING:'🗳 Ovoz berish',VERDICT:'⚖️ Osishni tasdiqlash',REVENGE:'💣 Kamikaze tanlovi',ENDED:'🏁 O‘yin tugadi'};
+ if(s.outcome){
+  const winners=new Set(s.outcome.winners);
+  const line=(p:V2State['players'][number])=>rosterName(names,p.id)+' — '+escapeHtml(v2RoleLabel(p.role))+(p.left?' (tark etdi)':p.hp>0?' (tirik)':' (halok bo‘lgan)');
+  const won=s.players.filter(p=>winners.has(p.id)),others=s.players.filter(p=>!winners.has(p.id));
+  const seconds=durationMs===undefined?undefined:Math.max(0,Math.floor(durationMs/1000));
+  const time=seconds===undefined?'':'\n⏱ Davomiyligi: '+Math.floor(seconds/60)+' daqiqa '+seconds%60+' soniya';
+  const colour=s.mode==='VS'&&s.outcome.reason==='TEAM'?(won[0]?.colour==='RED'?' 🔴 Qizillar':' 🔵 Ko‘klar'):'';
+  return {text:'🏁 <b>O‘yin tugadi!</b>\n'+escapeHtml(outcomeLabels[s.outcome.reason]??'Natijalar')+colour+'\n\n🏆 <b>G‘oliblar:</b>\n'+(won.map(line).join('\n')||'Hech kim')+'\n\n👥 <b>Boshqa ishtirokchilar:</b>\n'+(others.map(line).join('\n')||'Yo‘q')+time};
+ }
  const living=s.players.filter(p=>p.hp>0&&!p.left);
- const roster=living.map((p,i)=>(i+1)+'. '+named(names,p.id)+(p.colour?(p.colour==='RED'?' 🔴':' 🔵'):'')+' — '+p.hp+'%');
- return {text:'<b>'+phases[s.phase]+'</b>\n'+(s.outcome?'G‘oliblar: '+(s.outcome.winners.map(id=>named(names,id)).join(', ')||'Hech kim'):'Tirik o‘yinchilar: '+living.length+'\n'+roster.join('\n'))};
+ const roster=s.players.flatMap((p,i)=>p.hp>0&&!p.left?[(i+1)+'. '+rosterName(names,p.id)+(p.colour?(p.colour==='RED'?' 🔴':' 🔵'):'')+' — '+p.hp+'%']:[]);
+ const counts=(s.phase==='DAWN'||s.phase==='DISCUSSION')?Object.entries(factionLabels).map(([f,label])=>{
+  const roles=V2_ROLES.map(role=>({role,n:living.filter(p=>p.role===role&&V2_DEFS[role].faction===f).length})).filter(x=>x.n>0);
+  return roles.length?label+' ('+roles.reduce((a,x)=>a+x.n,0)+'): '+roles.map(x=>escapeHtml(v2RoleLabel(x.role))+(x.n>1?' ×'+x.n:'')).join(', '):'';
+ }).filter(Boolean):[];
+ const timing=s.phase==='NIGHT'||s.phase==='VOTING'||s.phase==='DISCUSSION'?'\n⏱ 30 soniya.':'';
+ return {text:'<b>'+phases[s.phase]+'</b> · '+s.round+'-kun'+timing+'\n\nTirik o‘yinchilar: '+living.length+'\n'+roster.join('\n')+(counts.length?'\n\n<b>Qolgan rollar:</b>\n'+counts.join('\n'):'')};
 }
 export function v2PromptViews(session:V2NightSession,game:number,names:PlayerNames):{recipient:string;view:V2View}[]{
  return session.prompts.map(p=>{
@@ -78,7 +95,12 @@ export function v2EffectDrafts(effects:readonly V2Effect[],chatId:bigint,names:P
    case 'CHECK':send(BigInt(e.recipient),'🔎 '+named(names,e.target)+' — '+escapeHtml(v2RoleLabel(e.role)),i);break;
    case 'WITNESS':send(BigInt(e.recipient),'👀 '+named(names,e.target)+' uyida: '+e.attackers.map(a=>named(names,a.id)+' ('+escapeHtml(v2RoleLabel(a.role))+')').join(', '),i);break;
    case 'ROLE':send(BigInt(e.target),'Yangi rolingiz: '+escapeHtml(v2RoleLabel(e.role)),i);break;
-   case 'DEATH':send(chatId,'💀 '+named(names,e.target)+' o‘yindan chiqdi.',i);break;
+   case 'DEATH':{
+    const victim='<b>'+named(names,e.target)+'</b>'+(e.victimRole?' — '+escapeHtml(v2RoleLabel(e.victimRole)):'');
+    const roles=(e.attackerRoles??[]).map(role=>escapeHtml(v2RoleLabel(role))).join(', ');
+    const reason=e.reason==='VOTE'?'guruh ovozi bilan osildi.':e.reason==='AFK'?'faol bo‘lmagani sabab o‘yindan chiqarildi.':e.reason==='LEAVE'?'o‘yinni tark etdi.':e.reason==='HERO'?'geroy hujumidan halok bo‘ldi.':e.reason==='KRAMPOUS_SELF'?'o‘z portlashidan halok bo‘ldi.':'halok bo‘ldi.';
+    send(chatId,'💀 '+victim+' '+reason+(roles?'\nSababchi rol: '+roles:''),i);break;
+   }
    case 'HP':send(chatId,'❤️ '+named(names,e.target)+' — '+e.hp+'% jon.',i);break;
    case 'HANGING_PROTECTED':send(chatId,named(names,e.target)+' '+(e.reason==='ITEM'?'himoya buyumi':'Advokat yoki Tentak himoyasi')+' tufayli osilmadi.',i);break;
    // Wallet effects and prompt requests are routed by trusted settlement adapter.
