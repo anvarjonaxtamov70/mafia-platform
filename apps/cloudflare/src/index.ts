@@ -21,7 +21,7 @@ import type {GrenchDebit,DawnRoleAction} from './role-v2-economy';
 import type {RecordGameInput} from './registry-core';
 import { Router, RouterCaches, type RoomApi, type RegistryApi } from './router';
 import { setupKey, TelegramClient, webhookSecret, type Telegram } from './telegram';
-import {stagingAllowed,stagingWebhookAllowed} from './staging-guard';
+import {stagingAllowed,stagingWebhookAllowed,stagingV2Ledger} from './staging-guard';
 import { readTelegramUpdate } from './webhook-input';
 import { reconcileRefunds } from './refund-reconcile';
 
@@ -33,6 +33,7 @@ export interface Env {
   STAGING_BOT_ID?:string;
   PRODUCTION_BOT_ID?:string;
   STAGING_ORIGIN?:string;
+  STAGING_V2_LEDGER?:string;
   ADMIN_IDS?: string;
   BOT_USERNAME?: string;
   DEV_FAKE_PLAYERS?: string;
@@ -54,6 +55,7 @@ function localV2Ledger(env:Env):boolean{
   try{const url=new URL(env.TELEGRAM_API);return url.protocol==='http:'&&url.hostname==='127.0.0.1'&&!!url.port;}
   catch{return false;}
 }
+function v2LedgerEnabled(env:Env):boolean{return localV2Ledger(env)||stagingV2Ledger(env);}
 function telegram(env: Env): Telegram {
   if(!stagingAllowed(env))throw Error('staging configuration rejected');
   return new TelegramClient(env.BOT_TOKEN, env.TELEGRAM_API || 'https://api.telegram.org');
@@ -237,22 +239,22 @@ export class Registry extends DurableObject<Env> {
   paraPair(user:number){return this.core.paraPair(user);}
   paraLeave(user:number,pair:number){return this.core.paraLeave(user,pair);}
   // Private DO RPC only. No generic HTTP endpoint or Telegram command accepts these ledger parameters.
-  private requireLocalV2(){if(!localV2Ledger(this.env))throw Error('v2 ledger disabled');}
+  private requireV2Ledger(){if(!v2LedgerEnabled(this.env))throw Error('v2 ledger disabled');}
   v2Snapshots(ids:number[]){
-    this.requireLocalV2();
+    this.requireV2Ledger();
     if(ids.length<4||ids.length>30||new Set(ids).size!==ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<1))throw Error('invalid roster');
     return Object.fromEntries(ids.flatMap(id=>{const h=this.core.heroV2.view(id);return h?[[String(id),{defense:h.defense,charges:h.charges,damage:h.damage}]]:[];}));
   }
-  v2MarkRunning(game:number,chat:number,ids:readonly number[],allowItems:boolean){this.requireLocalV2();return this.core.markV2Running(game,chat,ids,allowItems);}
-  v2SettleNight(game:number,round:number,debits:readonly GrenchDebit[]){this.requireLocalV2();return this.core.roleV2Economy.settleGrenchBatch(game,round,debits);}
-  v2SettleDawn(game:number,round:number,actions:readonly DawnRoleAction[]){this.requireLocalV2();return this.core.roleV2Economy.settleDawn(game,round,actions);}
-  v2SettleHero(request:HeroV2ShotRequest){this.requireLocalV2();return this.core.heroV2.settleShot(request);}
-  v2BuyOffer(game:number,attempt:number,buyer:number,offer:number,code:string){this.requireLocalV2();return this.core.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code);}
-  v2RecordResult(input:RecordGameInput){this.requireLocalV2();return this.core.recordV2Game(input);}
-  v2HeroView(id:number){this.requireLocalV2();return this.core.heroV2.view(id);}
-  v2HeroQuote(id:number,op:HeroV2Purchase,arg?:string){this.requireLocalV2();return this.core.heroV2.quote(id,op,arg);}
-  v2HeroConfirm(id:number,quoteId:number){this.requireLocalV2();return this.core.heroV2.confirm(id,quoteId);}
-  v2HeroCancel(id:number,quoteId:number){this.requireLocalV2();return this.core.heroV2.cancel(id,quoteId);}
+  v2MarkRunning(game:number,chat:number,ids:readonly number[],allowItems:boolean){this.requireV2Ledger();return this.core.markV2Running(game,chat,ids,allowItems);}
+  v2SettleNight(game:number,round:number,debits:readonly GrenchDebit[]){this.requireV2Ledger();return this.core.roleV2Economy.settleGrenchBatch(game,round,debits);}
+  v2SettleDawn(game:number,round:number,actions:readonly DawnRoleAction[]){this.requireV2Ledger();return this.core.roleV2Economy.settleDawn(game,round,actions);}
+  v2SettleHero(request:HeroV2ShotRequest){this.requireV2Ledger();return this.core.heroV2.settleShot(request);}
+  v2BuyOffer(game:number,attempt:number,buyer:number,offer:number,code:string){this.requireV2Ledger();return this.core.roleV2Economy.settleOfferPurchase(game,attempt,buyer,offer,code);}
+  v2RecordResult(input:RecordGameInput){this.requireV2Ledger();return this.core.recordV2Game(input);}
+  v2HeroView(id:number){this.requireV2Ledger();return this.core.heroV2.view(id);}
+  v2HeroQuote(id:number,op:HeroV2Purchase,arg?:string){this.requireV2Ledger();return this.core.heroV2.quote(id,op,arg);}
+  v2HeroConfirm(id:number,quoteId:number){this.requireV2Ledger();return this.core.heroV2.confirm(id,quoteId);}
+  v2HeroCancel(id:number,quoteId:number){this.requireV2Ledger();return this.core.heroV2.cancel(id,quoteId);}
   singleHero(tgId: number) { return this.core.singleHero(tgId); }
   setOwnHeroLevel(tgId: number, level: number) { return this.core.setOwnHeroLevel(tgId, level); }
   buyHero(tgId: number, idem: string) { return this.core.eco.buyHero(tgId, idem); }
@@ -371,7 +373,7 @@ export class GameRoom extends DurableObject<Env> {
         },
       },
       registry: lazyRegistry(env),
-      ...(localV2Ledger(env)?{v2Settlement:localV2Settlement(env)}:{}),
+      ...(v2LedgerEnabled(env)?{v2Settlement:v2SettlementPort(env)}:{}),
       telegram: telegram(env),
       clock: Date.now,
       rng: cryptoRng,
@@ -444,7 +446,7 @@ function getRouter(env: Env): Router {
       admins: ownerIds(env),
       devFake: env.DEV_FAKE_PLAYERS === 'true',
       v2Preview: env.V2_PREVIEW === 'true',
-      ...(localV2Ledger(env)?{heroV2Shop:{view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
+      ...(v2LedgerEnabled(env)?{heroV2Shop:{view:id=>registryStub(env).v2HeroView(id),quote:(id,op,arg)=>registryStub(env).v2HeroQuote(id,op,arg),confirm:(id,quoteId)=>registryStub(env).v2HeroConfirm(id,quoteId),cancel:(id,quoteId)=>registryStub(env).v2HeroCancel(id,quoteId)}}:{}),
       visuals: env.VISUAL_MEDIA !== 'false',
       starsMode: parseStarsMode(env.STARS_MODE),
       botUsername: () => botUsername(env),
@@ -455,7 +457,7 @@ function getRouter(env: Env): Router {
 }
 
 /** Fresh stub per invocation, including after alarms/restarts. */
-function localV2Settlement(env:Env):V2SettlementPort{
+function v2SettlementPort(env:Env):V2SettlementPort{
   return {
     snapshots:ids=>registryStub(env).v2Snapshots(ids),
     markRunning:(game,chat,ids,allowItems)=>registryStub(env).v2MarkRunning(game,chat,ids,allowItems),
@@ -499,6 +501,7 @@ async function setup(env: Env, origin: string): Promise<Response> {
       { command: 'start', description: 'Bosh menyu' },
       { command: 'profile', description: 'Mening profilim' },
       { command: 'hero', description: 'Mening shaxsiy geroyim' },
+      ...(v2LedgerEnabled(env)?[{command:'herov2',description:'V2 shaxsiy geroy sinov do‘koni'}]:[]),
       { command: 'herotop', description: 'Geroylar TOP 10' },
       { command: 'history', description: 'Oxirgi 10 o‘yin' },
       { command: 'rating', description: 'Umumiy reyting' },
@@ -613,7 +616,7 @@ export default {
     const url = new URL(request.url);
     if(!stagingAllowed(env,url.origin))return new Response('staging configuration rejected',{status:503});
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-      return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token' });
+      return Response.json({ status: 'ok', bot: env.BOT_TOKEN ? 'configured' : 'missing-token', ...(env.STAGING_MODE==='true'?{staging:true,v2Ledger:stagingV2Ledger(env)}:{}) });
     }
     if (!env.BOT_TOKEN) return new Response('BOT_TOKEN missing', { status: 503 });
 

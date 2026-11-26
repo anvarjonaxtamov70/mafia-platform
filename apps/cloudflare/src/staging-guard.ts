@@ -1,6 +1,7 @@
 /** Defense in depth for an isolated Telegram preview; no secrets are returned. */
 export type StagingEnv={
  STAGING_MODE?:string;STAGING_BOT_ID?:string;PRODUCTION_BOT_ID?:string;STAGING_ORIGIN?:string;
+ STAGING_V2_LEDGER?:string;
  BOT_TOKEN?:string;ADMIN_IDS?:string;V2_PREVIEW?:string;V2_LOCAL_LEDGER?:string;
  STARS_MODE?:string;TEST_HOOKS?:string;DEV_FAKE_PLAYERS?:string;TELEGRAM_API?:string;
 };
@@ -11,9 +12,14 @@ export function stagingAllowed(e:StagingEnv,origin?:string):boolean{
  if(!id(bot)||!id(prod)||bot===prod||!e.BOT_TOKEN?.startsWith(bot+':'))return false;
  if(!host||!/^https:\/\/hypernova-v2-staging\.[a-z0-9-]+\.workers\.dev$/.test(host)||(origin!==undefined&&host!==origin))return false;
  if(!e.ADMIN_IDS?.split(',').every(x=>id(x.trim()))||!e.ADMIN_IDS.trim())return false;
- return e.V2_PREVIEW==='true'&&e.STARS_MODE==='off'&&e.V2_LOCAL_LEDGER==='false'&&e.TEST_HOOKS==='false'&&e.DEV_FAKE_PLAYERS==='false'&&!e.TELEGRAM_API;
+ return (e.STAGING_V2_LEDGER===undefined||e.STAGING_V2_LEDGER==='false'||e.STAGING_V2_LEDGER==='true')&&e.V2_PREVIEW==='true'&&e.STARS_MODE==='off'&&e.V2_LOCAL_LEDGER==='false'&&e.TEST_HOOKS==='false'&&e.DEV_FAKE_PLAYERS==='false'&&!e.TELEGRAM_API;
 }
 export function stagingWebhookAllowed(e:StagingEnv,actualBotId:number,existingUrl:string):boolean{
  return e.STAGING_MODE!=='true'||(stagingAllowed(e)&&String(actualBotId)===e.STAGING_BOT_ID&&
  (existingUrl===''||existingUrl===e.STAGING_ORIGIN+'/telegram/webhook'));
+}
+
+/** Never authorizes a production Worker or local fake Telegram by itself. */
+export function stagingV2Ledger(e:StagingEnv):boolean{
+ return e.STAGING_MODE==='true'&&e.STAGING_V2_LEDGER==='true'&&stagingAllowed(e);
 }

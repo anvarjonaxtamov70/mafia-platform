@@ -89,6 +89,7 @@ jobs:
       STAGING_ORIGIN: ${{ vars.STAGING_ORIGIN }}
       STAGING_ADMIN_IDS: ${{ vars.STAGING_ADMIN_IDS }}
       STAGING_CONFIRM: ${{ vars.STAGING_CONFIRM }}
+      STAGING_V2_LEDGER: ${{ vars.STAGING_V2_LEDGER }}
       STAGING_EXPECTED_USERNAME: HypernovaV2Test_Bot
       WRANGLER_SEND_METRICS: 'false'
     steps:

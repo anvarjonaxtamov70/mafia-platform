@@ -1,5 +1,5 @@
 # Separate Worker + independent Durable Object namespaces. No production deploy workflow uses this file.
-# For manual real-Telegram preview only; real economy intentionally disabled.
+# For manual real-Telegram preview only; isolated virtual ledger requires opt-in.
 name = "hypernova-v2-staging"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
@@ -32,6 +32,7 @@ enabled = true
 
 [vars]
 STAGING_MODE = "true"
+STAGING_V2_LEDGER = "false"
 # These must be provided at deployment; blank values fail closed.
 STAGING_BOT_ID = ""
 PRODUCTION_BOT_ID = ""

@@ -54,7 +54,18 @@ try{
   check(e.STAGING_CONFIRM==='hypernova-v2-staging','Set STAGING_CONFIRM=hypernova-v2-staging to explicitly approve deployment.');
   stage='Cloudflare deploy';
   check(e.CLOUDFLARE_API_TOKEN?.trim()&&e.CLOUDFLARE_ACCOUNT_ID?.trim(),'Missing staging Cloudflare credentials.');
-  const deployArgs=['deploy','--var','STAGING_BOT_ID:'+bot,'--var','PRODUCTION_BOT_ID:'+prod,'--var','STAGING_ORIGIN:'+origin,'--var','ADMIN_IDS:'+admins];
+  const ledger=e.STAGING_V2_LEDGER||'false';
+  check(['true','false'].includes(ledger),'STAGING_V2_LEDGER must be true or false.');
+  // The live staged ledger must never be disabled by an ordinary redeploy.
+  // A valid staging bot with an existing webhook must have a readable health
+  // response before any configuration change; operator repairs explicitly otherwise.
+  if(hook.url){
+   const before=await request(origin+'/health',{method:'GET'});
+   const body=await json(before);
+   check(before?.ok&&body?.status==='ok'&&body?.bot==='configured','Existing staging Worker health unavailable; inspect before redeploy.');
+   check(!(body.v2Ledger===true&&ledger!=='true'),'Cannot disable a live staged V2 ledger; drain/reconcile before changing the policy.');
+  }
+  const deployArgs=['deploy','--var','STAGING_BOT_ID:'+bot,'--var','PRODUCTION_BOT_ID:'+prod,'--var','STAGING_ORIGIN:'+origin,'--var','ADMIN_IDS:'+admins,'--var','STAGING_V2_LEDGER:'+ledger];
   let deployed;
   for(let n=1;n<=5;n++){
    deployed=wrangler(deployArgs);
@@ -81,12 +92,12 @@ try{
   for(let n=1;n<=12;n++){
    const response=await request(origin+'/health',{method:'GET'});
    const body=await json(response);
-   if(response?.ok&&body?.status==='ok'&&body.bot==='configured'){ready=true;break;}
+   if(response?.ok&&body?.status==='ok'&&body.bot==='configured'&&body.staging===true&&body.v2Ledger===(ledger==='true')){ready=true;break;}
    console.log('Worker readiness '+n+': '+status(response));
    if(n<12)await sleep(5000);
   }
   check(ready,'Worker did not become ready; verify staging variables and secret propagation.');
-  console.log('Worker health OK.');
+  console.log('Worker health OK. Isolated V2 ledger: '+ledger);
   stage='Telegram webhook setup';
   const key=createHash('sha256').update('mafia-setup|'+token).digest('hex');
   let verified=false;
