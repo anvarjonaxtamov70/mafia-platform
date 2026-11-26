@@ -289,6 +289,12 @@ try {
   check((calls.filter(c=>c.method==='answerCallbackQuery').at(-1)?.params.text??'').includes('Mablag‘ yetarli emas'),'insufficient diamonds rejected by real Registry DO');
   await pm(11,'/herov2');
   check(texts(11).at(-1)?.includes('90 💎'),'declined v2 purchase did not grant hero');
+  // Check the actual complete V2 terminal view, not the obsolete unformatted
+  // title. Keep independent Registry profile assertions below.
+  const v2Terminal = text => text.includes('🏁 <b>O‘yin tugadi!</b>') &&
+    text.includes('<b>G‘oliblar:</b>') &&
+    text.includes('<b>Boshqa ishtirokchilar:</b>') &&
+    text.includes('Davomiyligi:');
   const beforeV2=texts(GROUP).length;
   await gm(1,'/game_v2classic');await sleep(1200);
   const v2Lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
@@ -299,11 +305,11 @@ try {
   check(texts(GROUP).slice(beforeV2).some(t=>t.includes('V2 SINOV')&&t.includes('Ichki test hisobi')),'V2 real RoomCore uses local ledger');
   for(const p of v2Players)check(texts(p).some(t=>t.includes('Sizning rolingiz:')),'V2 role privately delivered '+p);
   for(let round=0;round<18;round++){
-    if(texts(GROUP).slice(beforeV2).some(t=>t.includes('🏁 O‘yin tugadi')))break;
+    if(texts(GROUP).slice(beforeV2).some(v2Terminal))break;
     const status=await force();if(!status.ok)throw Error('V2 force failed');
     await sleep(500);
   }
-  check(texts(GROUP).slice(beforeV2).some(t=>t.includes('🏁 O‘yin tugadi')),'V2 match ends through actual DO alarms');
+  check(texts(GROUP).slice(beforeV2).some(v2Terminal),'V2 match ends through actual DO alarms');
   await sleep(1800);
   await pm(11,'/profile');
   check(texts(11).at(-1)?.includes('Barcha o‘yinlar: 1'),'V2 result stored through Registry RPC');
@@ -331,11 +337,11 @@ try {
     }
     // Timeout path intentionally exercises AFK cleanup without synthetic role selection.
     for(let round=0;round<24;round++){
-      if(texts(GROUP).slice(beforeGroup).some(t=>t.includes('🏁 O‘yin tugadi')))break;
+      if(texts(GROUP).slice(beforeGroup).some(v2Terminal))break;
       const result=await force();if(!result.ok)throw Error(mode+' force failed');
       await sleep(500);
     }
-    check(texts(GROUP).slice(beforeGroup).some(t=>t.includes('🏁 O‘yin tugadi')),mode+' terminal phase through actual DO alarms');
+    check(texts(GROUP).slice(beforeGroup).some(v2Terminal),mode+' terminal phase through actual DO alarms');
     await sleep(1800);
     for(const id of ids.slice(1)){
       await pm(id,'/profile');

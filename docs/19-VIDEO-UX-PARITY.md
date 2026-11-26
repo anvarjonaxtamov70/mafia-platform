@@ -65,3 +65,6 @@ Staging `/game` uses persisted `v2Mode` (default CLASSIC); `/quick` uses the sam
 
 ## Public outcome presentation
 Death effects carry victim role and actual attack-time role labels, independent of later promotions/conversion. Group notices show victim name/role and cause, never a living attacker's identity. AFK/leave/vote/hero/special death labels are explicit. Last words include the dead role. Dawn/discussion roster preserves original seat numbers and adds remaining faction/role counts, with no living name-to-role mapping. Ended view lists winners and other participants with final roles, alive/left/dead status, team if VS, and duration when start/finish metadata exists. Presentation only, not a reward settlement claim. CI pending; no live deploy.
+
+### E2E presentation regression correction
+Run 45816641240 passed 303 unit and 31 integration tests, staging bundle and persisted result checks for all four modes. Four workerd E2E terminal-message checks failed because the old literal `🏁 O‘yin tugadi` no longer matches the new HTML title `🏁 <b>O‘yin tugadi!</b>`. Updated the predicate for all four modes to require the actual new title, winners, other participants and duration, while retaining independent Registry profile checks. No runtime behavior changed. Exact new head CI pending.
