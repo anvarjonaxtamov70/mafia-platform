@@ -100,3 +100,7 @@ New isolated HeroV2Core preserves historical total points on first migration, st
 
 ## Night response checkpoint
 Added serializable deterministic preview/answer/finalize session for Wizard and Grench. One private answer per intended recipient, 30-second proposed timeout, missing Wizard answer kills Wizard, Grench defaults to money and requires a real ledger receipt; insufficient funds gives 17 HP damage. Preview is not a final public result. Still requires durable Room/Registry integration and conflict handling (e.g. overlapping Grench and Wizard effects). Fixed hero lint findings.
+
+
+## Role economy / Telegram presentation checkpoint
+Added transactional Grench transfers (real virtual balance only; no owner allowance mint), Klaus gift receipts and one discounted consumable offer per Seller per round. Seller prices ceil half price, commission floor 10% of actual paid amount in same currency; owner free purchase yields no commission. Proposed offer lifetime 60s, no VIP/hero/real-money sales. Operations check active same-game membership, are not exposed as untrusted RPC, and still require authoritative room role validation. Added native v2 presenter for private role and night/hero/vote/confirmation/revenge buttons, public phases, night response prompts and audience-specific effects. New callback format is bounded and distinct; production router/room is not yet wired. Tests added. No real deployment.
