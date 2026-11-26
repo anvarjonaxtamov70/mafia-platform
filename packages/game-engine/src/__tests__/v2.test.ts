@@ -156,7 +156,7 @@ describe('v2 independent engine',()=>{
   const redundant=night(act(z,1,2));
   expect(redundant.state.players[2]!.role).toBe('ZOMBIE');
   expect(redundant.effects.some(e=>e.kind==='ROLE'&&e.target==='2')).toBe(false);
-  const c=game(['DON','CHAMELEON','KLAUS','CITIZEN']);
+  const c=game(['DON','CHAMELEON','KLAUS','CITIZEN','COMMISSAR']);
   expect(night(act(c,1,2)).state.players[1]!.role).toBe('CHAMELEON');
   expect(night(act(c,1,3)).state.players[1]!.role).toBe('SERGEANT');
  });
