@@ -151,9 +151,14 @@ describe('v2 independent engine',()=>{
   expect(refused.state.players[0]!.hp).toBe(0);
   expect(refused.state.players[2]!.hp).toBe(0);
  });
- it('Zombies cannot waste conversion on another zombie',()=>{
-  const s=v2CreateFixed(['0','1','2','3'],['DON','ZOMBIE','ZOMBIE','COMMISSAR'],'ZOMBIE',0,rng());
-  expect(()=>act(s,1,2)).toThrow();
+ it('Zombie and Chameleon target validation does not disclose hidden factions',()=>{
+  const z=v2CreateFixed(['0','1','2','3'],['DON','ZOMBIE','ZOMBIE','COMMISSAR'],'ZOMBIE',0,rng());
+  const redundant=night(act(z,1,2));
+  expect(redundant.state.players[2]!.role).toBe('ZOMBIE');
+  expect(redundant.effects.some(e=>e.kind==='ROLE'&&e.target==='2')).toBe(false);
+  const c=game(['DON','CHAMELEON','KLAUS','CITIZEN']);
+  expect(night(act(c,1,2)).state.players[1]!.role).toBe('CHAMELEON');
+  expect(night(act(c,1,3)).state.players[1]!.role).toBe('SERGEANT');
  });
  it('VS mafia ballots stay within colour teams; no-Don colour has independent attack',()=>{
   let s=v2CreateFixed(['0','1','2','3','4','5'],['DON','MAFIOSO','MAFIOSO','DOCTOR','COMMISSAR','DOCTOR'],'VS',0,rng());

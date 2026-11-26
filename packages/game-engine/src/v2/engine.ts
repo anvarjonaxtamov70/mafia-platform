@@ -64,9 +64,9 @@ export function v2Submit(s:V2State,intent:V2Intent,seq:number):V2State{
     if(a.role==='COMMISSAR'? !['CHECK','SHOOT'].includes(intent.kind):intent.kind!=='CHOOSE')throw new Error('invalid action');
     if(a.id===t.id&&!(a.role==='DOCTOR'&&a.selfHeal)&&a.role!=='KRAMPOUS')throw new Error('self target');
     if(a.role==='FROZEN'&&a.lastFrozen===t.id)throw new Error('repeated frozen target');
-    if(a.role==='CHAMELEON'&&!['CITY','MAFIA','SOLO'].includes(faction(t)))throw new Error('invalid chameleon target');
+    // Chameleon may select any other living player: filtering by hidden faction leaks it.
     if(a.role==='LAWYER'&&faction(t)!=='MAFIA')throw new Error('invalid lawyer target');
-    if(a.role==='ZOMBIE'&&t.role==='ZOMBIE')throw new Error('invalid zombie target');
+    // A zombie cannot discover other zombies by probing callback validity. A redundant conversion is a no-op at resolution.
     if(a.role==='KRAMPOUS'&&a.marks.includes(t.id))throw new Error('repeated mark');
     if((a.role==='DON'||a.role==='MAFIOSO')&&(s.mode==='VS'?a.colour===t.colour:v2SameMafia(s,a,t)))throw new Error('mafia teammate');
   }else if(intent.target!==null)throw new Error('skip with target');
