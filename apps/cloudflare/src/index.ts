@@ -525,6 +525,12 @@ async function setup(env: Env, origin: string): Promise<Response> {
     scope: { type: 'all_group_chats' },
     commands: [
       { command: 'game', description: 'Yangi o‘yin yaratish' },
+      ...(env.V2_PREVIEW==='true' ? [
+        { command: 'game_v2classic', description: 'V2 Classic o‘yini (bot egasi)' },
+        { command: 'game_v2zombie', description: 'V2 Zombi o‘yini (bot egasi)' },
+        { command: 'game_v2hypernova', description: 'V2 Hypernova o‘yini (bot egasi)' },
+        { command: 'game_v2vs', description: 'V2 VS o‘yini (bot egasi)' },
+      ] : []),
       { command: 'para', description: 'Xabarga javob qilib para taklifi' },
       { command: 'mypara', description: 'Parangizni ko‘rish' },
       { command: 'quick', description: 'Tezkor, reytingsiz o‘yin' },

@@ -290,7 +290,7 @@ try {
   await pm(11,'/herov2');
   check(texts(11).at(-1)?.includes('90 💎'),'declined v2 purchase did not grant hero');
   const beforeV2=texts(GROUP).length;
-  await gm(1,'/game v2classic');await sleep(1200);
+  await gm(1,'/game_v2classic');await sleep(1200);
   const v2Lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
   const v2Join=v2Lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
   if(!v2Join||v2Join===joinBtn)throw Error('new V2 lobby missing');
@@ -315,7 +315,7 @@ try {
     const ids=[1,first,first+1,first+2];
     for(const id of ids.slice(1))await pm(id,'/start');
     const beforeGroup=texts(GROUP).length,beforeDM=new Map(ids.map(id=>[id,texts(id).length]));
-    await gm(1,'/game v2'+mode);await sleep(1200);
+    await gm(1,'/game_v2'+mode);await sleep(1200);
     const lobby=calls.filter(c=>c.method==='sendMessage'&&c.params.chat_id===GROUP&&c.params.text.includes('YANGI MAFIA')).at(-1);
     const join=lobby?.params.reply_markup?.inline_keyboard[0]?.[0]?.callback_data;
     if(!join||join===previousJoin)throw Error('new '+mode+' lobby missing');
@@ -344,6 +344,10 @@ try {
   }
   const setup = await fetch(`${base}/telegram/setup`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });
   check(setup.status === 200, '/telegram/setup ishlaydi');
+  const groupCommands=calls.filter(c=>c.method==='setMyCommands'&&c.params.scope?.type==='all_group_chats').at(-1)?.params.commands??[];
+  for(const mode of ['classic','zombie','hypernova','vs']){
+    check(groupCommands.some(c=>c.command==='game_v2'+mode),'Telegram menu exposes /game_v2'+mode);
+  }
   check(calls.some((c) => c.method === 'setWebhook' && c.params.secret_token === secret), 'webhook secret_token bilan o‘rnatildi');
   check(calls.some((c) => c.method === 'setWebhook' && c.params.allowed_updates.includes('pre_checkout_query')), 'webhook pre_checkout_query ni qabul qiladi');
   const diag = await fetch(`${base}/telegram/diag`, { method: 'POST', headers: { 'x-setup-key': createHash('sha256').update(`mafia-setup|${TOKEN}`).digest('hex') } });

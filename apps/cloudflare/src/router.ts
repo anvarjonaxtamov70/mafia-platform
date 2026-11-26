@@ -520,7 +520,11 @@ export class Router {
     const chatId = m.chat.id;
     const anonymous = m.sender_chat?.id === chatId && (m.sender_chat.type === 'group' || m.sender_chat.type === 'supergroup');
     const from = m.from ?? (anonymous ? { id: chatId, first_name: m.chat.title ?? 'Guruh administratori', is_bot: true } : undefined);
-    const c = await this.parseCommand(m.text);
+    const parsed = await this.parseCommand(m.text);
+    // Telegram's command menu cannot contain spaces. Normalize the explicit
+    // V2 aliases to the same owner-gated route, without changing legacy /game.
+    const alias = parsed && /^game_v2(classic|zombie|hypernova|vs)$/.exec(parsed.cmd);
+    const c = alias && parsed ? {cmd:'game',args:parsed.args?'v2invalid':'v2'+alias[1]} : parsed;
     // Handled commands use response-linked cleanup, not immediate night/dead deletion.
     // Unsupported commands still follow ordinary moderation.
     const handled = c && ['quick','game','join','leave','players','status','rules','help','leaderboard','top','top1','top7','top30','fulltop','fulltop7','fulltop30','mystats','startgame','stop','cancelgame','settings','devfill','para','mypara'].includes(c.cmd);

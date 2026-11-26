@@ -52,3 +52,6 @@ Use the existing **Tekshiruv** workflow, which already exists on main and suppor
 
 ## First staging launch retry
 Manual run 45797311078 passed full CI and Telegram preflight, but the apply step stopped with a generic runtime/connectivity error; exact failing substep was not visible. The launcher now logs deploy, secret upload, readiness and webhook setup separately, with sanitized numeric codes/HTTP status, bounded retries for propagation, and safe handling of non-JSON responses. A 403 safety rejection is never retried. Retry using a NEW manual Tekshiruv run on the V2 branch, not rerun of the old commit. Existing staging secrets/variables need not be re-entered. No production worker changes.
+
+## Telegram command menu aliases
+The four V2 commands are now `/game_v2classic`, `/game_v2zombie`, `/game_v2hypernova`, `/game_v2vs`, advertised by setup only when V2_PREVIEW is true. The previous space-argument syntax still works; `/game` remains V1. All aliases use the existing owner-only gate. The local workerd E2E uses the new aliases in all four modes and verifies their registration in the group command menu. Deploy the updated staging branch to refresh Telegram commands; no merge.
