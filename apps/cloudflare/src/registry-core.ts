@@ -742,7 +742,8 @@ export class RegistryCore {
     const base = t('admin.stats', { users: s.users, groups: s.groups, active: s.active, today: s.today, outbox: 0 });
     const security = { ...this.security.stats(), ...this.security.abuseStats() };
     const migration=this.heroV2.migrationStatus();
-    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}\nV2 — tekshiruv talab qiladigan bekor qilingan o‘yin sovg‘alari: ${this.roleV2Economy.suspiciousCancelledRecipients()}\nGeroy V2 migratsiyasi: ${migration.migrated}; tekshirish kerak: ${migration.unverified}`;
+    const pendingHeroImports=this.one<{c:number}>(`SELECT COUNT(*) AS c FROM inventory i JOIN users u ON u.telegram_id=i.telegram_id LEFT JOIN hero_v2_legacy_import m ON m.telegram_id=i.telegram_id WHERE i.item='PERSONAL_HERO' AND i.qty>0 AND u.deleted_at IS NULL AND m.telegram_id IS NULL`)!.c;
+    return `${base}\n${t('admin.errors', { count: e.count24h })}${e.last.length ? `\n${e.last.map((x) => `• ${escapeHtml(x.place)}: ${escapeHtml(x.message.slice(0, 120))}`).join('\n')}` : ''}\n\n${t('security.stats', security)}\nV2 — tekshiruv talab qiladigan bekor qilingan o‘yin sovg‘alari: ${this.roleV2Economy.suspiciousCancelledRecipients()}\nGeroy V2 migratsiyasi: ${migration.migrated}; tekshirish kerak: ${migration.unverified}\nV2 — import belgisi yo‘q sotib olingan geroylar: ${pendingHeroImports}`;
   }
 
   /** Ichki xatolar jurnali (oxirgi 200 ta saqlanadi) — /admin_stats va /telegram/diag da ko'rinadi */

@@ -35,4 +35,30 @@ describe('para private delivery and mutual pairing',()=>{
   const c=w.registryCore.paraRequest(4,2);if(!c.ok)throw Error('fixture');
   await w.advance(600001);expect(w.registryCore.paraAnswer(2,c.id,true)).toBe('STALE');
  });
+ it('staging navigation, private pair screen and cancelled breakup retain the pair',async()=>{
+  const w=new World({v2Preview:true,v2SettingsMode:true,v2Ledger:true});
+  for(const id of [1,2,3])await w.send(privateText(id,'/start'));
+  const markup=(params:Record<string,unknown>)=>(params.reply_markup as {inline_keyboard:{callback_data?:string}[][]}).inline_keyboard.flat();
+  expect(markup(w.tg.sent(1).at(-1)!.params).some(b=>b.callback_data==='m:para')).toBe(true);
+  await w.send(request(1,2));
+  const accept=markup(w.tg.sent(2).at(-1)!.params).find(b=>b.callback_data?.startsWith('e:parayes:'))!.callback_data!;
+  expect(w.tg.texts(GROUP).at(-1)).toContain('Para so‘rovi yuborildi');
+  await w.send(callback(2,accept));
+  const edit=()=>w.tg.calls.filter(c=>c.method==='editMessageText').at(-1)!;
+  expect(edit().params.text).toContain('HYPERNOVA | PARA');
+  expect(edit().params.text).toContain('U1');
+  const pair=w.registryCore.paraPair(1)!;
+  await w.advance(3100);await w.send(callback(1,'m:paraconfirm'));
+  expect(edit().params.text).toContain('U2');
+  await w.advance(3100);await w.send(callback(1,'e:paranop:'+pair.id));
+  expect(w.registryCore.paraPair(1)?.id).toBe(pair.id);
+  expect(edit().params.text).toContain('Bekor qilinmadi');
+  await w.advance(3100);await w.send(callback(1,'e:paraq:'+pair.id,GROUP));
+  expect(w.registryCore.paraPair(1)).not.toBeNull();
+  await w.advance(3100);await w.send(callback(1,'e:paraq:'+pair.id));
+  expect(w.registryCore.paraPair(1)).toBeNull();expect(w.registryCore.paraPair(2)).toBeNull();
+  expect(edit().params.text).toContain('parangiz yo‘q');
+  await w.send(privateText(1,'/rules'));expect(w.tg.texts(1).at(-1)).toContain('29 soniya');
+ });
+
 });

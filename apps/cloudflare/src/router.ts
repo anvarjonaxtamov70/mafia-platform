@@ -57,7 +57,7 @@ import { heroView, heroTopView } from './hero-views';
 import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
 import {heroV2TopView,heroV2Profile,heroV2RenameHelp,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
 import {decodeV2Button} from '@mafia/bot-core';
-import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView} from './v2-economy-views';
+import {v2ProfileView,v2ShopView,v2InventoryView,v2BuyView,v2HomeView,v2RulesView,v2ParaView,v2ParaConfirm} from './v2-economy-views';
 import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
 
@@ -405,16 +405,23 @@ export class Router {
             if (r.error !== 'ALREADY_JOINED') await this.reply(chatId, this.errText(r));
           }
         }
-        return this.reply(chatId, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
+        const view=this.homeView(from.first_name);
+        return this.reply(chatId,view.text,view.keyboard);
       }
-      case 'mypara':
+      case 'mypara': {
+        if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(from.id));return this.reply(chatId,v.text,v.keyboard);}
         return this.reply(chatId,await this.paraText(from.id));
+      }
       case 'qpara': {
         const pair=await this.d.registry.paraPair(from.id);
+        if(this.d.v2SettingsMode){const v=pair?v2ParaConfirm(pair):v2ParaView(null);return this.reply(chatId,v.text,v.keyboard);}
         if(!pair)return this.reply(chatId,'Sizda para mavjud emas.');
         return this.reply(chatId,'Parangizni bekor qilasizmi?',[[{text:'✅ Ha',callback_data:encode({t:'eco',op:'paraq',arg:String(pair.id)})},{text:'❌ Yo‘q',callback_data:encode({t:'eco',op:'paranop',arg:String(pair.id)})}]]);
       }
-      case 'para':return this.reply(chatId,'Guruhda foydalanuvchining xabariga javob qilib /para yozing.');
+      case 'para':{
+        if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(from.id));return this.reply(chatId,v.text,v.keyboard);}
+        return this.reply(chatId,'Guruhda foydalanuvchining xabariga javob qilib /para yozing.');
+      }
       case 'help':
         return this.reply(chatId, t('help.text'));
       case 'support':
@@ -438,12 +445,13 @@ export class Router {
       case 'privacy':
         return this.reply(chatId, t('privacy.text'));
       case 'rules':
+        if(this.d.v2SettingsMode){const v=v2RulesView();return this.reply(chatId,v.text,v.keyboard);}
         return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }));
       case 'intro':
         return this.showVisual(from.id, 'intro');
       case 'characters':
       case 'guide': {
-        const view = (this.d.v2SettingsMode?v2CatalogueView(c.cmd):null)??learningView(c.cmd, !!this.d.visuals)!;
+        const view = (this.d.v2SettingsMode?(c.cmd==='guide'?v2RulesView():v2CatalogueView(c.cmd)):null)??learningView(c.cmd, !!this.d.visuals)!;
         return this.reply(chatId, view.text, view.keyboard);
       }
       case 'roles': {
@@ -559,7 +567,7 @@ export class Router {
         const request=await this.d.registry.paraRequest(from.id,reply.from.id);
         if(!request.ok)return this.reply(chatId,this.paraError(request.error),undefined,replyTo);
         try {
-          await this.d.tg.call('sendMessage',{chat_id:reply.from.id,text:'💞 <b>Para taklifi!</b>\n\n'+escapeHtml(request.name)+' siz bilan para bo‘lishni xohlayapti.',...HTML,reply_markup:{inline_keyboard:[[{text:'✅ Qabul qilish',callback_data:encode({t:'eco',op:'parayes',arg:String(request.id)})},{text:'❌ Rad etish',callback_data:encode({t:'eco',op:'parano',arg:String(request.id)})}]]}});
+          await this.d.tg.call('sendMessage',{chat_id:reply.from.id,text:'💞 <b>Para taklifi!</b>\n\n'+escapeHtml(request.name)+' siz bilan para bo‘lishni xohlayapti.'+(this.d.v2SettingsMode?'\n\nTaklif 10 daqiqa amal qiladi.':''),...HTML,reply_markup:{inline_keyboard:[[{text:'✅ Qabul qilish',callback_data:encode({t:'eco',op:'parayes',arg:String(request.id)})},{text:'❌ Rad etish',callback_data:encode({t:'eco',op:'parano',arg:String(request.id)})}]]}});
         }catch{await this.d.registry.paraFailed(from.id,request.id);return this.reply(chatId,'Taklif yetkazilmadi. Foydalanuvchi botni ochishi kerak.',undefined,replyTo);}
         return this.reply(chatId,'💌 Para so‘rovi yuborildi!',undefined,replyTo);
       }
@@ -600,7 +608,7 @@ export class Router {
       case 'status':
         return this.reply(chatId, await room.statusText(), undefined, replyTo);
       case 'rules':
-        return this.reply(chatId, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), undefined, replyTo);
+        return this.reply(chatId,this.d.v2SettingsMode?v2RulesView().text:t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), undefined, replyTo);
       case 'help':
         return this.reply(chatId, t('help.text'), undefined, replyTo);
       case 'leaderboard':
@@ -777,7 +785,7 @@ export class Router {
         return this.eco(cb, data.op, data.arg);
       case 'delme': {
         if (data.op === 'n') {
-          await this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
+          const view=this.homeView(from.first_name);await this.edit(cb,view.text,view.keyboard);
           return this.answer(cb);
         }
         const r = await this.d.registry.anonymize(from.id);
@@ -864,6 +872,8 @@ export class Router {
     }
   }
 
+  private homeView(name:string){return this.d.v2SettingsMode?v2HomeView(name):{text:t('menu.welcome',{name:escapeHtml(name||'do‘st')}),keyboard:mainMenu(true,!!this.d.visuals,true)};}
+
   private async menu(cb: TgCallback, section: string): Promise<void> {
     const from = cb.from;
     const user = await this.d.registry.upsertUser(from, cb.message?.chat.type === 'private');
@@ -885,12 +895,18 @@ export class Router {
       const v = await this.heroSection(from.id, section);
       return this.edit(cb, v.text, v.keyboard);
     }
+    if(this.d.v2SettingsMode&&section==='guide'){const v=v2RulesView();return this.edit(cb,v.text,v.keyboard);}
+    if(this.d.v2SettingsMode&&(section==='para'||section==='paraconfirm')){
+      const pair=await this.d.registry.paraPair(from.id);
+      const v=section==='paraconfirm'&&pair?v2ParaConfirm(pair):v2ParaView(pair);return this.edit(cb,v.text,v.keyboard);
+    }
     const learning = learningView(section, !!this.d.visuals);
     if (learning) return this.edit(cb, learning.text, learning.keyboard);
     const username = await this.d.botUsername();
     switch (section) {
-      case 'home':
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name || 'do‘st') }), mainMenu(true, !!this.d.visuals, true));
+      case 'home': {
+        const view=this.homeView(from.first_name);return this.edit(cb,view.text,view.keyboard);
+      }
       case 'play':
         return this.edit(cb, t('play.text'), [
           ...(username ? [[{ text: t('play.add_to_group'), url: `https://t.me/${username}?startgroup=true` }]] : []),
@@ -905,6 +921,7 @@ export class Router {
         return this.edit(cb, v.text, v.keyboard);
       }
       case 'rules':
+        if(this.d.v2SettingsMode){const v=v2RulesView();return this.edit(cb,v.text,v.keyboard);}
         return this.edit(cb, t('rules.text', { min: MIN_PLAYERS_FLOOR, max: MAX_PLAYERS_CEILING }), [
           [{ text: t('menu.characters'), callback_data: encode({ t: 'menu', section: 'characters' }) }],
           backRow(),
@@ -922,7 +939,7 @@ export class Router {
       default: {
         const v = await this.section(from, section, cb.message?.chat.type === 'private');
         if (v) return this.edit(cb, v.text, v.keyboard);
-        return this.edit(cb, t('menu.welcome', { name: escapeHtml(from.first_name) }), mainMenu(true, !!this.d.visuals, true));
+        const home=this.homeView(from.first_name);return this.edit(cb,home.text,home.keyboard);
       }
     }
   }
@@ -1010,10 +1027,14 @@ export class Router {
   private async paraCallback(cb:TgCallback,op:string,arg:string){
     const id=Number(arg);
     if(cb.message?.chat.type!=='private'||cb.message.chat.id!==cb.from.id||!/^\d+$/.test(arg)||!Number.isSafeInteger(id)||id<1)return this.answer(cb,t('cb.stale'));
-    if(op==='paranop'){await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);}
+    if(op==='paranop'){
+      if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(cb.from.id),'Bekor qilinmadi.');await this.edit(cb,v.text,v.keyboard);}
+      else await this.edit(cb,'Bekor qilinmadi.');return this.answer(cb);
+    }
     const result=op==='paraq'?await this.d.registry.paraLeave(cb.from.id,id):await this.d.registry.paraAnswer(cb.from.id,id,op==='parayes');
     if(result!=='OK')return this.answer(cb,this.paraError(result),true);
-    await this.edit(cb,op==='parayes'?await this.paraText(cb.from.id):op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');return this.answer(cb);
+    if(this.d.v2SettingsMode){const v=v2ParaView(await this.d.registry.paraPair(cb.from.id),op==='parayes'?'Taklif qabul qilindi.':op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');await this.edit(cb,v.text,v.keyboard);}
+    else await this.edit(cb,op==='parayes'?await this.paraText(cb.from.id):op==='parano'?'Taklif rad etildi.':'Para bekor qilindi.');return this.answer(cb);
   }
 
   private async eco(cb: TgCallback, op: string, arg: string): Promise<void> {

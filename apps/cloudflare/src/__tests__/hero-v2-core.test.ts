@@ -129,4 +129,24 @@ describe('draft hero v2 persistent economy',()=>{
   expect(h.settleShot(req)).toEqual(shot);
   expect(h.view(2)).toMatchObject({points:0,charges:9});
  });
+ it('legacy owner migration preserves wallet, items, para and history-facing profile on repeated reopening',()=>{
+  const sql=sqliteSql(),now=1800000000000;
+  let r=new RegistryCore(sql,()=>now);r.migrate();
+  for(const id of [2,3])r.upsertUser(user(id),true);
+  r.eco.creditDiamonds(2,200,'TEST','cutover-gems');r.eco.credit(2,1000,'TEST',null,'cutover-cash');
+  expect(r.eco.buyHero(2,'old-hero').ok).toBe(true);
+  expect(r.eco.buy(2,'SHIELD','old-shield').ok).toBe(true);expect(r.eco.toggleArm(2,'SHIELD')).toBe(true);
+  sql.exec(`INSERT INTO hero_accounts(telegram_id,total_xp) VALUES(2,2200)`);
+  const request=r.paraRequest(2,3);if(!request.ok)throw Error('para fixture');
+  expect(r.paraAnswer(3,request.id,true)).toBe('OK');
+  const inventory=r.eco.inventory(2),profile=r.v2ProfileSummary(2),pair=r.paraPair(2);
+  expect(r.adminStats()).toContain('import belgisi yo‘q sotib olingan geroylar: 1');
+  r=new RegistryCore(sql,()=>now);r.migrate();
+  expect(r.heroV2.view(2)).toMatchObject({points:2200,level:3});
+  expect(r.eco.inventory(2)).toEqual(inventory);expect(r.v2ProfileSummary(2)).toEqual(profile);expect(r.paraPair(2)).toEqual(pair);
+  expect(r.adminStats()).toContain('import belgisi yo‘q sotib olingan geroylar: 0');
+  r=new RegistryCore(sql,()=>now);r.migrate();
+  expect(r.heroV2.view(2)?.points).toBe(2200);expect(r.eco.inventory(2)).toEqual(inventory);expect(r.paraPair(2)).toEqual(pair);
+ });
+
 });

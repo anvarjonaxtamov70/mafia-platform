@@ -11,6 +11,19 @@ describe('V2 optional phase animations',()=>{
    const data=new Uint8Array(await blob.arrayBuffer());
    expect(new TextDecoder().decode(data.slice(0,6))).toBe('GIF89a');
    expect(data.at(-1)).toBe(0x3b);
+   expect(new DataView(data.buffer).getUint16(6,true)).toBe(192);
+   expect(new DataView(data.buffer).getUint16(8,true)).toBe(108);
+   // Count real graphic-control blocks, not arbitrary byte matches in compressed pixels.
+   let offset=13+16*3,frames=0;
+   while(offset<data.length&&data[offset]!==0x3b){
+    const kind=data[offset++]!;
+    if(kind===0x21){const extension=data[offset++]!;if(extension===0xf9)frames++;}
+    else if(kind===0x2c){offset+=9;offset++;}
+    else throw Error('invalid GIF block');
+    while(data[offset])offset+=1+data[offset]!;
+    offset++;
+   }
+   expect(frames).toBe(12);
    bytes.push(Buffer.from(data).toString('base64'));
   }
   expect(new Set(bytes).size).toBe(4);

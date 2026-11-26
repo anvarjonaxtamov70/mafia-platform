@@ -93,7 +93,8 @@ function gif(scene='intro'){
  if(scene==='v2_vote')colors.splice(0,16,...[[11,17,30],[19,28,48],[29,43,65],[40,59,86],[57,78,111],[74,100,135],[97,128,164],[132,165,196],[173,205,231],[211,231,246],[241,247,255],[235,242,250],[115,139,165],[35,50,69],[17,24,39],[0,0,0]]);
  const u16=n=>{const b=Buffer.alloc(2);b.writeUInt16LE(n);return b;};
  const pieces=[Buffer.from('GIF89a'),u16(w),u16(h),Buffer.from([0xf3,0,0]),Buffer.from(colors.flat()),Buffer.from([0x21,0xff,11]),Buffer.from('NETSCAPE2.0'),Buffer.from([3,1,0,0,0])];
- for(let frame=0;frame<8;frame++){
+ const frames=scene==='intro'?8:12;
+ for(let frame=0;frame<frames;frame++){
   const b=canvas(w,h,colors[8]);
   if(scene==='intro'){
   b.ring(128,58,37,colors[6],2);b.ring(128,58,29,colors[4],1);
@@ -101,34 +102,49 @@ function gif(scene='intro'){
   const a=frame*Math.PI/4;b.dot(128+Math.cos(a)*37,58+Math.sin(a)*37,4,colors[10]);
   b.text('HYPERNOVA',128,106,3,colors[11]);b.text('MAFIA',128,130,1,colors[8]);
   }else{
-   const cx=w/2,cy=43,a=frame*Math.PI/4;
+   const cx=w/2,cy=43,a=frame*2*Math.PI/frames;
+   // Layered skyline, illuminated horizon and drifting fog, kept within a small GIF budget.
+   for(let y=0;y<78;y++){
+    const color=scene==='v2_dawn'?colors[Math.min(8,1+Math.floor(y/10))]:colors[Math.min(4,Math.floor(y/18))];
+    b.rect(0,y,w,1,color);
+   }
+   const skyline=(layer,base,color)=>{for(let i=0;i<15;i++){
+    const x=i*14-6,ht=8+(i*17+layer*11)%24;
+    b.rect(x,base-ht,12,ht,color);
+    if(i%4===0)b.line(x+6,base-ht-6,x+6,base-ht,color,1);
+    for(let j=base-ht+4;j<base-2;j+=6)if((i+j+layer)%3===0)b.rect(x+3,j,2,2,colors[5]);
+   }};
+   for(let i=0;i<6;i++){const x=(i*39+frame*3)%240-24;b.line(x,19+i*5,x+22,19+i*5,colors[2],1);}
    b.rect(0,0,w,2,colors[7]);b.rect(0,h-2,w,2,colors[7]);
    b.text('HYPERNOVA',cx,8,1,colors[11]);
    if(scene==='v2_night'){
-    b.dot(cx,cy,23,colors[9]);b.dot(cx+10,cy-7,21,colors[0]);
+    b.dot(cx,cy-5,23,colors[7]);b.dot(cx,cy-5,21,colors[10]);b.dot(cx+10,cy-12,20,colors[2]);
     for(let i=0;i<7;i++){const x=18+(i*29)%156,y=22+(i*13)%39;b.dot(x,y,(i+frame)%4===0?2:1,colors[8+(i+frame)%3]);}
-    b.text('TUN',cx,79,3,colors[11]);
+    skyline(0,72,colors[3]);skyline(1,76,colors[0]);
+    b.rect(0,77,w,31,colors[0]);b.text('TUN',cx,81,3,colors[11]);
    }else if(scene==='v2_dawn'){
-    const y=63-Math.round(14*(1-Math.cos(a))/2);
+    const y=63-Math.round(17*(1-Math.cos(a))/2);
     b.dot(cx,y,20,colors[10]);b.rect(0,64,w,10,colors[1]);b.line(16,64,w-16,64,colors[8],2);
     for(let i=0;i<7;i++){const ang=Math.PI+i*Math.PI/6;b.line(cx+Math.cos(ang)*24,y+Math.sin(ang)*24,cx+Math.cos(ang)*29,y+Math.sin(ang)*29,colors[7],2);}
-    b.text('TONG',cx,79,3,colors[11]);
+    skyline(0,72,colors[3]);skyline(1,76,colors[0]);
+    b.rect(0,77,w,31,colors[0]);b.text('TONG',cx,81,3,colors[11]);
    }else if(scene==='v2_vote'){
-    b.rect(66,49,60,21,colors[4]);b.rect(75,45,42,4,colors[0]);
+    b.ring(cx,cy,32,colors[5],1);b.ring(cx,cy,29,colors[3],1);
+    b.rect(61,54,70,17,colors[2]);b.rect(66,49,60,21,colors[4]);b.rect(75,45,42,4,colors[0]);b.line(66,69,126,69,colors[7],1);
     const y=24+Math.round(7*(1-Math.cos(a))/2);
     b.rect(84,y,24,20,colors[9]);b.line(89,y+9,94,y+14,colors[2],2);b.line(94,y+14,103,y+5,colors[2],2);
-    b.text('OVOZ',cx,79,3,colors[11]);
+    b.rect(0,77,w,31,colors[0]);b.text('OVOZ',cx,81,3,colors[11]);
    }else{
     b.ring(cx,cy,26,colors[6],2);b.line(cx-21,cy-14,cx-11,cy+11,colors[9],3);b.line(cx-11,cy+11,cx+11,cy+11,colors[9],3);b.line(cx+11,cy+11,cx+21,cy-14,colors[9],3);b.line(cx-21,cy-14,cx-9,cy-3,colors[9],3);b.line(cx-9,cy-3,cx,cy-18,colors[9],3);b.line(cx,cy-18,cx+9,cy-3,colors[9],3);b.line(cx+9,cy-3,cx+21,cy-14,colors[9],3);
     for(let i=0;i<5;i++){const ang=a+i*Math.PI*2/5;b.dot(cx+Math.cos(ang)*33,cy+Math.sin(ang)*29,2,colors[10]);}
-    b.text('YAKUN',cx,79,3,colors[11]);
+    b.ring(cx,cy,29,colors[4],1);b.rect(0,77,w,31,colors[0]);b.text('YAKUN',cx,81,3,colors[11]);
    }
    b.line(65,101,127,101,colors[6],1);
   }
   const bytes=[];let bits=0,nb=0;const emit=n=>{bits|=n<<nb;nb+=5;while(nb>=8){bytes.push(bits&255);bits>>>=8;nb-=8;}};
   for(let i=0;i<w*h;i++){if(i%12===0)emit(16);let best=0,score=Infinity;for(let j=0;j<colors.length;j++){const d=colors[j];const q=(b.data[i*3]-d[0])**2+(b.data[i*3+1]-d[1])**2+(b.data[i*3+2]-d[2])**2;if(q<score){best=j;score=q;}}emit(best);}
   emit(17);if(nb)bytes.push(bits&255);
-  pieces.push(Buffer.from([0x21,0xf9,4,4,12,0,0,0,0x2c]),u16(0),u16(0),u16(w),u16(h),Buffer.from([0,4]));
+  pieces.push(Buffer.from([0x21,0xf9,4,4,scene==='intro'?12:10,0,0,0,0x2c]),u16(0),u16(0),u16(w),u16(h),Buffer.from([0,4]));
   for(let i=0;i<bytes.length;i+=255){const block=Buffer.from(bytes.slice(i,i+255));pieces.push(Buffer.from([block.length]),block);}pieces.push(Buffer.from([0]));
  }
  pieces.push(Buffer.from([0x3b]));return Buffer.concat(pieces);
