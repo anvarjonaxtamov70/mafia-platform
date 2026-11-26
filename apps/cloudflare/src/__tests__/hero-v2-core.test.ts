@@ -30,6 +30,31 @@ describe('draft hero v2 persistent economy',()=>{
   expect(h.purchase(2,'RELOAD','reload')).toBe('OK');expect(h.view(2)?.charges).toBe(10);
   expect(e.coins(2)).toBe(1015);
  });
+ it('quotes bind account, price, expiry and one confirmation; declined attempts cannot charge later',async()=>{
+  const w=new World();for(const id of [2,3])await w.send(privateText(id,'/start'));
+  const h=w.registryCore.heroV2,e=w.registryCore.eco;
+  e.creditDiamonds(2,200,'TEST','d2');
+  const q=h.quote(2,'BUY');if(q.status!=='OK')throw Error('quote missing');
+  expect(q.quote).toMatchObject({price:90,currency:'DIAMOND'});
+  expect(h.confirm(3,q.quote.id)).toBe('UNAVAILABLE');expect(e.diamonds(2)).toBe(200);
+  expect(h.confirm(2,q.quote.id)).toBe('OK');expect(h.confirm(2,q.quote.id)).toBe('OK');
+  expect(e.diamonds(2)).toBe(110);
+  const a=h.quote(2,'XP500'),b=h.quote(2,'XP1000');
+  if(a.status!=='OK'||b.status!=='OK')throw Error('quote missing');
+  expect(h.confirm(2,a.quote.id)).toBe('UNAVAILABLE');
+  expect(h.confirm(2,b.quote.id)).toBe('OK');expect(h.confirm(2,b.quote.id)).toBe('OK');
+  expect(e.diamonds(2)).toBe(45);
+  const exp=h.quote(2,'XP500');if(exp.status!=='OK')throw Error('quote missing');
+  w.now+=120001;expect(h.confirm(2,exp.quote.id)).toBe('UNAVAILABLE');
+  const poor=h.quote(2,'RENAME','Nova');if(poor.status!=='OK')throw Error('quote missing');
+  expect(h.confirm(2,poor.quote.id)).toBe('INSUFFICIENT');
+  e.credit(2,1000,'TEST',null,'c2');
+  expect(h.confirm(2,poor.quote.id)).toBe('INSUFFICIENT');expect(e.coins(2)).toBe(1000);
+  const fresh=h.quote(2,'RENAME','Nova');if(fresh.status!=='OK')throw Error('quote missing');
+  const game=running(w,[2,3]);expect(h.confirm(2,fresh.quote.id)).toBe('UNAVAILABLE');
+  w.registryCore.releaseGame(game,'FINISHED');expect(h.confirm(2,fresh.quote.id)).toBe('UNAVAILABLE');
+  expect(h.view(2)?.name).toBe('Hypernova');
+ });
  it('defense is persistent, normal nonhero match awards do not modify v2 account',async()=>{
   const w=new World();for(const id of [2,3])await w.send(privateText(id,'/start'));
   const h=w.registryCore.heroV2,e=w.registryCore.eco;

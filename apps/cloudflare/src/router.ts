@@ -51,6 +51,8 @@ import { HTML, TgError, type Telegram } from './telegram';
 import { sendVisual } from './visuals';
 import type { HeroCore } from './hero-core';
 import { heroView, heroTopView } from './hero-views';
+import type {HeroV2Core,HeroV2Purchase,HeroV2BuyResult,HeroV2QuoteResult} from './hero-v2-core';
+import {heroV2Profile,heroV2Confirm,heroV2Status,decodeHeroV2Button} from './hero-v2-views';
 import {decodeV2Button} from '@mafia/bot-core';
 import {decodeSellerButton} from './v2-seller';
 import {V2_MODES,type V2Mode} from '@mafia/game-engine';
@@ -175,7 +177,14 @@ export interface RoomApi {
   migrate(newChatId: number): Promise<void>;
 }
 
+/** Only injected into isolated test routers until production v1/v2 migration. */
+export interface HeroV2ShopPort{
+ view(id:number):Promise<ReturnType<HeroV2Core['view']>>;
+ quote(id:number,op:HeroV2Purchase,argument?:string):Promise<HeroV2QuoteResult>;
+ confirm(id:number,quoteId:number):Promise<HeroV2BuyResult>;
+}
 export interface RouterDeps {
+  heroV2Shop?:HeroV2ShopPort;
   tg: Telegram;
   registry: RegistryApi;
   room(chatId: number): RoomApi;
@@ -436,6 +445,19 @@ export class Router {
         const ok=await this.d.registry.setOwnHeroLevel(from.id,level);
         return this.reply(chatId,ok?t('hero.level_saved',{level}):t('hero.owner_level_help'));
       }
+      case 'herov2': {
+        if(!this.d.heroV2Shop||chatId!==from.id)return this.reply(chatId,'Geroy V2 sinov do‘koni mavjud emas.');
+        await this.d.registry.upsertUser(from,true);
+        const v=heroV2Profile(await this.d.heroV2Shop.view(from.id));
+        return this.reply(chatId,v.text,v.keyboard);
+      }
+      case 'herov2name': {
+        if(!this.d.heroV2Shop||chatId!==from.id)return this.reply(chatId,'Geroy V2 sinov do‘koni mavjud emas.');
+        if(!this.clicks.allow('hv2:'+from.id,this.d.now()))return this.reply(chatId,t('common.rate_limited'));
+        const result=await this.d.heroV2Shop.quote(from.id,'RENAME',c.args);
+        if(result.status!=='OK')return this.reply(chatId,heroV2Status(result.status));
+        const v=heroV2Confirm(result.quote);return this.reply(chatId,v.text,v.keyboard);
+      }
       case 'hero':
       case 'heroes':
       case 'herotop': {
@@ -630,6 +652,22 @@ export class Router {
 
   private async onCallback(cb: TgCallback): Promise<void> {
     const from = cb.from;
+    if(cb.data?.startsWith('hv2:')){
+      const shop=this.d.heroV2Shop,b=decodeHeroV2Button(cb.data);
+      if(!shop||!b||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));
+      if(!this.clicks.allow('hv2:'+from.id,this.d.now()))return this.answer(cb,t('common.rate_limited'));
+      if(b.kind==='HOME'){
+        const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      if(b.kind==='QUOTE'){
+        const result=await shop.quote(from.id,b.op);
+        if(result.status!=='OK')return this.answer(cb,heroV2Status(result.status),true);
+        const v=heroV2Confirm(result.quote);await this.edit(cb,v.text,v.keyboard);return this.answer(cb);
+      }
+      const result=await shop.confirm(from.id,b.id);
+      const v=heroV2Profile(await shop.view(from.id));await this.edit(cb,v.text,v.keyboard);
+      return this.answer(cb,heroV2Status(result),true);
+    }
     if(cb.data?.startsWith('v2:')||cb.data?.startsWith('v2s:')){
       const button=cb.data.startsWith('v2s:')?decodeSellerButton(cb.data):decodeV2Button(cb.data);
       if(!button||from.is_bot||cb.message?.chat.type!=='private'||cb.message.chat.id!==from.id)return this.answer(cb,t('cb.stale'));

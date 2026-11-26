@@ -7,6 +7,9 @@ import type {EconomyCore} from './economy-core';
 type HeroRow={telegram_id:number;name:string;points:number;defense:number;charges:number};
 export type HeroV2Purchase='BUY'|'XP500'|'XP1000'|'RESTORE'|'RELOAD'|'RENAME';
 export type HeroV2BuyResult='OK'|'UNAVAILABLE'|'INSUFFICIENT'|'FULL'|'INVALID'|'CONFLICT';
+export type HeroV2Quote={id:number;op:HeroV2Purchase;argument:string;price:number;currency:'DOLLAR'|'DIAMOND';expires:number};
+type QuoteRow={id:number;telegram_id:number;op:HeroV2Purchase;argument:string;price:number;currency:'DOLLAR'|'DIAMOND';expires:number;result:HeroV2BuyResult|null};
+export type HeroV2QuoteResult={status:'OK';quote:HeroV2Quote}|{status:Exclude<HeroV2BuyResult,'OK'>};
 export type HeroV2ShotRequest={
  game:number;seq:number;actor:number;target:number;targetHp:number;blocked:boolean;
  actorCharges:number;damage:number;targetDefense:number;
@@ -17,6 +20,8 @@ export class HeroV2Core {
  migrate(){
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_accounts(telegram_id INTEGER PRIMARY KEY,name TEXT NOT NULL,points INTEGER NOT NULL CHECK(points>=0),defense INTEGER NOT NULL CHECK(defense>=0),charges INTEGER NOT NULL CHECK(charges>=0 AND charges<=10))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_purchases(idem TEXT PRIMARY KEY,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,created INTEGER NOT NULL)`);
+  this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_quotes(id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,op TEXT NOT NULL,argument TEXT NOT NULL,price INTEGER NOT NULL,currency TEXT NOT NULL,expires INTEGER NOT NULL,result TEXT)`);
+  this.sql.exec(`CREATE INDEX IF NOT EXISTS hero_v2_quotes_user ON hero_v2_quotes(telegram_id,id)`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_shots(game INTEGER NOT NULL,actor INTEGER NOT NULL,target INTEGER NOT NULL,damage INTEGER NOT NULL,points INTEGER NOT NULL,PRIMARY KEY(game,actor))`);
   this.sql.exec(`CREATE TABLE IF NOT EXISTS hero_v2_shot_receipts(game INTEGER NOT NULL,actor INTEGER NOT NULL,request TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(game,actor))`);
  }
@@ -44,6 +49,57 @@ export class HeroV2Core {
    const row=this.ensure(id);if(!row)return null;
    const stats=this.stats(row);
    return {name:row.name,points:row.points,defense:Math.min(row.defense,stats.maxDefense),charges:row.charges,...stats,nextPoints:heroV2Threshold(stats.level+1)};
+  });
+ }
+ private price(id:number,op:HeroV2Purchase,argument:string):{price:number;currency:'DOLLAR'|'DIAMOND'}|Exclude<HeroV2BuyResult,'OK'>{
+  if(!this.eligible(id)||this.busy(id))return 'UNAVAILABLE';
+  const row=this.ensure(id);
+  if(op==='BUY')return row?'FULL':{price:HERO_V2_PRICE,currency:'DIAMOND'};
+  if(!row)return 'UNAVAILABLE';
+  const stats=this.stats(row);
+  if(op==='XP500'||op==='XP1000'){
+   const pack=HERO_V2_XP_PACKS[op==='XP500'?0:1]!;
+   if(!Number.isSafeInteger(row.points+pack.points))return 'INVALID';
+   return {price:pack.diamonds,currency:'DIAMOND'};
+  }
+  if(op==='RESTORE')return row.defense>=stats.maxDefense?'FULL':{price:stats.restorePrice,currency:'DOLLAR'};
+  if(op==='RELOAD')return row.charges>=HERO_V2_MAX_CHARGES?'FULL':{price:stats.reloadPrice,currency:'DOLLAR'};
+  if(op==='RENAME'){
+   const name=argument.trim();
+   if(!name||Array.from(name).length>32||Array.from(name).some(c=>{const n=c.charCodeAt(0);return n<32||n===127;})||name===row.name)return 'INVALID';
+   return {price:HERO_V2_RENAME_PRICE,currency:'DOLLAR'};
+  }
+  return 'INVALID';
+ }
+ /** Quotes bind displayed price and exact name to one account. Only one outstanding
+  * confirmation per user; a newer quote invalidates the older one. */
+ quote(id:number,op:HeroV2Purchase,argument=''):HeroV2QuoteResult{
+  return this.sql.tx(()=>{
+   if(op!=='RENAME'&&argument)return {status:'INVALID'};
+   const arg=argument.trim(),cost=this.price(id,op,arg);
+   if(typeof cost==='string')return {status:cost};
+   const expires=this.clock()+120000,price=this.eco.isOwner(id)?0:cost.price;
+   this.sql.exec(`UPDATE hero_v2_quotes SET result='UNAVAILABLE' WHERE telegram_id=? AND result IS NULL`,id);
+   const q=this.sql.exec<{id:number}>(`INSERT INTO hero_v2_quotes(telegram_id,op,argument,price,currency,expires) VALUES(?,?,?,?,?,?) RETURNING id`,id,op,arg,price,cost.currency,expires)[0]!;
+   return {status:'OK',quote:{id:q.id,op,argument:arg,price,currency:cost.currency,expires}};
+  });
+ }
+ confirm(id:number,quoteId:number):HeroV2BuyResult{
+  if(!Number.isSafeInteger(quoteId)||quoteId<1||!this.eligible(id))return 'UNAVAILABLE';
+  return this.sql.tx(()=>{
+   const q=this.sql.exec<QuoteRow>(`SELECT * FROM hero_v2_quotes WHERE id=? AND telegram_id=?`,quoteId,id)[0];
+   if(!q)return 'UNAVAILABLE';
+   if(q.result)return q.result;
+   let result:HeroV2BuyResult;
+   if(q.expires<=this.clock())result='UNAVAILABLE';
+   else{
+    const cost=this.price(id,q.op,q.argument);
+    if(typeof cost==='string')result=cost;
+    else if(cost.currency!==q.currency||(this.eco.isOwner(id)?0:cost.price)!==q.price)result='CONFLICT';
+    else result=this.purchase(id,q.op,'quote:'+q.id,q.argument);
+   }
+   this.sql.exec(`UPDATE hero_v2_quotes SET result=? WHERE id=?`,result,q.id);
+   return result;
   });
  }
  purchase(id:number,op:HeroV2Purchase,idem:string,argument=''):HeroV2BuyResult{
